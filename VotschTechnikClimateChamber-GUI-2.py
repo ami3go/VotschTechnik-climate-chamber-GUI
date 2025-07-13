@@ -473,7 +473,7 @@ class DarkThemeThermalChamber:
             self.tcam = ClimateChamber(ip_address, self.min_temp, self.max_temp)
             self.chamber_id.set(f"ID:{self.tcam.idn}")
 
-            self.log_text.insert(tk.END, f"Connected to chamber at {ip_address}\n")
+            self.log_text.insert(tk.END, f"Connected to chamber ID:{self.tcam.idn} at {ip_address}\n")
             self.log_text.see(tk.END)
         except Exception as e:
             self.is_connected = False
@@ -492,6 +492,8 @@ class DarkThemeThermalChamber:
         self.ip_combobox.config(state='normal')
         self.run_button.config(state='disabled')
         self.stop_button.config(state='disabled')
+        self.tcam.disconnect()
+        self.tcam = None
         self.chamber_id.set("NO ID")
         self.log_text.insert(tk.END, "Disconnected from chamber\n")
         self.log_text.see(tk.END)
@@ -566,9 +568,11 @@ class DarkThemeThermalChamber:
         self.custom_button.config(bg=self.get_temp_color(temp),
                                   activebackground=self.adjust_brightness(self.get_temp_color(temp), 1.2))
 
+
     def set_custom_temp(self):
         """Set temperature from custom control"""
         self.set_temp(self.custom_temp.get())
+
 
     def start_chamber(self):
         """Start the thermal chamber"""
@@ -582,8 +586,10 @@ class DarkThemeThermalChamber:
         self.status_label.configure(background=self.get_temp_color(self.target_temp))
         self.run_button.config(state='disabled')
         self.stop_button.config(state='normal')
+        self.tcam.temperature_set_point = self.target_temp
         self.log_text.insert(tk.END, f"Chamber started at {self.target_temp}°C\n")
         self.log_text.see(tk.END)
+
 
     def stop_chamber(self):
         """Stop the thermal chamber"""
@@ -592,6 +598,7 @@ class DarkThemeThermalChamber:
         self.status_label.configure(background=self.get_temp_color(25))
         self.run_button.config(state='normal')
         self.stop_button.config(state='disabled')
+        self.tcam.stop()
         self.log_text.insert(tk.END, "Chamber stopped\n")
         self.log_text.see(tk.END)
 
