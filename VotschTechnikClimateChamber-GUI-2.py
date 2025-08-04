@@ -82,7 +82,7 @@ class DarkThemeThermalChamber:
         self.running = True
 
         # Start temperature simulation thread
-        self.simulation_thread = Thread(target=self.simulate_temperature)
+        self.simulation_thread = Thread(target=self.get_temperature())
         self.simulation_thread.daemon = True
         self.simulation_thread.start()
 
@@ -589,6 +589,7 @@ class DarkThemeThermalChamber:
         self.tcam.temperature_set_point = self.target_temp
         self.log_text.insert(tk.END, f"Chamber started at {self.target_temp}°C\n")
         self.log_text.see(tk.END)
+        self.tcam.start()
 
 
     def stop_chamber(self):
@@ -602,6 +603,13 @@ class DarkThemeThermalChamber:
         self.log_text.insert(tk.END, "Chamber stopped\n")
         self.log_text.see(tk.END)
 
+    def get_temperature(self):
+        if self.is_connected:
+            self.current_temp = self.tcam.temperature_measured()
+            return self.current_temp
+
+        else:
+            return 20
     def simulate_temperature(self):
         """Simulate temperature changes"""
         start_time = time.time()
