@@ -81,7 +81,7 @@ class DarkThemeThermalChamber:
         self.is_connected = False
         self.running = True
 
-        # Start temperature simulation thread
+        # Start temperature reading thread
         self.simulation_thread = Thread(target=self.get_temperature())
         self.simulation_thread.daemon = True
         self.simulation_thread.start()
@@ -559,6 +559,7 @@ class DarkThemeThermalChamber:
             return
 
         self.target_temp = temp
+        self.tcam.temperature_set_point = self.target_temp
         self.target_var.set(f"{self.target_temp:.1f} °C")
         self.custom_temp.set(self.target_temp)
         self.temp_entry.delete(0, tk.END)
@@ -580,26 +581,31 @@ class DarkThemeThermalChamber:
             self.status_var.set("Connect to chamber first!")
             self.status_label.configure(background=self.get_temp_color(25))
             return
+        #tcam section
+        self.tcam.temperature_set_point = self.target_temp
+        self.tcam.start()
+        self.is_running = self.tcam.is_running()
 
-        self.is_running = True
         self.status_var.set(f"Running at {self.target_temp}°C")
         self.status_label.configure(background=self.get_temp_color(self.target_temp))
         self.run_button.config(state='disabled')
         self.stop_button.config(state='normal')
-        self.tcam.temperature_set_point = self.target_temp
+
         self.log_text.insert(tk.END, f"Chamber started at {self.target_temp}°C\n")
         self.log_text.see(tk.END)
-        self.tcam.start()
 
 
     def stop_chamber(self):
         """Stop the thermal chamber"""
-        self.is_running = False
+
+        self.tcam.stop()
+        self.is_running = self.tcam.is_running()
+
         self.status_var.set("Connected (Idle)" if self.is_connected else "Disconnected")
         self.status_label.configure(background=self.get_temp_color(25))
         self.run_button.config(state='normal')
         self.stop_button.config(state='disabled')
-        self.tcam.stop()
+
         self.log_text.insert(tk.END, "Chamber stopped\n")
         self.log_text.see(tk.END)
 
