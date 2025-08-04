@@ -567,7 +567,7 @@ class DarkThemeThermalChamber:
         # Update button colors
         self.custom_button.config(bg=self.get_temp_color(temp),
                                   activebackground=self.adjust_brightness(self.get_temp_color(temp), 1.2))
-
+        self.tcam.temperature_set_point = self.target_temp
 
     def set_custom_temp(self):
         """Set temperature from custom control"""
@@ -604,12 +604,32 @@ class DarkThemeThermalChamber:
         self.log_text.see(tk.END)
 
     def get_temperature(self):
-        if self.is_connected:
-            self.current_temp = self.tcam.temperature_measured()
-            return self.current_temp
+        """Simulate temperature changes"""
+        start_time = time.time()
+        while self.running:
+            # Add new data point every second
+            elapsed_minutes = (time.time() - start_time) / 60
+            self.x_data.append(elapsed_minutes)
 
-        else:
-            return 20
+            # Simulate temperature change toward target
+            if self.is_running and self.is_connected:
+                self.current_temp = self.tcam.temperature_measured()
+            self.y_data.append(self.current_temp)
+
+            # Keep only the last 100 points
+            if len(self.x_data) > 100:
+                self.x_data = self.x_data[-100:]
+                self.y_data = self.y_data[-100:]
+
+            # Update display
+            self.temp_var.set(f"{self.current_temp:.1f} °C")
+
+            # Update the plot on the main thread
+            self.root.after(0, self.update_plot)
+
+            time.sleep(0.5)
+
+
     def simulate_temperature(self):
         """Simulate temperature changes"""
         start_time = time.time()
