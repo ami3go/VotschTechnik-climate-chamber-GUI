@@ -82,7 +82,7 @@ class DarkThemeThermalChamber:
         self.running = True
 
         # Start temperature simulation thread
-        self.simulation_thread = Thread(target=self.simulate_temperature)
+        self.simulation_thread = Thread(target=self.read_temperature)
         self.simulation_thread.daemon = True
         self.simulation_thread.start()
 
@@ -471,8 +471,10 @@ class DarkThemeThermalChamber:
 
             # Connect to chamber (simulated here)
             self.tcam = ClimateChamber(ip_address, self.min_temp, self.max_temp)
-            self.chamber_id.set(f"ID:{self.tcam.idn}")
-
+            self.chamber_id.set(f"{self.tcam.id}")
+            self.target_temp = self.tcam.temperature_set_point
+            self.target_var.set(f"{self.target_temp:.1f} °C")
+            self.custom_temp.set(self.target_temp)
             self.log_text.insert(tk.END, f"Connected to chamber ID:{self.tcam.idn} at {ip_address}\n")
             self.log_text.see(tk.END)
         except Exception as e:
@@ -559,8 +561,14 @@ class DarkThemeThermalChamber:
             return
 
         self.target_temp = temp
+        if self.is_connected:
+            self.tcam.temperature_set_point = self.target_temp
+            # print(self.target_temp)
+
         self.target_var.set(f"{self.target_temp:.1f} °C")
         self.custom_temp.set(self.target_temp)
+        self.log_text.insert(tk.END, f"Temperature set to {self.target_temp:.1f} °C\n")
+        self.log_text.see(tk.END)
         self.temp_entry.delete(0, tk.END)
         self.temp_entry.insert(0, f"{self.target_temp:.1f}")
 
@@ -609,6 +617,37 @@ class DarkThemeThermalChamber:
         self.tcam.stop()
         self.log_text.insert(tk.END, "Chamber stopped\n")
         self.log_text.see(tk.END)
+
+    def read_temperature(self):
+        """Simulate temperature changes"""
+        start_time = time.time()
+        while self.running:
+            # Add new data point every second
+            elapsed_minutes = (time.time() - start_time) / 60
+            self.x_data.append(elapsed_minutes)
+
+            # Simulate temperature change toward target
+            if self.is_connected:
+                self.current_temp = round(self.tcam.temperature_measured, 2)
+
+            else:
+                # Slowly drift toward room temperature
+                self.current_temp = 20
+            # print(self.current_temp, self.is_running, self.is_connected, )
+            self.y_data.append(self.current_temp)
+
+            # Keep only the last 100 points
+            if len(self.x_data) > 10000:
+                self.x_data = self.x_data[-10000:]
+                self.y_data = self.y_data[-10000:]
+
+            # Update display
+            self.temp_var.set(f"{self.current_temp:.1f} °C")
+
+            # Update the plot on the main thread
+            self.root.after(0, self.update_plot)
+
+            time.sleep(0.5)
 
     def simulate_temperature(self):
         """Simulate temperature changes"""
