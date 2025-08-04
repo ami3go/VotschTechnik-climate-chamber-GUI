@@ -492,7 +492,7 @@ class DarkThemeThermalChamber:
         self.ip_combobox.config(state='normal')
         self.run_button.config(state='disabled')
         self.stop_button.config(state='disabled')
-        self.tcam.disconnect()
+        # self.tcam.disconnect()
         self.tcam = None
         self.chamber_id.set("NO ID")
         self.log_text.insert(tk.END, "Disconnected from chamber\n")
@@ -581,18 +581,26 @@ class DarkThemeThermalChamber:
             self.status_label.configure(background=self.get_temp_color(25))
             return
 
+        # start chamber real device
+        self.tcam.temperature_set_point = self.target_temp
+        self.tcam.start()
         self.is_running = True
+
         self.status_var.set(f"Running at {self.target_temp}°C")
         self.status_label.configure(background=self.get_temp_color(self.target_temp))
         self.run_button.config(state='disabled')
         self.stop_button.config(state='normal')
-        self.tcam.temperature_set_point = self.target_temp
+
         self.log_text.insert(tk.END, f"Chamber started at {self.target_temp}°C\n")
         self.log_text.see(tk.END)
 
 
     def stop_chamber(self):
         """Stop the thermal chamber"""
+        if not self.is_running:
+            return None
+
+        self.tcam.stop()
         self.is_running = False
         self.status_var.set("Connected (Idle)" if self.is_connected else "Disconnected")
         self.status_label.configure(background=self.get_temp_color(25))
