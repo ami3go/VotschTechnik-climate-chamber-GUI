@@ -3655,7 +3655,7 @@
  [],
  False,
  False,
- 1754311531,
+ 1754379712,
  [('run.exe',
    'C:\\Apps\\BMS_BROWSER_GUI_V2.3.2\\_internal\\venv1\\Lib\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\run.exe',
    'EXECUTABLE')],
