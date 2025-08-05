@@ -81,8 +81,8 @@ class DarkThemeThermalChamber:
         self.is_connected = False
         self.running = True
 
-        # Start temperature reading thread
-        self.simulation_thread = Thread(target=self.get_temperature())
+        # Start temperature simulation thread
+        self.simulation_thread = Thread(target=self.read_temperature)
         self.simulation_thread.daemon = True
         self.simulation_thread.start()
 
@@ -471,8 +471,10 @@ class DarkThemeThermalChamber:
 
             # Connect to chamber (simulated here)
             self.tcam = ClimateChamber(ip_address, self.min_temp, self.max_temp)
-            self.chamber_id.set(f"ID:{self.tcam.idn}")
-
+            self.chamber_id.set(f"{self.tcam.id}")
+            self.target_temp = self.tcam.temperature_set_point
+            self.target_var.set(f"{self.target_temp:.1f} °C")
+            self.custom_temp.set(self.target_temp)
             self.log_text.insert(tk.END, f"Connected to chamber ID:{self.tcam.idn} at {ip_address}\n")
             self.log_text.see(tk.END)
         except Exception as e:
@@ -492,7 +494,7 @@ class DarkThemeThermalChamber:
         self.ip_combobox.config(state='normal')
         self.run_button.config(state='disabled')
         self.stop_button.config(state='disabled')
-        self.tcam.disconnect()
+        # self.tcam.disconnect()
         self.tcam = None
         self.chamber_id.set("NO ID")
         self.log_text.insert(tk.END, "Disconnected from chamber\n")
@@ -559,16 +561,21 @@ class DarkThemeThermalChamber:
             return
 
         self.target_temp = temp
-        self.tcam.temperature_set_point = self.target_temp
+        if self.is_connected:
+            self.tcam.temperature_set_point = self.target_temp
+            # print(self.target_temp)
+
         self.target_var.set(f"{self.target_temp:.1f} °C")
         self.custom_temp.set(self.target_temp)
+        self.log_text.insert(tk.END, f"Temperature set to {self.target_temp:.1f} °C\n")
+        self.log_text.see(tk.END)
         self.temp_entry.delete(0, tk.END)
         self.temp_entry.insert(0, f"{self.target_temp:.1f}")
 
         # Update button colors
         self.custom_button.config(bg=self.get_temp_color(temp),
                                   activebackground=self.adjust_brightness(self.get_temp_color(temp), 1.2))
-        self.tcam.temperature_set_point = self.target_temp
+
 
     def set_custom_temp(self):
         """Set temperature from custom control"""
@@ -581,10 +588,11 @@ class DarkThemeThermalChamber:
             self.status_var.set("Connect to chamber first!")
             self.status_label.configure(background=self.get_temp_color(25))
             return
-        #tcam section
+
+        # start chamber real device
         self.tcam.temperature_set_point = self.target_temp
         self.tcam.start()
-        self.is_running = self.tcam.is_running()
+        self.is_running = True
 
         self.status_var.set(f"Running at {self.target_temp}°C")
         self.status_label.configure(background=self.get_temp_color(self.target_temp))
@@ -597,19 +605,20 @@ class DarkThemeThermalChamber:
 
     def stop_chamber(self):
         """Stop the thermal chamber"""
+        if not self.is_running:
+            return None
 
         self.tcam.stop()
-        self.is_running = self.tcam.is_running()
-
+        self.is_running = False
         self.status_var.set("Connected (Idle)" if self.is_connected else "Disconnected")
         self.status_label.configure(background=self.get_temp_color(25))
         self.run_button.config(state='normal')
         self.stop_button.config(state='disabled')
-
+        self.tcam.stop()
         self.log_text.insert(tk.END, "Chamber stopped\n")
         self.log_text.see(tk.END)
 
-    def get_temperature(self):
+    def read_temperature(self):
         """Simulate temperature changes"""
         start_time = time.time()
         while self.running:
@@ -618,14 +627,19 @@ class DarkThemeThermalChamber:
             self.x_data.append(elapsed_minutes)
 
             # Simulate temperature change toward target
-            if self.is_running and self.is_connected:
-                self.current_temp = self.tcam.temperature_measured()
+            if self.is_connected:
+                self.current_temp = round(self.tcam.temperature_measured, 2)
+
+            else:
+                # Slowly drift toward room temperature
+                self.current_temp = 20
+            # print(self.current_temp, self.is_running, self.is_connected, )
             self.y_data.append(self.current_temp)
 
             # Keep only the last 100 points
-            if len(self.x_data) > 100:
-                self.x_data = self.x_data[-100:]
-                self.y_data = self.y_data[-100:]
+            if len(self.x_data) > 10000:
+                self.x_data = self.x_data[-10000:]
+                self.y_data = self.y_data[-10000:]
 
             # Update display
             self.temp_var.set(f"{self.current_temp:.1f} °C")
@@ -634,7 +648,6 @@ class DarkThemeThermalChamber:
             self.root.after(0, self.update_plot)
 
             time.sleep(0.5)
-
 
     def simulate_temperature(self):
         """Simulate temperature changes"""
