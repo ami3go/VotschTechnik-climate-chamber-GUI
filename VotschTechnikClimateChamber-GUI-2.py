@@ -571,6 +571,8 @@ class DarkThemeThermalChamber:
         self.log_text.see(tk.END)
         self.temp_entry.delete(0, tk.END)
         self.temp_entry.insert(0, f"{self.target_temp:.1f}")
+        self.status_var.set(f"Running at {self.target_temp}°C")
+        self.status_label.configure(background=self.get_temp_color(self.target_temp))
 
         # Update button colors
         self.custom_button.config(bg=self.get_temp_color(temp),
