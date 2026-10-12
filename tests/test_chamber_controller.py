@@ -94,7 +94,7 @@ class ControllerTests(unittest.TestCase):
     def _cleanup_manager(manager):
         try:
             manager.disconnect("device-1")
-        except ChamberSafetyError:
+        except ChamberError:
             pass
 
     def test_stop_invalidates_queued_setpoint_with_priority(self):
@@ -176,11 +176,12 @@ class ControllerTests(unittest.TestCase):
     def test_expired_setpoint_does_not_release_lock_or_continue_queued_writes(self):
         backend = SlowBackend("device-1")
         manager = self.manager(backend, timeout=0.15)
+        self.addCleanup(backend.release.set)
         errors = []
         def setpoint():
             try:
                 manager.set_temperature("device-1", 33)
-            except ChamberSafetyError as exc:
+            except ChamberError as exc:
                 errors.append(str(exc))
         thread = threading.Thread(target=setpoint)
         thread.start()
@@ -194,6 +195,10 @@ class ControllerTests(unittest.TestCase):
         with self.assertRaises(ChamberSafetyError):
             manager.set_temperature("device-1", 40)
         backend.release.set()
+        # A short command deadline is NOT a shutdown allowance for the
+        # fault-injection worker once its test gate is released.
+        manager._controller._timeout = 2.0
+        manager.disconnect("device-1")
 
     def test_running_readback_after_verified_stop_is_unknown(self):
         backend = CountingBackend("device-1")
