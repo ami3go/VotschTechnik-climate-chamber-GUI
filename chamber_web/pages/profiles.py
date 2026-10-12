@@ -383,7 +383,6 @@ def profiles_page() -> None:
                     grid = ui.aggrid({
                         "columnDefs": columns,
                         "rowData": [],
-                        "getRowId": "params => String(params.data.step)",
                         "defaultColDef": {"resizable": True, "sortable": False},
                         "singleClickEdit": True,
                         "stopEditingWhenCellsLoseFocus": True,
