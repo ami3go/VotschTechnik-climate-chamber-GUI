@@ -59,6 +59,9 @@ class ParsedProfile:
     legacy_original: bytes | None = None
     migration_warning: str | None = None
     name: str = "Imported Profile"
+    description: str = ""
+    repeat_count: int = 1
+    completion_action: str = "STOP"
 
 
 def _rows(data: bytes):
@@ -176,10 +179,21 @@ def _checksum(content: bytes) -> str:
 
 def export_profile_zip(profile: ParsedProfile) -> bytes:
     """Lossless canonical profile with retained legacy original, if present."""
+    if not isinstance(profile.name, str) or not 1 <= len(profile.name) <= 160:
+        raise ValueError("Invalid profile name")
+    if not isinstance(profile.description, str) or len(profile.description) > 4096:
+        raise ValueError("Invalid profile description")
+    if type(profile.repeat_count) is not int or not 1 <= profile.repeat_count <= 100:
+        raise ValueError("Invalid repeat count")
+    if profile.completion_action != "STOP":
+        raise ValueError("Only STOP is approved as completion action")
     csv_data = export_profile_csv(profile)
     metadata = {
         "schema_version": 1,
         "name": profile.name,
+        "description": profile.description,
+        "repeat_count": profile.repeat_count,
+        "completion_action": profile.completion_action,
         "profile_csv_sha256": _checksum(csv_data),
         "legacy_csv_sha256": (
             _checksum(profile.legacy_original)
@@ -233,4 +247,14 @@ def import_profile_zip(content: bytes) -> ParsedProfile:
         warning = manifest.get("migration_warning")
         if warning is not None and not isinstance(warning, str):
             raise ValueError("Invalid migration warning")
-        return ParsedProfile(parsed.steps, legacy, warning, name)
+        description = manifest.get("description")
+        repeat_count = manifest.get("repeat_count")
+        action = manifest.get("completion_action")
+        if not isinstance(description, str) or len(description) > 4096:
+            raise ValueError("Invalid profile description")
+        if type(repeat_count) is not int or not 1 <= repeat_count <= 100:
+            raise ValueError("Invalid repeat count")
+        if action != "STOP":
+            raise ValueError("Only STOP is approved as completion action")
+        return ParsedProfile(parsed.steps, legacy, warning, name, description,
+                             repeat_count, action)

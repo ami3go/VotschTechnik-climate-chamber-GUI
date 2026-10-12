@@ -50,6 +50,21 @@ class ProfileV1Tests(unittest.TestCase):
         self.assertEqual(parsed.legacy_original, LEGACY)
         self.assertEqual(parsed.steps, self.profile.steps)
 
+    def test_bundle_preserves_profile_level_settings(self):
+        profile = ParsedProfile(
+            self.profile.steps, self.profile.legacy_original,
+            self.profile.migration_warning, "Cycle X", "thermal soak", 4, "STOP",
+        )
+        restored = import_profile_zip(export_profile_zip(profile))
+        self.assertEqual(restored, profile)
+
+    def test_unapproved_completion_action_rejected(self):
+        profile = ParsedProfile(
+            self.profile.steps, name="Trial", completion_action="HOLD_SETPOINT",
+        )
+        with self.assertRaisesRegex(ValueError, "STOP"):
+            export_profile_zip(profile)
+
     def test_bad_digest_is_rejected(self):
         bundle = export_profile_zip(self.profile)
         with ZipFile(io.BytesIO(bundle)) as original:
