@@ -69,10 +69,12 @@ class WebViewsTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(UnavailableEventReader().list_events("one").available)
 
     def test_unknown_fault_stale_hide_previous_verified_temperatures(self):
+        from chamber_web.domain.chamber import ChamberCapabilities
         from chamber_web.services.dashboard import DashboardView
         now = datetime.now(timezone.utc)
         original = DashboardView("one", measured_temperature_c=33.0,
                                  setpoint_temperature_c=25.0,
+                                 capabilities=ChamberCapabilities(-20, 80, True, True, True),
                                  quality=ReadingQuality.GOOD,
                                  sampled_at_utc=now,
                                  operation_state=OperationState.RUNNING)
