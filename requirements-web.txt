@@ -1,0 +1,3 @@
+# NiceGUI 3+ supports e.file.text() uploads and the ECharts component.
+# Offline Windows packaging will freeze a pinned, tested version via a lockfile.
+nicegui>=3.5,<5.0
