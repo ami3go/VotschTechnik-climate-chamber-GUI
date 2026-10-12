@@ -13,7 +13,7 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 | H3 | HIGH | Zero-stability, gaps, deadline ambiguity | P00 virtual-clock semantics + G06 tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
 | H4 | HIGH | Loopback hardware authentication gate too late | G08-min prerequisite to G05 and live HIL | SEQUENCE CORRECTED; CODE OPEN |
 | H5 | HIGH | Previous finding IDs undefined | This ledger and sequence linkage, P00 PR #6 | CLOSED (documentation) |
-| H6 | HIGH | Legacy demo CSV migration ambiguous | GUI PR #8 `2ef81b6` adds strict parser, original-preserving canonical ZIP and tests; UI integration pending | CORE FIX MERGED; G03 UI/DB OPEN |
+| H6 | HIGH | Legacy demo CSV migration ambiguous | GUI PR #8 `2ef81b6` adds strict parser and legacy-source-preserving ZIP; [GUI PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) adds transactional SQLite revisions with strict schema checks. G03-C UI/editor still pending | CORE VERIFIED; STORAGE IN PR #12; UI OPEN |
 | H7 | HIGH | SQLite/filesystem crash gap | G07 journal/recovery/fault tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
 | H8 | HIGH | CI/dependency/driver pin insufficient | [GUI #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10) `ef473e1` pins direct dependencies and driver revision; [Windows CI green](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38261039285). Hash-locked transitive freeze, typing and offline VM gates pending | PARTIAL — release gate OPEN |
 | M1 | MEDIUM | One-device multi-vendor architecture unproven | GUI PR #7 `c978ef9` and follow-up #9 `e8519ad`, Windows 3.10/3.12 CI | G01 FOUNDATION MERGED; G04 CONTROL OPEN |
