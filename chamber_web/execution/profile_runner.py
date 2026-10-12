@@ -592,7 +592,7 @@ class ProfileRunner:
             await asyncio.sleep(self._snapshot.parameters.poll_s)
 
     def pause(self, chamber_id: str) -> None:
-        self._check_action(chamber_id, "profile.pause")
+        self._check_action(chamber_id, "profile.pause", require_owner=True)
         with self._mutex:
             if self._state not in (RunState.REACHING, RunState.STABILIZING, RunState.DWELLING):
                 raise ChamberSafetyError("Pause only during running observation stages")
@@ -603,8 +603,11 @@ class ProfileRunner:
             self._dwell_elapsed = 0.0
             self._transition(RunState.PAUSED, "Logical pause; chamber remains RUNNING")
 
+    async def pause_async(self, chamber_id: str) -> None:
+        await asyncio.to_thread(self.pause, chamber_id)
+
     def resume(self, chamber_id: str) -> None:
-        self._check_action(chamber_id, "profile.resume")
+        self._check_action(chamber_id, "profile.resume", require_owner=True)
         with self._mutex:
             if self._state is not RunState.PAUSED:
                 raise ChamberSafetyError("Run is not paused")
@@ -615,11 +618,18 @@ class ProfileRunner:
             )
             self._transition(RunState.REACHING, "Qualification restarted after pause")
 
-    def _check_action(self, chamber_id: str, action: str) -> None:
+    async def resume_async(self, chamber_id: str) -> None:
+        await asyncio.to_thread(self.resume, chamber_id)
+
+    def _check_action(self, chamber_id: str, action: str, *,
+                      require_owner: bool = False) -> None:
         validate_chamber_id(chamber_id)
         if chamber_id != self._id:
             raise ChamberSafetyError("Wrong chamber for profile action")
-        self._permission(action)
+        principal = self._permission(action)
+        if require_owner and (self._snapshot is None or
+                              principal != self._snapshot.operator_id):
+            raise ChamberSafetyError("Pause/resume reserved for current operator")
 
     def cancel(self, chamber_id: str) -> None:
         """Fence STOP even if advance() is blocked on G04 synchronous I/O.
