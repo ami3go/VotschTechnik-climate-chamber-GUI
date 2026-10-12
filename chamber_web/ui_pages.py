@@ -47,7 +47,7 @@ def render_navigation(active: str, *, context: NavigationContext | None = None) 
     ui.label("Visteon").classes("brand")
     for icon, title, destination in NAV_ITEMS:
         with ui.button(icon=icon, on_click=lambda url=destination: ui.navigate.to(url)).props(
-            "flat no-caps align=left"
+            f'flat no-caps align=left aria-label="{title}" title="{title}"'
         ).classes("nav-active" if destination == active else ""):
             ui.label(title).classes("nav-text")
     ui.label("Climate Chamber | G02-B\nServer-side simulation only").classes(

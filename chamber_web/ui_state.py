@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import timezone
+import math
 
 from chamber_web.domain.chamber import OperationState, ReadingQuality
 from chamber_web.services.dashboard import DashboardView
@@ -29,20 +30,24 @@ def project_telemetry(view: DashboardView) -> TelemetryDisplay:
     if stamp is None or stamp.tzinfo is None:
         good = False
     identity = view.identity
-    mode = "SIMULATION" if identity is None or identity.is_simulation else "READ ONLY"
+    mode = ("IDENTITY UNVERIFIED" if identity is None else
+            "SIMULATION" if identity.is_simulation else "READ ONLY")
     identity_text = (
         f"{identity.manufacturer} {identity.model} · {identity.backend_id} · {identity.chamber_id}"
         if identity else f"Identity unverified · {view.chamber_id}"
     )
-    operation = view.operation_state.value if good else OperationState.UNKNOWN.value
-    if view.operation_state is OperationState.FAULT:
+    can_read_running = bool(view.capabilities and view.capabilities.supports_running_readback)
+    operation = (view.operation_state.value if good and can_read_running
+                 else OperationState.UNKNOWN.value)
+    if good and view.operation_state is OperationState.FAULT:
         operation = "FAULT"
     # A fault is never interpreted as healthy even with a nominal GOOD reading.
     verified = good and view.operation_state not in (OperationState.FAULT, OperationState.UNKNOWN)
     measured = (f"{view.measured_temperature_c:.1f} °C"
                 if verified and view.measured_temperature_c is not None else "— (unverified)")
     setpoint = (f"{view.setpoint_temperature_c:.1f} °C"
-                if verified and view.setpoint_temperature_c is not None else "— (unverified)")
+                if (verified and view.capabilities and view.capabilities.supports_setpoint_readback
+                    and view.setpoint_temperature_c is not None) else "— (unverified)")
     sampled = stamp.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC") if good else "Unavailable"
     message = (view.error or (
         "Equipment fault — operation is unsafe to infer" if operation == "FAULT"
@@ -67,10 +72,13 @@ class CapabilityDisplay:
 
 def project_capabilities(view: DashboardView) -> CapabilityDisplay:
     caps = view.capabilities
-    if caps is None:
+    if (caps is None or not math.isfinite(caps.temperature_min_c)
+            or not math.isfinite(caps.temperature_max_c)
+            or caps.temperature_min_c >= caps.temperature_max_c):
         return CapabilityDisplay("Unverified", *("Unavailable",) * 5,
                                  "Capabilities not available; all controls disabled")
-    supported = lambda enabled: "Supported (read-only)" if enabled else "Unsupported"
+    def supported(enabled):
+        return "Supported (read-only)" if enabled else "Unsupported"
     # No setting can unlock physical commands in the G02-B UI.
     reason = ("Physical controls disabled: G08-min authorization, site safety "
               "approval and HIL verification required")

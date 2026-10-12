@@ -86,6 +86,21 @@ class WebViewsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(value.setpoint, "— (unverified)")
         self.assertEqual(value.sampled_utc, "Unavailable")
 
+    def test_no_identity_or_readback_never_claimed_verified(self):
+        from chamber_web.domain.chamber import ChamberCapabilities
+        from chamber_web.services.dashboard import DashboardView
+        now = datetime.now(timezone.utc)
+        view = DashboardView("one", measured_temperature_c=30.0,
+                             setpoint_temperature_c=25.0,
+                             sampled_at_utc=now, quality=ReadingQuality.GOOD,
+                             operation_state=OperationState.RUNNING)
+        self.assertEqual(project_telemetry(view).mode, "IDENTITY UNVERIFIED")
+        self.assertEqual(project_telemetry(view).operation, "UNKNOWN")
+        missing_readback = replace(view, capabilities=ChamberCapabilities(
+            -20, 80, True, False, False))
+        self.assertEqual(project_telemetry(missing_readback).operation, "UNKNOWN")
+        self.assertEqual(project_telemetry(missing_readback).setpoint, "— (unverified)")
+
     def test_limit_and_reader_bounds(self):
         self.assertEqual(len(bounded_search("X" * 10000)), 120)
         with self.assertRaises(ValueError):
