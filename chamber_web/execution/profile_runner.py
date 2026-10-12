@@ -187,6 +187,7 @@ class ProfileRunner:
         self._step_started = 0.0
         self._step_index = 0
         self._last_good: float | None = None
+        self._last_source_timestamp: datetime | None = None
         self._stable_from: float | None = None
         self._stable_count = 0
         self._dwell_elapsed = 0.0
@@ -339,6 +340,7 @@ class ProfileRunner:
                 self._prepared = False
                 self._stop_future = None
                 self._stable_from = self._last_good = None
+                self._last_source_timestamp = None
                 self._stable_count = 0
                 self._dwell_elapsed = 0.0
                 if self._sink is not None:
@@ -475,6 +477,14 @@ class ProfileRunner:
                            self._snapshot.capabilities.temperature_max_c)
         self._emit("SAMPLE", temperature=sample.measured_temperature_c,
                    quality=sample.quality)
+        source_time = sample.sampled_at_utc
+        assert source_time is not None
+        if self._last_source_timestamp is not None:
+            if source_time < self._last_source_timestamp:
+                raise ChamberSafetyError("Telemetry source timestamp moved backwards")
+            if source_time == self._last_source_timestamp:
+                return  # Cached reading cannot become a second observation.
+        self._last_source_timestamp = source_time
         # No extrapolation or credit for duplicate timestamps/sparse polls.
         gap = None if self._last_good is None else now - self._last_good
         if gap is not None and gap < 0:
