@@ -266,8 +266,11 @@ class ChamberController:
         age = (datetime.now(timezone.utc) - timestamp).total_seconds()
         if not -1 <= age <= self._max_age:
             raise ChamberSafetyError("Readback outside freshness window")
-        if snapshot.operation_state in (OperationState.UNKNOWN, OperationState.FAULT):
+        if snapshot.operation_state not in (OperationState.STOPPED, OperationState.RUNNING):
             raise ChamberSafetyError("Readback reports unknown/fault")
+        target = snapshot.setpoint_temperature_c
+        if target is not None and not math.isfinite(target):
+            raise ChamberSafetyError("Readback setpoint must be finite")
         measured = snapshot.measured_temperature_c
         if measured is None or not math.isfinite(measured):
             raise ChamberSafetyError("Readback measurement must be finite")
@@ -416,7 +419,9 @@ class ChamberController:
             self._poll_stop.clear()
             def loop():
                 while not self._poll_stop.wait(interval_s):
-                    self.status(self.chamber_id)  # bounded, queued, never in UI loop
+                    # Avoid an unbounded queue of polls behind a hung driver.
+                    if self._queue.qsize() == 0:
+                        self.status(self.chamber_id)  # outside UI event loop
             self._poll_thread = threading.Thread(
                 target=loop, daemon=True, name="chamber-poll-" + self.chamber_id,
             )
