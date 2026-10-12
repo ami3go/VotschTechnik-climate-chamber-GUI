@@ -4,13 +4,20 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
+from io import BytesIO
+from threading import Barrier
+from unittest.mock import patch
+from zipfile import ZIP_DEFLATED, ZipFile
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
 from chamber_web.domain.chamber import ChamberSafetyError
-from chamber_web.domain.profile import export_profile_zip, import_profile_zip, parse_profile_csv
+from chamber_web.domain.profile import (
+    MAX_BYTES, export_profile_csv, export_profile_zip, import_profile_zip, parse_profile_csv,
+)
 from chamber_web.persistence.profiles import (
     ProfileConflictError, ProfileNotFoundError, ProfileSchemaError, ProfileStore,
 )
@@ -131,6 +138,58 @@ class ProfileStoreTests(unittest.TestCase):
         self.assertEqual(self.store.get_revision("alpha", saved.profile_id).source_format, "zip")
         self.assertEqual(import_profile_zip(self.store.export_revision_zip("alpha", saved.profile_id)),
                          import_profile_zip(archive))
+
+    def test_oversized_profile_fields_rejected_before_zip_compression(self):
+        step = self.profile.steps[0]
+        invalid = (
+            replace(self.profile, steps=(replace(step, notes="N" * (MAX_BYTES + 1)),)),
+            replace(self.profile, migration_warning="W" * (MAX_BYTES + 1)),
+            replace(self.profile, legacy_original=b"L" * (MAX_BYTES + 1)),
+        )
+        for profile in invalid:
+            with self.subTest(field=type(profile).__name__):
+                # A rejected payload must never reach compression or a DB write.
+                with patch("chamber_web.domain.profile.ZipFile",
+                           side_effect=AssertionError("ZIP created before validation")):
+                    with self.assertRaises(ValueError):
+                        self.store.create_profile("alpha", profile)
+        self.assertEqual(self.store.list_profiles("alpha"), ())
+
+    def test_malformed_zip_manifest_is_validation_error(self):
+        buffer = BytesIO()
+        with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
+            archive.writestr("profile.csv", export_profile_csv(self.profile))
+            archive.writestr("profile.json", "[]")
+        with self.assertRaisesRegex(ValueError, "manifest"):
+            self.store.import_profile("alpha", buffer.getvalue(), filename="bad.zip")
+        self.assertEqual(self.store.list_profiles("alpha"), ())
+
+    def test_concurrent_revision_writers_have_one_winner(self):
+        header = self.store.create_profile("alpha", self.profile)
+        barrier = Barrier(8)
+
+        def save(index):
+            barrier.wait()
+            try:
+                return self.store.save_revision(
+                    "alpha", header.profile_id,
+                    replace(self.profile, name=f"Writer {index}"),
+                    expected_revision=1,
+                )
+            except ProfileConflictError:
+                return None
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(save, range(8)))
+        winners = [result for result in results if result is not None]
+        self.assertEqual(len(winners), 1)
+        self.assertEqual(winners[0].current_revision, 2)
+        self.assertEqual(self.store.get_revision("alpha", header.profile_id).revision, 2)
+        with _sqlite(self.db_path) as db:
+            self.assertEqual(db.execute(
+                "SELECT COUNT(*) FROM profile_revisions WHERE profile_id=?",
+                (header.profile_id,),
+            ).fetchone()[0], 2)
 
     def test_immutability_trigger_blocks_unexpected_sql_updates(self):
         saved = self.store.create_profile("alpha", self.profile)
