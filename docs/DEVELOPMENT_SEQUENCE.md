@@ -94,7 +94,7 @@ The following labels are **not existing GitHub PR numbers**. Each row must be a 
 
 - [PR #19](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/19) implements the mock-only serialized controller, OS/SQLite lease generation, STOP priority and readback, single-live-controller cardinality, and G02-A dashboard compatibility.
 - [Windows CI run 38282962585](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38282962585) passed Python 3.10 and 3.12 on code head `c1df1a2`, following regression tests for operator handover, disconnect queue fencing and stale readback. The final review/documentation head must separately pass required checks before merging.
-- New code-level HIGH findings (handover race, unfenced disconnect, stale shutdown STOP proof) were fixed with deterministic mock regressions; the precise review scope and limitations are in [G04-A contracts](G04_A_CONTROLLER_CONTRACT.md).
+- New code-level HIGH findings (handover race, unfenced disconnect, stale shutdown STOP proof, and an in-flight START completing after disconnect intent) were fixed with deterministic mock regressions; the precise review scope and limitations are in [G04-A contracts](G04_A_CONTROLLER_CONTRACT.md).
 - **This is AI-assisted software review; no human/site approval or real chamber testing has been performed.** G08-min, P00 safety signoff and HIL gate remain blockers to live operations.
 
 ## Required design-review artifacts at P00
