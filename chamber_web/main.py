@@ -1,11 +1,10 @@
 """NiceGUI read-only Dashboard bound to the server-owned generic service.
 
 G02-A exposes no chamber mutations, no page-owned chamber state, and no hardware.
-The legacy CSV editor remains a browser-local unpersisted draft until G03-C.
+G03-C provides the persistent editor at /profiles. The Dashboard draft profile\npreview is non-executable G02-A/G02-B demonstration state.
 """
 from __future__ import annotations
 
-import math
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,13 +15,12 @@ from .bootstrap import create_demo_dashboard_service
 
 from .model import (
     MAX_TEMP, MIN_TEMP, Step, default_steps,
-    export_profile_csv, import_profile_csv,
 )
 
 
 @dataclass
 class ProfileDraft:
-    """Unpersisted per-page profile editing data, not chamber/control state."""
+    """Non-executable Dashboard preview data; G03-C editing is separate."""
     profile_name: str = "Temperature Cycle – Automotive"
     steps: list[Step] = field(default_factory=default_steps)
     logs: list[dict] = field(default_factory=list)
@@ -74,114 +72,12 @@ def dashboard() -> None:
     # Local drafts are not executable runs or chamber state.
     state = ProfileDraft()
 
-    def warn_while_running() -> bool:
-        # No runnable profile engine exists in G02-A.
-        return False
-
     def scroll_to(section: str) -> None:
         # Section names are fixed in this module, never user-controlled.
         ui.run_javascript(
             f"document.getElementById({section!r})?.scrollIntoView("
             "{behavior:'smooth',block:'start'})"
         )
-
-    def export_csv() -> None:
-        try:
-            content = export_profile_csv(state.steps)
-            ui.download.content(content, "temperature_profile.csv", "text/csv")
-            state.log("Profile exported")
-        except ValueError as exc:
-            ui.notify(str(exc), color="negative")
-
-    async def import_csv(event) -> None:
-        if warn_while_running():
-            return
-        try:
-            content = await event.file.text()
-            loaded = import_profile_csv(content)
-        except (ValueError, UnicodeError, TypeError, OverflowError) as exc:
-            ui.notify(f"Invalid CSV: {exc}", color="negative")
-            return
-        state.steps = loaded
-        state.step_index = 0
-        state.run_steps = []
-        state.completed = False
-        state.log(f"Imported {len(loaded)} profile steps")
-        editor_rows.refresh()
-        step_overview.refresh()
-        import_dialog.close()
-        ui.notify("Profile imported", color="positive")
-
-    def new_profile() -> None:
-        if warn_while_running():
-            return
-        state.steps = default_steps()
-        state.profile_name = "New Temperature Profile"
-        state.run_steps = []
-        state.step_index = 0
-        state.completed = False
-        name_input.value = state.profile_name
-        editor_rows.refresh()
-        step_overview.refresh()
-        state.log("Created new draft profile")
-
-    def add_step() -> None:
-        if warn_while_running():
-            return
-        state.steps.append(Step(25, 5, 2, 600, "New step"))
-        editor_rows.refresh()
-        step_overview.refresh()
-
-    def duplicate_step() -> None:
-        if warn_while_running():
-            return
-        step = state.steps[-1]
-        state.steps.append(Step(step.target, step.ramp, step.tolerance,
-                                step.dwell, step.description, step.enabled))
-        editor_rows.refresh()
-        step_overview.refresh()
-
-    def delete_step(step: Step) -> None:
-        if warn_while_running():
-            return
-        if len(state.steps) <= 1:
-            ui.notify("A profile needs at least one step", color="warning")
-            return
-        state.steps.remove(step)
-        state.step_index = min(state.step_index, len(state.steps) - 1)
-        editor_rows.refresh()
-        step_overview.refresh()
-
-    def set_field(step: Step, field: str, value) -> None:
-        if warn_while_running():
-            return
-        if value is None:
-            return
-        if field == "description":
-            setattr(step, field, str(value))
-        elif field == "enabled":
-            setattr(step, field, bool(value))
-        else:
-            try:
-                number = float(value)
-                if not math.isfinite(number):
-                    raise ValueError("non-finite value")
-                if field == "dwell" and not number.is_integer():
-                    raise ValueError("Dwell must be whole seconds")
-                setattr(step, field, int(number) if field == "dwell" else number)
-            except (ValueError, TypeError, OverflowError) as exc:
-                ui.notify(f"Invalid {field}: {exc}", color="negative")
-                return
-        step_overview.refresh()
-
-    with ui.dialog() as import_dialog:
-        with ui.card().classes("w-96"):
-            ui.label("Import profile CSV").classes("text-lg font-bold")
-            ui.label("Required columns: target, ramp, tolerance, dwell, description, enabled").classes(
-                "text-xs text-grey-7")
-            ui.upload(on_upload=import_csv, auto_upload=True, max_file_size=1_000_000).props(
-                "accept=.csv").classes("w-full")
-            ui.button("Close", on_click=import_dialog.close).props("flat")
 
     with ui.dialog() as settings_dialog:
         with ui.card().classes("w-96"):
