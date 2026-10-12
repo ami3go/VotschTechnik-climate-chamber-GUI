@@ -373,13 +373,16 @@ class ChamberController:
         with self._state_lock:
             if not self._connected or not self._stop_latched:
                 raise ChamberSafetyError("No STOP/UNKNOWN latch to reconcile")
+            reconcile_generation = self._generation
         snapshot = self._submit(
             "reconcile", lambda: self._require_readback(self._backend.read_status()),
             priority=0,
         )
-        if snapshot.operation_state is not OperationState.STOPPED:
-            raise ChamberSafetyError("Manual reconciliation requires verified STOPPED")
         with self._state_lock:
+            if reconcile_generation != self._generation or not self._stop_latched:
+                raise ChamberSafetyError("Reconciliation superseded by newer STOP/FAULT")
+            if snapshot.operation_state is not OperationState.STOPPED:
+                raise ChamberSafetyError("Manual reconciliation requires verified STOPPED")
             self._lease.reconcile()
             self._last_snapshot = snapshot
             self._stop_latched = False
