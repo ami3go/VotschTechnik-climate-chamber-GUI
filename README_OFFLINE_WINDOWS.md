@@ -121,3 +121,19 @@ Architecture: one configured chamber and one server/owner per per-user
 deployment; alternate manufacturer stub used only in **sequential tests**.
 There is no fleet selector, multi-controller process or physical I/O
 path in this W01 build.
+
+## G08-min first-administrator setup (standalone offline build)
+
+From a LOCAL interactive PowerShell console (not a browser or automation),
+run `server\\ClimateChamberServer.exe --bootstrap-admin` **once** before
+using the web launcher. Enter a unique administrator username and password
+at hidden prompts. No Python interpreter, online account, preinstalled
+credentials or network access is required. The command refuses noninteractive
+use and refuses any repeat bootstrap. The W01 bundle remains SIMULATION ONLY;
+no physical device operations are enabled. The administrator store and
+persistent session-cookie signing key reside under
+`%USERPROFILE%\\.chamber_web\\security` unless overridden via
+`CHAMBER_SECURITY_DIR`. Ensure this directory has restrictive NTFS ACLs;
+Windows ACL certification, account recovery, backups and LAN/TLS are full
+G08/W02 work. See [G08-min security contract](docs/G08_MIN_SECURITY.md)
+(in source checkout; not yet certified as part of W01 offline bundle).
