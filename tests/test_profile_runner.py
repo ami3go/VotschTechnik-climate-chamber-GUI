@@ -548,6 +548,14 @@ class RunnerTests(unittest.TestCase):
         self.runner.advance()
         self.terminal(RunState.COMPLETED)
 
+    def test_closed_runner_rejects_new_starts(self):
+        snapshot = self.prepare()
+        self.runner.cancel("unit-chamber")
+        self.terminal(RunState.CANCELLED)
+        self.runner.close()
+        with self.assertRaisesRegex(ChamberSafetyError, "Runner is closed"):
+            self.runner.start("unit-chamber", snapshot.profile_id, revision=1)
+
     def test_post_stop_requires_explicit_reconciliation(self):
         self.prepare()
         self.runner.advance()
