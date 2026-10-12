@@ -318,7 +318,7 @@ def profiles_page() -> None:
             ui.label("Legacy CSV needs an explicit reach timeout. Its demo ramp is NOT a "
                      "physical gradient. ZIP keeps legacy originals and provenance.").classes(
                          "text-sm text-orange-9")
-            legacy_timeout = ui.number("Legacy reach timeout (seconds)", value=3600,
+            legacy_timeout = ui.number("Legacy reach timeout (seconds)",
                                        min=1, max=2592000).props("outlined")
             ui.upload(on_upload=import_file, auto_upload=True,
                       max_file_size=2 * MAX_BYTES).props("accept=.csv,.zip").classes("w-full")
