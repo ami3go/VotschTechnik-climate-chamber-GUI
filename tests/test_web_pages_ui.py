@@ -10,7 +10,7 @@ async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], Us
         ("/history", "Run History"),
         ("/logs", "Persistent Event Logs"),
         ("/settings", "Server Configuration (read-only)"),
-        ("/profiles", "Profiles editor — G03-C"),
+        ("/profiles", "Persistent Profiles / Revisions"),
     ):
         await user.open(url)
         await user.should_see(heading)
