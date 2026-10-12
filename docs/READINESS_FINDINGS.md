@@ -37,7 +37,7 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 ## G04-A mock-only safety review (PR #19)
 
 - [G04-A PR #19](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/19) adds one exclusive controller, per-ID persisted STOP generations, mock-only I/O, priority STOP, readback and conservative UNKNOWN/FAULT. [Windows CI 38282962585](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38282962585) passed 3.10/3.12 on earlier code head `c1df1a2`. The **final documentation/code head** still requires checks before merge.
-- Reviewed safety-sensitive HIGH failures: old operator's queued write after handover, un-fenced queued write during disconnect, and stale STOPPED snapshot accepted at shutdown. All have mock regression tests and corrective code on PR #19; see [controller review evidence](G04_A_CONTROLLER_CONTRACT.md).
+- Reviewed safety-sensitive HIGH failures: old operator's queued write after handover, un-fenced queued write during disconnect, stale STOPPED snapshot accepted at shutdown, and a START completing in-flight after disconnect intent. All have mock regression tests and corrective code on PR #19; see [controller review evidence](G04_A_CONTROLLER_CONTRACT.md).
 - Remaining blockers are explicitly not closed: authenticated/authorized/audited mutations under G08-min; site-signed envelope and physical STOP/fault policy; bounded transport and physical HIL. Review is AI-assisted, **not human/site signoff**, and no physical device operation is enabled.
 
 ## Independent follow-up on merged PR #12
