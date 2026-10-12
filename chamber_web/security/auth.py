@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 import re
 import secrets
 import sqlite3
@@ -53,7 +52,7 @@ _SCRYPT_R = 8
 _SCRYPT_P = 1
 _DUMMY_SALT = b"no-user-salt-16!"
 _DUMMY_HASH = hashlib.scrypt(b"no-such-user-password", salt=_DUMMY_SALT,
-                             n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32)
+                             n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32, maxmem=64 * 1024 * 1024)
 
 
 def _password_bytes(password: str) -> bytes:
