@@ -1,6 +1,6 @@
 # NiceGUI web migration and profile execution plan
 
-Status: REVISED PROPOSAL — documentation only; hardware release remains NO-GO until production blockers, signed safety policy, HIL and offline gates pass. Authoritative phased backlog: [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md).
+Status: **ACTIVE SPECIFICATION / PARTIALLY IMPLEMENTED** (GUI `main` `ef473e1`, driver `main` `9323e37`, verified 2026-10-12). D01 driver transport, G01 backend foundation, P00 software contracts and G03 CSV/ZIP core have merged. The web GUI is still a demo without production control/persistence/authentication/runner; physical release remains **NO-GO** pending site signoff, HIL and offline gates. Current phase statuses and proposed PR sequence: [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md); findings: [READINESS_FINDINGS.md](READINESS_FINDINGS.md).
 Repositories reviewed: [GUI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI) main and [Python driver](https://github.com/ami3go/VotschTechnik-climate-chamber-Python) main (2026-10-12).
 Owner decision: The NiceGUI web application replaces Tkinter. Desktop GUI support will be discontinued after web acceptance.
 
@@ -18,7 +18,15 @@ Non-goals for initial release: browser-to-chamber protocol, firmware programming
 
 ## 2. Verified current implementation and gaps
 
-### GUI repository
+### Current implementation, post-fix (2026-10-12)
+
+- The NiceGUI `chamber_web/main.py` continues to use the demo simulator; generic G01 backends are **not yet connected to the pages or production controller**.
+- G01 abstraction, stable chamber identity, fake/alternate/mock Vötsch adapters and one-device guard are merged in [GUI #7](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/7) and [#9](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/9); physical Vötsch connections deliberately remain disabled.
+- G03 CSV/ZIP profile core and lossless legacy-source ZIP preservation are merged in [GUI #8](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/8), without SQLite revision storage, AG Grid editor, profile runner or run recorder.
+- D01 driver transport/STOP uncertainty improvements are merged in [driver #2](https://github.com/ami3go/VotschTechnik-climate-chamber-Python/pull/2) (`9323e37`) and pinned by [GUI #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10). Automated driver tests pass, **physical STOP/framing is not HIL certified**.
+- The following original Tkinter and pre-D01 driver observations are **historical audit context**, not a claim that these merged foundations remain absent.
+
+### Legacy Tkinter GUI baseline (historical)
 - `VotschTechnikClimateChamber-GUI-2.py` is a ~706-line monolithic Tkinter/Matplotlib application: `DarkThemeThermalChamber`.
 - `create_control_tab` (~lines 89–287): IP/connect/disconnect, ID/status, current/target readings, presets, slider/manual temperature, start/stop and live plot.
 - `create_settings_tab` (~lines 288–345): chamber IP, temperature bounds, and ramp-rate input.
@@ -28,16 +36,16 @@ Non-goals for initial release: browser-to-chamber protocol, firmware programming
 - `save_settings` (~374–424): validates ramp input but does not apply it to the driver or persist settings across application restarts. Updating displayed limits does not update limits of an already-connected driver instance.
 - `stop_chamber` (~606–619): calls `tcam.stop()` twice.
 - `read_temperature` (~621–650): worker thread mutates Tkinter variables and plots via a 0.5-second loop; raw points retained at most 10,000 in memory with no durable recording or measurement-quality indicator.
-- GUI README lists table/CSV temperature profiles only as a future feature. No installed dependency/CI/test or structured profile runner exists in the current tree.
+- The original desktop README listed table/CSV profiles as future work; the current NiceGUI tree now has CI and CSV/ZIP profile-core tests but still lacks a persistent editor and server-runner.
 - PyInstaller .spec, build outputs and .exe are tracked. No desktop maintenance after the defined web cutover.
 
 ### Python driver repository
 - Installable `VotschTechnikClimateChamber`, version 0.2.0; it is a separate dependency and the sole device protocol owner.
 - `ClimateChamber.py` supports `id`, `idn`, `temperature_measured`, `temperature_set_point`, `temperature_min/max`, `start()`, `stop()`, `is_running`, `gradient_up`, `gradient_down`, `disconnect()`; socket port 2049.
-- Driver uses synchronous TCP, an `RLock` for queries and a default 1-second socket timeout. Query uses `socket.send` followed by one `recv(512)`. A driver-reliability PR should add protocol-focused unit tests, bounded lifecycle behavior and safe full-send/response framing as verified against actual protocol. Do NOT reimplement protocol in GUI.
+- **Pre-D01 historical issue:** driver previously called `socket.send` with a single `recv(512)` and set timeout after connect. Driver `9323e37` now sets connection deadlines, uses `sendall`, and reads bounded frames under test. Site firmware behavior still requires HIL. Do NOT reimplement protocol in GUI.
 - `set_and_wait` is synchronous, polls with sleep, prints to console and has no abort/cancel or maximum time to reach the setpoint; **do not use it as the profile engine**.
 - Driver `gradient_up/down` setter ranges are 0.01–5 and 0.01–3.5 respectively, but practical units/model support MUST be verified with chamber documentation and VT4011 hardware before exposing them as °C/min.
-- Driver `tests/test_package.py` tests package exports, command lookup and one encoding path; there are no comprehensive mocked transport, failure or HIL tests.
+- `tests/test_package.py` covers package fundamentals; D01 added mocked transport/STOP/failure regression tests in `tests/test_transport.py`, passing Python 3.9/3.12. **Site-approved physical HIL remains absent.**
 - Driver command dictionary mentions native PROGRAM commands but there is no high-level upload/start/status API. Run web-created profiles by sequenced manual setpoints in v1, not by sending undocumented native program commands.
 
 ## 3. Target architecture
