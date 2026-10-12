@@ -174,6 +174,7 @@ class ProfileRunner:
         # STOP uses a separate caller from any potentially blocked poll/setpoint.
         self._stop_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="profile-stop")
         self._snapshot: ExecutionSnapshot | None = None
+        self._scheduled_steps: tuple[ProfileStep, ...] = ()
         self._state: RunState | None = None
         self._reason = ""
         self._events: deque[RunEvent] = deque(maxlen=1024)  # diagnostic, NOT G07
@@ -317,6 +318,7 @@ class ProfileRunner:
                 if latest.stop_latched or latest.generation != health.generation:
                     raise ChamberSafetyError("Controller generation changed during preparation")
                 self._t0 = self._now()
+                self._scheduled_steps = enabled * record.profile.repeat_count
                 self._snapshot = ExecutionSnapshot(
                     1, str(uuid4()), self._id, status.identity, caps,
                     record.header.profile_id, record.revision, record.sha256,
@@ -351,6 +353,7 @@ class ProfileRunner:
                 self._prepared = False
                 self._state = None
                 self._snapshot = None
+                self._scheduled_steps = ()
                 raise
 
     async def start_async(self, *args, **kwargs) -> ExecutionSnapshot:
@@ -358,7 +361,7 @@ class ProfileRunner:
 
     def _steps(self) -> tuple[ProfileStep, ...]:
         assert self._snapshot is not None
-        return self._snapshot.steps * self._snapshot.repeat_count
+        return self._scheduled_steps
 
     def _step(self) -> ProfileStep:
         return self._steps()[self._step_index]
