@@ -210,6 +210,52 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(manager.health("device-1").state, "UNKNOWN")
         self.assertTrue(manager.health("device-1").stop_latched)
 
+    def test_concurrent_stop_cannot_be_cleared_by_delayed_reconcile(self):
+        class PausedStatus(CountingBackend):
+            def __init__(self, chamber_id):
+                super().__init__(chamber_id)
+                self.pause = False
+                self.entered = threading.Event()
+                self.release = threading.Event()
+
+            def read_status(self):
+                if self.pause:
+                    self.entered.set()
+                    if not self.release.wait(4):
+                        raise TimeoutError("Injected delayed reconcile")
+                return super().read_status()
+
+        backend = PausedStatus("device-1")
+        manager = self.manager(backend, timeout=3)
+        manager.stop("device-1")
+        initial_gen = manager.health("device-1").generation
+        backend.pause = True
+        failures = []
+
+        def reconcile():
+            try:
+                manager.reconcile_stop("device-1")
+            except ChamberSafetyError as exc:
+                failures.append(str(exc))
+
+        reconciling = threading.Thread(target=reconcile)
+        reconciling.start()
+        self.assertTrue(backend.entered.wait(1))
+        backend.pause = False
+        stopping = threading.Thread(target=lambda: manager.stop("device-1"))
+        stopping.start()
+        deadline = time.monotonic() + 2
+        while manager.health("device-1").generation == initial_gen and time.monotonic() < deadline:
+            time.sleep(0.005)
+        self.assertGreater(manager.health("device-1").generation, initial_gen)
+        backend.release.set()
+        for thread in (reconciling, stopping):
+            thread.join(timeout=4)
+            self.assertFalse(thread.is_alive())
+        self.assertTrue(failures, "Old reconciliation must not clear a new STOP fence")
+        self.assertTrue(manager.health("device-1").stop_latched)
+        self.assertEqual(manager.health("device-1").state, "VERIFIED_STOPPED")
+
     def test_unreconciled_stop_persists_across_restart(self):
         manager = self.manager(CountingBackend("device-1"))
         manager.stop("device-1")
