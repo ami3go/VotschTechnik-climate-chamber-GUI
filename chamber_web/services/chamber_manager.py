@@ -63,6 +63,14 @@ class ChamberManager:
         self._check_id(chamber_id)
         return self._controller.health
 
+    def capabilities(self, chamber_id: str):
+        """G02-A compatibility: cached capabilities, never direct backend I/O."""
+        self._check_id(chamber_id)
+        caps = self._controller.capabilities
+        if caps is None:
+            raise ChamberSafetyError("Capabilities unavailable before verified identity")
+        return caps
+
     def set_temperature(self, chamber_id: str, target_c: float,
                         *, operator_token: str | None = None) -> None:
         self._check_id(chamber_id)
