@@ -133,6 +133,36 @@ class RunnerTests(unittest.TestCase):
         self.runner.advance()
         self.terminal(RunState.COMPLETED)
 
+    def test_cached_sample_cannot_qualify_stabilization(self):
+        self.prepare(step(stabilize="4"))
+        self.runner.advance()
+        cached = self.backend.read_status()
+        original = self.backend.read_status
+        self.backend.read_status = lambda: cached
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.STABILIZING)
+        self.clock.advance(4)
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.STABILIZING)
+        self.backend.read_status = original
+        self.clock.advance(1)
+        self.runner.advance()
+        self.terminal(RunState.COMPLETED)
+
+    def test_cached_sample_cannot_credit_dwell(self):
+        self.prepare(step(dwell="4"))
+        self.runner.advance()
+        original = self.backend.read_status
+        cached = original()
+        self.backend.read_status = lambda: cached
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.DWELLING)
+        self.clock.advance(4)
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.DWELLING)
+        self.runner.cancel("unit-chamber")
+        self.terminal(RunState.CANCELLED)
+
     def test_dwell_bracketed_and_inclusive_tolerance(self):
         self.prepare(step(dwell="4"))
         self.runner.advance()
