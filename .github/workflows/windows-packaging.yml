@@ -1,0 +1,115 @@
+name: W01-A Windows launcher and offline freeze feasibility
+
+on:
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "chamber_web/**"
+      - "README_OFFLINE_WINDOWS.md"
+      - "tests/test_windows_packaging.py"
+      - ".github/workflows/windows-packaging.yml"
+      - "requirements-web.txt"
+      - "requirements-hardware.txt"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - "chamber_web/**"
+      - "README_OFFLINE_WINDOWS.md"
+      - "tests/test_windows_packaging.py"
+      - ".github/workflows/windows-packaging.yml"
+      - "requirements-web.txt"
+      - "requirements-hardware.txt"
+  workflow_dispatch:
+
+jobs:
+  windows-freeze:
+    name: Windows x64 PyInstaller + simulated launch
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CHAMBER_PORT: "18765"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+      - name: Install W01 test tools
+        run: python -m pip install -r requirements-web.txt pytest==9.1.1 ruff==0.17.0
+      - name: Lint Windows code
+        run: python -m ruff check chamber_web/windows_runtime.py scripts/windows_launcher.py scripts/windows_server.py scripts/windows_manifest.py tests/test_windows_packaging.py --select E4,E7,E9,F
+      - name: Unit tests and Python syntax
+        run: |
+          python -m compileall -q chamber_web/windows_runtime.py scripts tests/test_windows_packaging.py
+          python -m pytest -q tests/test_windows_packaging.py
+      - name: Standalone launcher build
+        shell: pwsh
+        run: |
+          & ./scripts/build_windows_launcher.ps1 -Clean -Version 0.1.0-w01 -OutputDir "$env:RUNNER_TEMP/thin-launcher"
+          if (-not (Test-Path "$env:RUNNER_TEMP/thin-launcher/ClimateChamberLauncher.exe")) { throw "Thin launcher missing" }
+      - name: Frozen offline ZIP including pinned external driver
+        shell: pwsh
+        run: |
+          & ./scripts/build_windows_offline.ps1 -Clean -Version 0.1.0-w01 -OutputDir "$env:RUNNER_TEMP/bundles"
+          if (-not (Test-Path "$env:RUNNER_TEMP/bundles/ClimateChamber-Web-Windows-x64-0.1.0-w01-offline.zip")) { throw "Offline archive missing" }
+      - name: Extract, run, reuse, and reject foreign listener
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $zip = "$env:RUNNER_TEMP/bundles/ClimateChamber-Web-Windows-x64-0.1.0-w01-offline.zip"
+          $expected = ((Get-Content "$zip.sha256") -split " ")[0]
+          $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Offline archive digest mismatch" }
+          $extract = "$env:RUNNER_TEMP/offline-extracted"
+          Expand-Archive -LiteralPath $zip -DestinationPath $extract
+          $bundle = Join-Path $extract "ClimateChamber-Web-Windows-x64-0.1.0-w01-offline"
+          python ./scripts/windows_manifest.py --bundle "$bundle" --verify
+          if (-not (Test-Path (Join-Path $bundle "create_windows_shortcuts.ps1"))) { throw "Offline shortcut configurator missing" }
+          if ($LASTEXITCODE -ne 0) { throw "Manifest verification failed" }
+          $server = Join-Path $bundle "server/ClimateChamberServer.exe"
+          & $server --self-test --require-module VotschTechnikClimateChamber
+          if ($LASTEXITCODE -ne 0) { throw "Vendor package / adapter self-test failed" }
+          $launcher = Join-Path $bundle "ClimateChamberLauncher.exe"
+          try {
+            $firstLaunch = Start-Process -FilePath $launcher -ArgumentList "--no-browser" -PassThru
+            if (-not $firstLaunch.WaitForExit(60000)) { Stop-Process -Id $firstLaunch.Id -Force; throw "Launcher did not exit" }
+            if ($firstLaunch.ExitCode -ne 0) { throw "Initial launcher failed: $($firstLaunch.ExitCode)" }
+            $instancePath = Join-Path $env:LOCALAPPDATA "ClimateChamber/W01/instance.json"
+            $first = Get-Content $instancePath -Raw | ConvertFrom-Json
+            $secondLaunch = Start-Process -FilePath $launcher -ArgumentList @("--no-browser", "--check-only") -PassThru
+            if (-not $secondLaunch.WaitForExit(60000)) { Stop-Process -Id $secondLaunch.Id -Force; throw "Second launcher did not exit" }
+            if ($secondLaunch.ExitCode -ne 0) { throw "Launcher attach failed: $($secondLaunch.ExitCode)" }
+            $duplicate = Start-Process -FilePath $server -ArgumentList @("--port", "$env:CHAMBER_PORT") -PassThru -WindowStyle Hidden
+            if (-not $duplicate.WaitForExit(15000)) { Stop-Process -Id $duplicate.Id -Force; throw "Second server hung instead of rejecting lock" }
+            if ($duplicate.ExitCode -eq 0) { throw "Second server bypassed process lock" }
+            $second = Get-Content $instancePath -Raw | ConvertFrom-Json
+            if ($first.pid -ne $second.pid) { throw "Duplicate server created" }
+            $page = Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$env:CHAMBER_PORT/"
+            if ($page.StatusCode -ne 200 -or $page.Content -notmatch "Climate Chamber") {
+              throw "Frozen loopback page not reachable"
+            }
+          }
+          finally {
+            if (Test-Path (Join-Path $env:LOCALAPPDATA "ClimateChamber/W01/instance.json")) {
+              $running = Get-Content (Join-Path $env:LOCALAPPDATA "ClimateChamber/W01/instance.json") -Raw | ConvertFrom-Json
+              Stop-Process -Id $running.pid -Force -ErrorAction SilentlyContinue
+            }
+          }
+          Start-Sleep -Seconds 2
+          $foreign = Start-Process python -ArgumentList "-m http.server $env:CHAMBER_PORT --bind 127.0.0.1" -PassThru -WindowStyle Hidden
+          try {
+            Start-Sleep -Seconds 2
+            $foreignLaunch = Start-Process -FilePath $launcher -ArgumentList "--no-browser" -PassThru
+            if (-not $foreignLaunch.WaitForExit(60000)) { Stop-Process -Id $foreignLaunch.Id -Force; throw "Foreign-port launch hung" }
+            if ($foreignLaunch.ExitCode -eq 0) { throw "Foreign port incorrectly accepted" }
+          }
+          finally { Stop-Process -Id $foreign.Id -Force -ErrorAction SilentlyContinue }
+      - name: Upload W01 simulator artifact (NOT release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: W01-A-simulator-Windows-x64-not-certified
+          path: |
+            ${{ runner.temp }}/bundles/*.zip
+            ${{ runner.temp }}/bundles/*.sha256
+          retention-days: 7
