@@ -67,7 +67,7 @@ def _password_bytes(password: str) -> bytes:
 def _hash_password(raw: bytes) -> str:
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(raw, salt=salt, n=_SCRYPT_N, r=_SCRYPT_R,
-                            p=_SCRYPT_P, dklen=32)
+                            p=_SCRYPT_P, dklen=32, maxmem=64 * 1024 * 1024)
     return f"scrypt:{_SCRYPT_N}:{_SCRYPT_R}:{_SCRYPT_P}:{salt.hex()}:{digest.hex()}"
 
 
@@ -76,7 +76,7 @@ def _verify_password(password: str, stored: str | None) -> bool:
         return False
     if stored is None:
         hmac.compare_digest(hashlib.scrypt(password.encode(), salt=_DUMMY_SALT,
-                            n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32), _DUMMY_HASH)
+                            n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32, maxmem=64 * 1024 * 1024), _DUMMY_HASH)
         return False
     try:
         algorithm, n, r, p, salt, expected = stored.split(":")
@@ -84,7 +84,7 @@ def _verify_password(password: str, stored: str | None) -> bool:
                 "scrypt", _SCRYPT_N, _SCRYPT_R, _SCRYPT_P):
             return False
         computed = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt),
-                                  n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32)
+                                  n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32, maxmem=64 * 1024 * 1024)
         return hmac.compare_digest(computed, bytes.fromhex(expected))
     except (ValueError, TypeError):
         return False
