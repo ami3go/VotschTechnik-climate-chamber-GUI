@@ -29,3 +29,11 @@ G07 must provide HistoryReader.list_runs(chamber_id, search, limit) and EventRea
 ## Unresolved dependencies
 
 G03-C persisted Profiles editor; G07 durable run/event read endpoints; G08-min session/role/audit enforcement; G05 manual controls; G06 runner; signed P00 safety limits and HIL. All remain open outside this PR.
+
+## Second-pass implementation review
+
+- HIGH, fixed: unverified backend identity must never be called SIMULATION; UNKNOWN/FAULT and unsupported running readbacks cannot leave a verified operation.
+- HIGH, fixed: unsupported setpoint readback never displays a verified setpoint.
+- HIGH, fixed: banner mode must derive from current telemetry; capability envelopes are clearly labeled adapter-reported and not site-certified.
+- MEDIUM, fixed: fixed navigation items have accessible names, and G08 may supply session-verified allowed routes through install_navigation_resolver; client menus alone are not permission checks.
+- CI verification and release/site approval are separate from this review.

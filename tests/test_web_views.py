@@ -102,6 +102,15 @@ class WebViewsTests(unittest.IsolatedAsyncioTestCase):
             -20, 80, True, False, False))
         self.assertEqual(project_telemetry(missing_readback).operation, "UNKNOWN")
         self.assertEqual(project_telemetry(missing_readback).setpoint, "— (unverified)")
+        self.assertEqual(project_telemetry(missing_readback).measured, "— (unverified)")
+
+    def test_navigation_role_provider_can_fail_closed(self):
+        from chamber_web.ui_pages import NavigationContext, visible_navigation_routes
+        self.assertEqual(visible_navigation_routes(NavigationContext()),
+                         ("/", "/profiles", "/history", "/logs", "/settings"))
+        ctx = NavigationContext(authenticated=True, role="VIEWER",
+                                permitted_routes=frozenset({"/", "/history"}))
+        self.assertEqual(visible_navigation_routes(ctx), ("/", "/history"))
 
     def test_limit_and_reader_bounds(self):
         self.assertEqual(len(bounded_search("X" * 10000)), 120)

@@ -42,7 +42,7 @@ def project_telemetry(view: DashboardView) -> TelemetryDisplay:
     if good and view.operation_state is OperationState.FAULT:
         operation = "FAULT"
     # A fault is never interpreted as healthy even with a nominal GOOD reading.
-    verified = good and view.operation_state not in (OperationState.FAULT, OperationState.UNKNOWN)
+    verified = good and operation not in (OperationState.FAULT.value, OperationState.UNKNOWN.value)
     measured = (f"{view.measured_temperature_c:.1f} °C"
                 if verified and view.measured_temperature_c is not None else "— (unverified)")
     setpoint = (f"{view.setpoint_temperature_c:.1f} °C"

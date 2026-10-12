@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import timezone
 from typing import Callable
 
+
 from nicegui import ui
 
 from chamber_web.services.web_read_models import (
@@ -29,6 +30,9 @@ class NavigationContext:
     """G08-min integration point; only a trusted server session resolver may set it."""
     authenticated: bool = False
     role: str | None = None
+    permitted_routes: frozenset[str] = frozenset(
+        {"/", "/profiles", "/history", "/logs", "/settings"}
+    )
 
     @property
     def label(self) -> str:
@@ -37,15 +41,41 @@ class NavigationContext:
         return f"Role: {self.role or 'unverified'} · controls locked"
 
 
+# Only Python composition/bootstrap can set this resolver; no UI handler may modify it.
+_navigation_resolver: Callable[[], NavigationContext] | None = None
+
+
+def install_navigation_resolver(resolver: Callable[[], NavigationContext]) -> None:
+    """G08-min integration seam; the resolver must verify the current server session."""
+    if not callable(resolver):
+        raise TypeError("Navigation resolver must be callable")
+    global _navigation_resolver
+    _navigation_resolver = resolver
+
+
 def navigation_context() -> NavigationContext:
-    # G08-min will supply a trusted server-side resolver; never trust browser fields.
-    return NavigationContext()
+    if _navigation_resolver is None:
+        return NavigationContext()
+    try:
+        resolved = _navigation_resolver()
+    except Exception:
+        return NavigationContext(permitted_routes=frozenset())
+    return resolved if isinstance(resolved, NavigationContext) else NavigationContext(
+        permitted_routes=frozenset())
+
+
+def visible_navigation_routes(context: NavigationContext) -> tuple[str, ...]:
+    """Cosmetic filter only — server-side G08 guards remain mandatory."""
+    return tuple(url for _, _, url in NAV_ITEMS if url in context.permitted_routes)
 
 
 def render_navigation(active: str, *, context: NavigationContext | None = None) -> None:
     context = context or navigation_context()
     ui.label("Visteon").classes("brand")
+    allowed = visible_navigation_routes(context)
     for icon, title, destination in NAV_ITEMS:
+        if destination not in allowed:
+            continue
         with ui.button(icon=icon, on_click=lambda url=destination: ui.navigate.to(url)).props(
             f'flat no-caps align=left aria-label="{title}" title="{title}"'
         ).classes("nav-active" if destination == active else ""):
@@ -84,12 +114,16 @@ def page_frame(active: str, service, *, title: str):
         with ui.column().classes("main-area gap-0"):
             refresh_header = render_header(service, title=title)
             with ui.column().classes("dashboard gap-3"):
-                ui.label(
-                    "SIMULATION / READ-ONLY — controls are not enabled; "
-                    "readings and records come only from server services."
-                ).classes("demo-banner w-full")
+                banner = ui.label("Equipment state unverified — read only").classes(
+                    "demo-banner w-full")
                 yield
-    ui.timer(2.0, refresh_header)
+    def update_shell():
+        refresh_header()
+        display = project_telemetry(safe_view(service))
+        banner.set_text(f"{display.mode} / READ-ONLY — {display.quality} · "
+                        "control commands locked; records come from server services.")
+    update_shell()
+    ui.timer(2.0, update_shell)
 
 
 def _status_panel(page, *, empty_text: str):
@@ -235,7 +269,7 @@ def register_pages(
                             ("Mode", display.mode),
                             ("Reading quality", display.quality),
                             ("Last sample (UTC)", display.sampled_utc),
-                            ("Verified capability range", cap.temperature_range),
+                            ("Adapter-reported range (not site certified)", cap.temperature_range),
                             ("Start/STOP", cap.start_stop),
                             ("Setpoint readback", cap.setpoint_readback),
                             ("Running readback", cap.running_readback),
