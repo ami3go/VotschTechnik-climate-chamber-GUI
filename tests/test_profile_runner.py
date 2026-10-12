@@ -13,7 +13,7 @@ from tempfile import TemporaryDirectory
 from chamber_web.adapters.alternate_stub import AlternateStubBackend
 from chamber_web.adapters.fake import FakeBackend
 from chamber_web.domain.chamber import (
-    ChamberSafetyError, OperationState, ReadingQuality,
+    ChamberSafetyError, OperationState,
 )
 from chamber_web.domain.config import ChamberConfig
 from chamber_web.domain.profile import ParsedProfile, ProfileStep
