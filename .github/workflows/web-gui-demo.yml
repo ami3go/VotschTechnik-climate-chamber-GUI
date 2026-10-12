@@ -54,8 +54,10 @@ jobs:
         run: python -m compileall -q chamber_web main.py
       - name: Profile validation and demo tests
         run: python -m unittest discover -s tests -p "test_web_*.py" -v
-      - name: G03-C profile editor validation / concurrency and NiceGUI page
-        run: python -m pytest -q tests/test_profile_editor.py tests/test_web_ui.py tests/test_web_profiles_ui.py
+      - name: G03-C service and data-integrity regressions
+        run: python -m pytest -q tests/test_profile_editor.py
+      - name: G03-C NiceGUI profile page browser-session smoke
+        run: python -m pytest -q tests/test_web_profiles_ui.py
       - name: Render dashboard in simulated NiceGUI client
         run: python -m pytest -q tests/test_web_ui.py
 
