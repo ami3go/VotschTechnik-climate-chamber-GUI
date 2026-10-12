@@ -220,25 +220,34 @@ class SecurityStore:
 
     def login(self, username: str, password: str) -> SessionTokens:
         now = self.clock()
-        # Prevent unbounded audit/key growth and username injection in messages.
         if not isinstance(username, str) or len(username) > 64:
             raise AuthenticationError("Invalid username or password")
-        with self._lock:
-            db = self._db()
-            try:
+        # Expensive scrypt occurs outside the SQLite write transaction. Login
+        # traffic must not hold the audit/STOP intent database lock.
+        db = self._db()
+        try:
+            candidate = db.execute(
+                "SELECT id,username,password_hash,enabled FROM users WHERE username=?",
+                (username,),
+            ).fetchone()
+            valid = _verify_password(password, candidate[2] if candidate else None)
+            with self._lock:
                 db.execute("BEGIN IMMEDIATE")
+                # Re-read after locking: account may have been disabled, or
+                # password changed, while the hash was being computed.
                 row = db.execute(
-                    "SELECT id,username,password_hash,enabled FROM users WHERE username=?",
-                    (username,),
+                    "SELECT id,username,password_hash,enabled,role FROM users"
+                    " WHERE username=?", (username,),
                 ).fetchone()
                 fail = db.execute(
                     "SELECT attempts,lock_until FROM login_failures WHERE username=?",
                     (username,),
                 ).fetchone()
                 locked = bool(fail and fail[1] > now)
-                valid = _verify_password(password, row[2] if row else None)
-                if locked or not row or not row[3] or not valid:
-                    attempts = (fail[0] + 1 if fail and fail[1] > now - 900 else 1)
+                current = bool(candidate and row and candidate[2] == row[2]
+                               and candidate[0] == row[0] and row[3])
+                if locked or not valid or not current:
+                    attempts = fail[0] + 1 if fail and fail[1] > now - 900 else 1
                     until = now + 900 if attempts >= 5 else 0
                     db.execute(
                         "INSERT INTO login_failures(username,attempts,lock_until) VALUES(?,?,?)"
@@ -246,7 +255,8 @@ class SecurityStore:
                         " lock_until=excluded.lock_until",
                         (username, attempts, until),
                     )
-                    self._audit(db, None, "login", "DENIED", detail="invalid credentials or lockout")
+                    self._audit(db, None, "login", "DENIED",
+                                detail="invalid credentials or lockout")
                     db.commit()
                     raise AuthenticationError("Invalid username or password")
                 db.execute("DELETE FROM login_failures WHERE username=?", (username,))
@@ -256,16 +266,14 @@ class SecurityStore:
                     " VALUES(?,?,?,?,?)",
                     (_digest(tokens.session), row[0], _digest(tokens.csrf), now, now),
                 )
-                self._audit(db, Actor(row[0], row[1], Role(
-                    db.execute("SELECT role FROM users WHERE id=?", (row[0],)).fetchone()[0]
-                )), "login", "SUCCESS")
+                self._audit(db, Actor(row[0], row[1], Role(row[4])), "login", "SUCCESS")
                 db.commit()
                 return tokens
-            except BaseException:
-                db.rollback()
-                raise
-            finally:
-                db.close()
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
     def authenticate(self, session: str | None, *, csrf: str | None = None,
                      mutation: bool = False) -> Actor:
