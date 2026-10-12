@@ -116,6 +116,32 @@ class SecurityCoreTests(unittest.TestCase):
         self.now[0] += 901
         self.assertEqual(self.security.login("admin_1", "StrongAdminPassword#1").session != "", True)
 
+    def test_revoked_admin_cannot_mutate_after_pretransaction_authentication(self):
+        # Deterministic simulation of another admin revoking authority between
+        # the preliminary session check and BEGIN IMMEDIATE write fencing.
+        original = self.security.authenticate
+
+        def demote_after_auth(*args, **kwargs):
+            actor = original(*args, **kwargs)
+            with closing(sqlite3.connect(self.security.database)) as db:
+                db.execute("UPDATE users SET role='VIEWER' WHERE username='admin_1'")
+                db.commit()
+            return actor
+
+        with patch.object(self.security, "authenticate",
+                          side_effect=demote_after_auth):
+            with self.assertRaises(AuthorizationError):
+                self.security.create_user(
+                    self.admin.session, self.admin.csrf,
+                    "injected_user", "StrongSecretPassword#2", Role.ADMIN)
+        with closing(sqlite3.connect(self.security.database)) as db:
+            self.assertEqual(db.execute(
+                "SELECT count(*) FROM users WHERE username='injected_user'"
+            ).fetchone()[0], 0)
+        self.assertIn(("user.admin", "DENIED", None, "admin_1",
+                       "stale or unauthorized administrator"),
+                      self.security.audit_records())
+
     def test_role_permissions_and_no_escalation(self):
         viewer = self.add_user("viewer_1", Role.VIEWER)
         operator = self.add_user("operator_1", Role.OPERATOR)
