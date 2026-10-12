@@ -38,6 +38,8 @@ class DeviceLease:
         with _MUTEX:
             if path in _IN_PROCESS:
                 raise ChamberSafetyError("Device already owned by a controller in this process")
+            if _IN_PROCESS:
+                raise ChamberSafetyError("v1 allows only one active controller per process")
             _IN_PROCESS.add(path)
         try:
             self._file = open(path, "a+b")
@@ -137,6 +139,8 @@ class DeviceLease:
         self.needs_reconciliation = False
 
     def close(self, *, verified_stopped: bool = False) -> None:
+        # Preserve the OS ownership lock if the durable release fails.
+        committed = False
         try:
             if self._db is not None:
                 self._db.execute("BEGIN IMMEDIATE")
@@ -156,8 +160,10 @@ class DeviceLease:
                 except BaseException:
                     self._db.execute("ROLLBACK")
                     raise
+            committed = True
         finally:
-            self._release_resources()
+            if committed:
+                self._release_resources()
 
     def _release_resources(self) -> None:
         if self._db is not None:
