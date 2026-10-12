@@ -5,7 +5,8 @@ import unittest
 
 from chamber_web.adapters.alternate_stub import AlternateStubBackend
 from chamber_web.adapters.fake import FakeBackend
-from chamber_web.adapters.registry import ChamberConfig
+from chamber_web.domain.config import ChamberConfig
+from chamber_web.adapters.registry import make_backend
 from chamber_web.adapters.votsch import VotschBackend
 from chamber_web.domain.chamber import (
     ChamberSafetyError, OperationState, ReadingQuality, UnsupportedCapability,
@@ -58,10 +59,10 @@ class BackendContractTests(unittest.TestCase):
             ChamberManager([
                 ChamberConfig("a", "votsch", "192.0.2.1"),
                 ChamberConfig("b", "votsch", "192.0.2.2"),
-            ])
+            ], backend_factory=make_backend)
 
     def test_wrong_device_never_dispatches(self):
-        manager = ChamberManager([ChamberConfig("ch1", "fake")])
+        manager = ChamberManager([ChamberConfig("ch1", "fake")], backend_factory=make_backend)
         manager.connect("ch1")
         for command in (
             lambda: manager.start("other"),
@@ -74,7 +75,7 @@ class BackendContractTests(unittest.TestCase):
         self.assertEqual(manager.status("ch1").operation_state, OperationState.STOPPED)
 
     def test_stop_latch_blocks_old_commands(self):
-        manager = ChamberManager([ChamberConfig("ch1", "fake")])
+        manager = ChamberManager([ChamberConfig("ch1", "fake")], backend_factory=make_backend)
         manager.connect("ch1")
         manager.start("ch1")
         manager.stop("ch1")
@@ -84,15 +85,15 @@ class BackendContractTests(unittest.TestCase):
         manager.set_temperature("ch1", 45)
 
     def test_physical_driver_cannot_connect_in_g01(self):
-        manager = ChamberManager([ChamberConfig("vt4011", "votsch", "192.0.2.20")])
+        manager = ChamberManager([ChamberConfig("vt4011", "votsch", "192.0.2.20")], backend_factory=make_backend)
         with self.assertRaisesRegex(ChamberSafetyError, "DISABLED"):
             manager.connect("vt4011")
 
     def test_test_backend_not_available_in_production(self):
         with self.assertRaises(ChamberSafetyError):
-            ChamberManager([ChamberConfig("st1", "alternate_stub")])
+            ChamberManager([ChamberConfig("st1", "alternate_stub")], backend_factory=make_backend)
         manager = ChamberManager([ChamberConfig("st1", "alternate_stub")],
-                                 allow_test_backend=True)
+                                 backend_factory=make_backend, allow_test_backend=True)
         manager.connect("st1")
         with self.assertRaises(ChamberSafetyError):
             manager.set_temperature("st1", 100)

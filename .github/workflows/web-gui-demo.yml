@@ -7,14 +7,17 @@ on:
       - "docs/**"
       - "main.py"
       - "tests/test_web_*.py"
+      - "tests/test_chamber_*.py"
       - "requirements-web.txt"
       - ".github/workflows/web-gui-demo.yml"
   push:
     branches: [main]
     paths:
       - "chamber_web/**"
+      - "docs/**"
       - "main.py"
       - "tests/test_web_*.py"
+      - "tests/test_chamber_*.py"
       - "requirements-web.txt"
       - ".github/workflows/web-gui-demo.yml"
 

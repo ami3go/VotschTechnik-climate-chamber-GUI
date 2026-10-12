@@ -6,22 +6,24 @@ A production ChamberController with leases/fencing must replace this seam at G04
 from __future__ import annotations
 
 from threading import RLock
+from typing import Callable
 
 from chamber_web.domain.chamber import (
     ChamberBackend, ChamberSafetyError, OperationState, ReadingQuality,
     validate_chamber_id,
 )
-from chamber_web.adapters.registry import ChamberConfig, make_backend
+from chamber_web.domain.config import ChamberConfig
 
 
 class ChamberManager:
-    def __init__(self, configurations: list[ChamberConfig], *, allow_test_backend=False):
+    def __init__(self, configurations: list[ChamberConfig], *,
+                 backend_factory: Callable, allow_test_backend=False):
         if len(configurations) != 1:
             raise ChamberSafetyError("v1 requires exactly one configured chamber; "
                                      "multiple physical devices are not supported")
         self._config = configurations[0]
         self._lock = RLock()
-        self._backend: ChamberBackend = make_backend(
+        self._backend: ChamberBackend = backend_factory(
             self._config, allow_test_backend=allow_test_backend
         )
         self._connected = False
