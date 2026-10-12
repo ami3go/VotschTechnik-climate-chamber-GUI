@@ -124,8 +124,7 @@ Other future sensitive services must be enumerated here before deployment.
 Controller mutations are all dispatched through `AuthorizedChamber`;
 its `INTENT` audit commits before device dispatch and records `SUCCESS`
 or `FAILED` afterward. Denied calls record `DENIED`. Audit failure
-before dispatch must block the operation. The owner token is NOT an
-authentication secret; STOP never needs it but always needs active
+before dispatch must block the operation. The facade binds claimed operator tokens to the authenticated user ID,\nrejects another user's token and rejects token-free browser START/setpoint\nwrites. G02-B must use one shared process-owned facade instance.\nThe owner token is NOT an\nauthentication secret; STOP never needs it but always needs active
 ADMIN/OPERATOR authorization.
 
 ## Verification and outstanding risks
