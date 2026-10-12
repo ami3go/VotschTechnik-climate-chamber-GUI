@@ -19,13 +19,18 @@ Additional server-only methods:
 |---|---|
 | `health(chamber_id)` | Immutable `ControllerHealth(chamber_id, state, generation, connected, stop_latched, reason)`; STOP_REQUESTED, VERIFIED_STOPPED, UNKNOWN and FAULT are controller states distinct from backend operation-state readbacks. |
 | `claim_operator(chamber_id, owner) -> token` | Refuses a second owner; token is an opaque in-memory command-ownership token **not** a login credential. |
-| `release_operator(chamber_id, token)` | Only current owner can release. |
+| `release_operator(chamber_id, token)` | Only current owner can release. Claim/release advances an in-memory operator generation; queued old-owner writes are discarded at worker dispatch. |
 | `start(chamber_id, operator_token=...)` and `set_temperature(..., operator_token=...)` | Require token when an operator ownership claim exists. Trusted server-side no-token calls remain only for G01 compatibility; G08-min must require authentication/authorization before exposing ANY mutation to clients. |
 | `stop(chamber_id)` | Independently authorized by future OPERATOR/ADMIN auth gate; never blocked by a foreign operator token. No successful return until fresh GOOD STOPPED readback. |
-| `reconcile_stop(chamber_id)` | Requires a fresh GOOD STOPPED readback; clears the persistent uncertainty latch only following explicit server-side reconciliation. G08-min must assign permission/audit policy to this action. A newer\n  STOP/FAULT generation invalidates even an already-running reconciliation read;\n  old readback may never clear a newer STOP latch. |
+| `reconcile_stop(chamber_id)` | Requires a fresh GOOD STOPPED readback; clears the persistent uncertainty latch only following explicit server-side reconciliation. G08-min must assign permission/audit policy to this action. A newer
+  STOP/FAULT generation invalidates even an already-running reconciliation read;
+  old readback may never clear a newer STOP latch. |
 | `start_polling(chamber_id, interval_s=2.0)` | Optional bounded queued server-side periodic reads; `status` is also a serialized poll. No polling is started by the current demo page. |
 
-A manager wraps one `ChamberController` per deployment. It also preserves\nG02-A's ID-guarded `capabilities(chamber_id)` snapshot projection and\nbootstrap-owned demo dashboard teardown; separately injected dashboard managers\nremain caller-owned. Controller owns
+A manager wraps one `ChamberController` per deployment. It also preserves
+G02-A's ID-guarded `capabilities(chamber_id)` snapshot projection and
+bootstrap-owned demo dashboard teardown; separately injected dashboard managers
+remain caller-owned. Controller owns
 `ChamberBackend` and does not import vendor adapters or protocol packages;
 only registry/adapter code resolves a backend. For Vötsch, the maintained
 external driver remains the exclusive eventual hardware communication layer.
@@ -63,17 +68,25 @@ external driver remains the exclusive eventual hardware communication layer.
    polls; repeated STOPs are allowed even when latched. STOP never blindly
    retries a failed backend command and never asserts physical safety on a
    deadline alone. Another caller's ownership token cannot veto STOP.
-5. **No preemption claim:** a synchronous backend call already admitted by the
+5. **Shutdown fencing:** disconnect synchronously advances the persistent generation and
+   latches UNKNOWN before queueing backend disconnect at priority -50, ahead of
+   older mutations but behind STOP (-100). All queued old-generation writes
+   become invalid, including after an operator lease handover. A clean
+   shutdown only releases persisted uncertainty when the last identity-bound
+   GOOD STOPPED sample remains within the configured freshness window; a stale
+   sample forces explicit reconciliation on restart. Concurrent second
+   disconnects are rejected.
+6. **No preemption claim:** a synchronous backend call already admitted by the
    worker may finish *after* STOP intent. If it hangs, STOP cannot reach the
    backend within its deadline. Report UNKNOWN/FAULT, keep the process lock
    while that worker is alive, require local intervention. The future D01
    driver and HIL gate must determine finite real-device I/O bounds.
-6. **Recovery:** no auto-resume, auto-start, setpoint replay, default reset to
+7. **Recovery:** no auto-resume, auto-start, setpoint replay, default reset to
    ambient, gradient mutation, or simulator fallback occurs. Recovery after
    fault/STOP is an explicit, fresh, identity-bound readback followed by
    `reconcile_stop`. Controller-created STOP latches stay set after a
    verified STOP until that explicit action.
-7. **Shutdown:** disconnect does not issue an unapproved physical STOP, does not
+8. **Shutdown:** disconnect does not issue an unapproved physical STOP, does not
    claim the chamber stopped and does not release the process lock while an
    unfinished worker is still executing. SQLite uncertainty survives
    unverified shutdown. Process crash/power-loss and SQLite/file-lock
@@ -113,3 +126,28 @@ readbacks, wrong IDs, locked ownership, persisted restart uncertainty,
 parallel queued setpoint fencing, STOP race priority, setpoint echo mismatch,
 unauthorized owner collision and stuck adapter deadlines. All use simulated
 backends and must not be interpreted as real STOP latency evidence.
+
+## G04-A requirements and fault-review findings
+
+Review performed against P00/G01/G02-A, the G04 controller and ownership source,
+and Windows 3.10/3.12 fault suites, using only simulated backends.
+
+| Severity | Issue discovered during second-pass review | Correction |
+|---|---|---|
+| HIGH | Operator A's queued command survived lease release and takeover by B | Operator generation rechecked at worker dispatch; handover race regression |
+| HIGH | Disconnect could overtake a queued old-generation setpoint without fencing it | Atomically latch/fence before priority backend disconnect; delayed-read/queued-write regression |
+| HIGH | A stale previous STOPPED sample could allow an apparently clean restart | Freshness/quality/identity bound required for clear-on-close, otherwise uncertainty persists |
+| HIGH | A delayed reconciliation read could clear a newer STOP | Persistent command generation checked again before clearing stop latch |
+| MEDIUM | Windows lock acquisition and test fixture cleanup could fail under contention | Lock byte before reading it; Windows cross-process and teardown regression |
+| MEDIUM | G02-A dashboard lifecycle could retain the single process lease | Preserve read-only capabilities DTO and explicit owned-bootstrap cleanup |
+
+**Residual risk:** a blocking in-flight adapter call cannot be interrupted by STOP;
+STOP is queued with priority, but actual physical response is unverified. The
+controller can admit a call immediately before a STOP generation advances;
+the in-flight driver operation may take effect afterward. These semantics
+require explicit hardware policy and a bounded driver transport for HIL.
+G08-min is responsible for authenticated command authorization and mutation
+auditing; opaque ownership tokens are not security credentials.
+
+The review is AI-assisted, not an independent human approval. Full physical
+safety, multi-device runtime and release readiness remain NO-GO.
