@@ -13,7 +13,6 @@ from pathlib import Path
 from nicegui import app, ui
 
 from .bootstrap import create_demo_dashboard_service
-from .domain.chamber import ReadingQuality
 
 from .model import (
     MAX_TEMP, MIN_TEMP, Step, default_steps,
