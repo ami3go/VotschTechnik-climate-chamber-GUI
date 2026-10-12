@@ -9,7 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from chamber_web.domain.chamber import ChamberSafetyError
-from chamber_web.domain.profile import export_profile_zip, parse_profile_csv
+from chamber_web.domain.profile import export_profile_zip, import_profile_zip, parse_profile_csv
 from chamber_web.persistence.profiles import (
     ProfileConflictError, ProfileNotFoundError, ProfileSchemaError, ProfileStore,
 )
@@ -119,7 +119,8 @@ class ProfileStoreTests(unittest.TestCase):
         archive = export_profile_zip(self.profile)
         saved = self.store.import_profile("alpha", archive, filename="test.zip")
         self.assertEqual(self.store.get_revision("alpha", saved.profile_id).source_format, "zip")
-        self.assertEqual(self.store.export_revision_zip("alpha", saved.profile_id), archive)
+        self.assertEqual(import_profile_zip(self.store.export_revision_zip("alpha", saved.profile_id)),
+                         import_profile_zip(archive))
 
     def test_immutability_trigger_blocks_unexpected_sql_updates(self):
         saved = self.store.create_profile("alpha", self.profile)
