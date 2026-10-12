@@ -64,7 +64,7 @@ def test_stale_two_browser_editors_never_overwrite(editor):
 
 def test_competing_saves_single_winner(editor):
     initial = editor.save(editor.new_draft())
-    barrier = Barrier(4)
+    barrier = Barrier(4, timeout=10)
 
     def edit(idx):
         local = editor.edit_step(editor.open(initial.profile_id), 0, "notes", str(idx))
@@ -206,3 +206,11 @@ def test_repeat_count_requires_integer(editor):
         editor.set_metadata(draft, "repeat_count", 2.5)
     with pytest.raises(ValueError):
         editor.set_metadata(draft, "repeat_count", True)
+
+
+def test_unchanged_metadata_does_not_dirty_reloaded_profile(editor):
+    stored = editor.save(editor.new_draft())
+    assert not stored.dirty
+    hydrated = editor.set_metadata(stored, "name", stored.profile.name)
+    assert hydrated == stored
+    assert not hydrated.dirty
