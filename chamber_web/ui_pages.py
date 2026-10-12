@@ -120,7 +120,7 @@ def page_frame(active: str, service, *, title: str):
                     "demo-banner w-full")
                 yield
     def update_shell():
-        if not require_authenticated_page():
+        if not require_authenticated_page(touch=False):
             return
         refresh_header()
         display = project_telemetry(safe_view(service))
@@ -278,7 +278,7 @@ def register_pages(
                     pass
 
                 def update_details():
-                    if not require_authenticated_page():
+                    if not require_authenticated_page(touch=False):
                         return
                     view = safe_view(service)
                     cap = project_capabilities(view)
