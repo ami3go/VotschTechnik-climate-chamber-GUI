@@ -284,7 +284,7 @@ class SecurityStore:
             db.close()
 
     def authenticate(self, session: str | None, *, csrf: str | None = None,
-                     mutation: bool = False) -> Actor:
+                     mutation: bool = False, touch: bool = True) -> Actor:
         if not isinstance(session, str) or not 20 <= len(session) <= 128:
             raise AuthenticationError("Authentication required")
         now = self.clock()
@@ -310,8 +310,9 @@ class SecurityStore:
                 db.commit()
                 raise AuthorizationError("CSRF token required")
             # Sliding idle timeout; absolute expiry remains anchored.
-            db.execute("UPDATE sessions SET last_seen=? WHERE token_hash=?",
-                       (now, _digest(session)))
+            if touch or mutation:
+                db.execute("UPDATE sessions SET last_seen=? WHERE token_hash=?",
+                           (now, _digest(session)))
             db.commit()
             return Actor(row[4], row[5], Role(row[6]))
         except BaseException:
