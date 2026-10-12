@@ -1,0 +1,43 @@
+:root{--navy:#142b43;--ink:#122b4a;--blue:#2379c6;--accent:#f5922e;--bg:#f1f4f8;--line:#dce4ec;}
+body{background:var(--bg);color:var(--ink);font-family:Inter,Arial,sans-serif;}
+.nicegui-content{padding:0!important;margin:0!important;}*{box-sizing:border-box}
+.app-shell{display:flex;min-height:100vh;align-items:stretch;width:100%;gap:0}
+.sidebar{width:215px;min-width:215px;background:linear-gradient(155deg,#213b55,#10263d);color:#fff;padding:16px 9px;}
+.brand{color:var(--accent);font-size:38px;font-weight:600;letter-spacing:-1.8px;margin:2px 11px 22px;}
+.sidebar .q-btn{width:100%;justify-content:flex-start;text-transform:none;font-size:14px;color:#fff;padding:9px 12px;border-radius:5px}
+.nav-active{background:var(--blue)!important}
+.side-note{margin:40px 13px 0;color:#a6bfd3;font-size:12px;line-height:1.7}
+.main-area{flex:1;min-width:0}
+.topbar{min-height:75px;background:linear-gradient(90deg,#203a53,#112a41);color:white;padding:12px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.top-title{font-size:24px;font-weight:600;line-height:1.2}
+.top-subtitle{color:#c6d4e2;font-size:13px}
+.demo-status{color:#ffcf90;font-size:13px;font-weight:650}
+.dashboard{width:100%;padding:13px}
+.top-grid{display:grid;grid-template-columns:1.15fr 1fr;gap:12px;width:100%}
+.bottom-grid{display:grid;grid-template-columns:1.45fr .75fr 1fr;gap:12px;width:100%;margin-top:12px}
+.panel{background:#fff;border:1px solid #dee5ec;border-radius:9px;padding:13px;min-width:0;width:100%;box-shadow:0 1px 3px #1a2b3d10}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:36px;width:100%;margin-bottom:10px}
+.panel-heading{font-size:16px;font-weight:700;color:var(--ink)}
+.metric-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;margin:12px 0}
+.metric{padding:8px 12px;border-right:1px solid var(--line);min-width:0}.metric:last-child{border-right:0}
+.metric-caption{color:#54677d;font-size:12px}
+.metric-value{font-size:29px;font-weight:700;white-space:nowrap}
+.status-pill{padding:5px 12px;border-radius:16px;font-size:13px;font-weight:650;background:#edf1f5;color:#263b50}
+.profile-intro{background:#e9f3ff;border-radius:6px;padding:11px 14px;font-size:12px}
+.profile-row{display:grid;grid-template-columns:28px 1.4fr 75px 68px 86px;gap:4px;align-items:center;font-size:12px;padding:8px 7px;border-bottom:1px solid #e7ebf0}
+.profile-row.header{background:#f2f6f9;font-weight:700}.profile-row.active-step{background:#dcecff;font-weight:600}
+.controls-line{display:grid;grid-template-columns:145px 1fr 140px;gap:13px;width:100%;align-items:center;margin-top:10px}
+.chart-panel{margin-top:12px}.chart-box{height:235px;width:100%}
+.edit-scroll{overflow-x:auto;width:100%}
+.edit-row{display:grid;grid-template-columns:23px 39px 76px 70px 84px 87px minmax(128px,1fr) 35px;gap:4px;align-items:center;min-width:650px;padding:3px 4px;border-bottom:1px solid #e5ebf1}
+.edit-row.header{background:#f2f6fa;min-height:35px;font-size:10px;font-weight:700;text-align:center}
+.edit-row .q-field__control{min-height:30px;height:30px}.edit-row .q-field__native{font-size:11px;padding:0 4px}
+.small-table .q-table th{font-size:11px;color:#314760;background:#f2f6fa;padding:6px 5px}
+.small-table .q-table td{font-size:11px;padding:5px 6px;height:27px}
+.small-table .q-table__middle{max-height:280px;overflow:auto}
+.toolbar-button{font-size:11px!important;min-height:31px!important;padding:2px 9px!important;text-transform:none!important}
+.demo-banner{background:#fff4de;color:#6d4510;border:1px solid #f2d6a8;padding:9px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;font-weight:600}
+.q-btn{text-transform:none}
+@media(max-width:1300px){.bottom-grid{grid-template-columns:1fr 1fr}.editor-panel{grid-column:1/-1}}
+@media(max-width:970px){.top-grid,.bottom-grid{grid-template-columns:1fr}.editor-panel{grid-column:auto}.sidebar{width:76px;min-width:76px}.sidebar .nav-text,.sidebar .brand,.sidebar .side-note{display:none}.sidebar .q-btn{font-size:0}.sidebar .q-btn .q-icon{font-size:22px}.topbar{padding:10px 13px}}
+@media(max-width:580px){.metric-value{font-size:20px}.metric{padding:5px}.controls-line{grid-template-columns:105px 1fr 110px;gap:6px}.profile-row{grid-template-columns:21px 1fr 53px 46px 75px;font-size:10px}.panel{padding:9px}.top-title{font-size:19px}}
