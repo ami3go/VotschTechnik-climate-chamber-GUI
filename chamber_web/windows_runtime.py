@@ -253,7 +253,8 @@ def serve(*, port: int) -> int:
 
             ui.run(title="Climate Chamber - SIMULATION ONLY", host="127.0.0.1",
                    port=port, reload=False, show=False,
-                    storage_secret=cookie_secret())
+                    storage_secret=cookie_secret(),
+                    session_middleware_kwargs={"same_site": "strict", "max_age": 28800})
         finally:
             if read_instance() == identity:
                 path.unlink(missing_ok=True)
