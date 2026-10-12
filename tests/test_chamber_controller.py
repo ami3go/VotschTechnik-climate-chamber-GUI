@@ -14,7 +14,8 @@ from chamber_web.adapters.alternate_stub import AlternateStubBackend
 from chamber_web.adapters.fake import FakeBackend
 from chamber_web.adapters.votsch import VotschBackend
 from chamber_web.domain.chamber import (
-    ChamberSafetyError, ChamberSnapshot, OperationState, ReadingQuality,
+    ChamberConnectionError, ChamberError, ChamberSafetyError, ChamberSnapshot,
+    OperationState, ReadingQuality,
 )
 from chamber_web.domain.config import ChamberConfig
 from chamber_web.services.chamber_manager import ChamberManager
@@ -103,7 +104,7 @@ class ControllerTests(unittest.TestCase):
         def setpoint(value):
             try:
                 manager.set_temperature("device-1", value)
-            except ChamberSafetyError as exc:
+            except ChamberError as exc:
                 errors.append(str(exc))
 
         first = threading.Thread(target=setpoint, args=(30,))
@@ -163,11 +164,11 @@ class ControllerTests(unittest.TestCase):
         manager = self.manager(backend)
         manager.start("device-1")
         backend.fail = True
-        with self.assertRaises(ConnectionError):
+        with self.assertRaises(ChamberConnectionError):
             manager.stop("device-1")
         self.assertIn(manager.health("device-1").state, ("UNKNOWN", "FAULT"))
         self.assertTrue(manager.health("device-1").stop_latched)
-        with self.assertRaises(ChamberSafetyError):
+        with self.assertRaises(ChamberConnectionError):
             manager.reconcile_stop("device-1")
         self.assertEqual(manager.status("device-1").operation_state, OperationState.UNKNOWN)
         self.assertNotEqual(manager.health("device-1").state, "VERIFIED_STOPPED")
