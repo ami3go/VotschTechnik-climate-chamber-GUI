@@ -487,10 +487,28 @@ class ChamberController:
                 self._state = "FAULT"
                 raise ChamberSafetyError("Unable to persist disconnect fence") from exc
             disconnect_generation = self._generation
-        # If a synchronous backend call hangs, keep the OS owner lock.
-        self._submit("disconnect", self._backend.disconnect, priority=-50)
+        # Verify again on the I/O worker AFTER every already-admitted action:
+        # an in-flight START could have completed after the initial sample.
+        # A failed readback must not prevent best-effort backend cleanup.
+        def close_backend() -> bool:
+            stopped_now = False
+            try:
+                observed = self._require_readback(self._backend.read_status())
+                stopped_now = observed.operation_state is OperationState.STOPPED
+            except Exception:
+                pass  # uncertainty is preserved in the persistent lease
+            self._backend.disconnect()
+            return stopped_now
+
+        # If an adapter hangs, retain the exclusive OS lock.
+        final_stop_readback = self._submit(
+            "disconnect", close_backend, priority=-50,
+        )
         with self._state_lock:
-            verified = fresh_stop and disconnect_generation == self._generation
+            verified = (
+                fresh_stop and final_stop_readback and
+                disconnect_generation == self._generation
+            )
             self._closed = True
             self._connected = False
             self._state = "DISCONNECTED"
