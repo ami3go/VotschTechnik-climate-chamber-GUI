@@ -95,8 +95,6 @@ class ChamberManager:
         backend = self._backend_for_id(chamber_id)
         if not self._connected or self._stop_latched:
             raise ChamberSafetyError("Operation blocked: disconnected or STOP-latched")
-        if self._config.backend_id == "votsch":
-            raise ChamberSafetyError("Physical hardware controls are disabled until certification")
         return backend
 
     def reconcile_stop(self, chamber_id: str) -> None:

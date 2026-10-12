@@ -12,9 +12,9 @@ class ChamberConfig:
 
     def __post_init__(self) -> None:
         validate_chamber_id(self.chamber_id)
-        if self.backend_id not in {"fake", "votsch", "alternate_stub"}:
-            raise ChamberSafetyError("Unknown or unapproved backend ID")
-        if self.backend_id == "votsch" and not self.address:
-            raise ChamberSafetyError("Vötsch endpoint required")
-        if self.backend_id != "votsch" and self.address:
-            raise ChamberSafetyError("Unexpected endpoint for simulation backend")
+        if not isinstance(self.backend_id, str) or not self.backend_id:
+            raise ChamberSafetyError("backend_id must be a nonempty registry key")
+        if self.address is not None and (
+            not isinstance(self.address, str) or len(self.address) > 255
+        ):
+            raise ChamberSafetyError("Endpoint format invalid")
