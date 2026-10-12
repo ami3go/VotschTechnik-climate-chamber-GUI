@@ -153,6 +153,22 @@ class ProfileStoreTests(unittest.TestCase):
         with self.assertRaises(ProfileSchemaError):
             ProfileStore(self.db_path)
 
+    def test_recognized_trigger_name_cannot_mask_noop_trigger(self):
+        with _sqlite(self.db_path) as db:
+            db.execute("DROP TRIGGER revision_no_update")
+            db.execute(
+                "CREATE TRIGGER revision_no_update BEFORE UPDATE ON "
+                "profile_revisions BEGIN SELECT 1; END"
+            )
+        with self.assertRaises(ProfileSchemaError):
+            ProfileStore(self.db_path)
+
+    def test_missing_schema_index_fails_closed(self):
+        with _sqlite(self.db_path) as db:
+            db.execute("DROP INDEX profiles_by_chamber")
+        with self.assertRaises(ProfileSchemaError):
+            ProfileStore(self.db_path)
+
     def test_unrecognized_schema_and_version_fail_closed(self):
         with _sqlite(self.db_path) as db:
             db.execute("PRAGMA user_version=99")
