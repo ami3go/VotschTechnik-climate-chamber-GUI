@@ -18,7 +18,7 @@ Status: PROPOSED / NOT STARTED. This is the execution plan for [WEB_GUI_MIGRATIO
 - **B — Foundation/UI/data:** G01 introduces vendor-neutral contract/registry, stable `chamber_id`, one-device cardinality guard and minimal manager interface; G02/G03 use these with a single-chamber GUI. Second-vendor stub tests are sequential. D01 proceeds independently.
 - **C — Early packaging:** W01 begins immediately after G01 (not at the end); keep both required PowerShell build scripts passing through development.
 - **D — Control/run engine:** G04 can be developed against fake driver; G05 requires D01 + site-accepted safety policy before enabling physical control; G06–G08 follow tested interfaces.
-- **E — Security/certification/cutover:** G08 is required before LAN control; H01 and W02 precede R01 and desktop retirement. Far-future MC01–MC05 are NOT v1 prerequisites.
+- **E — Security/certification/cutover:** G08-min authentication/authorization/origin protections MUST gate **any** real-device mutation, including loopback HIL; full G08 is required before general-use/LAN control; H01 and W02 precede R01 and desktop retirement. Far-future MC01–MC05 are NOT v1 prerequisites.
 
 ## Ordered delivery units
 
@@ -31,15 +31,15 @@ Status: PROPOSED / NOT STARTED. This is the execution plan for [WEB_GUI_MIGRATIO
 | G03 | GUI | Vendor-neutral profile schema, immutable revisions, AG Grid, SQLite + versioned `chamber_id` keys, namespaced run files, profile CSV/ZIP and compatibility validation | G01, P00 | No hard-coded chamber-1 or vendor command IDs; globally unique run IDs, persistent per-device metadata; sequential fixture A/B isolation and migration tests |
 | W01 | GUI | Early Windows launcher and offline scripts with working freeze, complete installed adapter registry, dependencies, backend factory loading, manifest and clean-Windows smoke | G01 | Both scripts run; frozen Fake/second stub load without Python/internet; Vötsch external driver is explicitly packaged for actual release and never imported by generic UI |
 | G04 | GUI | Generic `ChamberController(chamber_id)` behind **one-active-controller manager**, adapter I/O, process lock/transactional per-ID lease, STOP fencing, readback/polling and normalized errors; reject second physical device | G01, P00; D01 for live device | One-device mock faults and alternate-backend substitution; second physical config rejected pre-connect; stale/wrong ID never dispatches; no later setpoints after STOP |
-| G05 | GUI | Manual target/presets/start/stop through controller/backend only, identity and certified capabilities, safe limits, handover and settings snapshot. Unsupported controls disabled; gradients HIL-gated | G04, D01 + signed physical STOP policy for live commands | VT4011 parity; second stub with alternate range/no ramps disables unsupported actions without code changes; verified start/stop readback |
+| G08-min | GUI | Offline admin bootstrap, authenticated session, server-side roles on all hardware mutations, CSRF/origin protections and mutation audit for loopback/LAN; no production access yet | G01, G04 | Two-user and viewer-denial tests; unauthenticated local request cannot write hardware; audited authorized STOP independent of lease |\n| G05 | GUI | Manual target/presets/start/stop through controller/backend only, identity and certified capabilities, safe limits, handover and settings snapshot. Unsupported controls disabled; gradients HIL-gated | G04, G08-min, D01 + signed physical STOP policy for live commands | VT4011 parity; second stub with alternate range/no ramps disables unsupported actions without code changes; verified start/stop readback |
 | G06 | GUI | Vendor-neutral ONE-device cancellable profile runner with monotonic deadlines/stabilization/dwell/abort, immutable execution snapshot with chamber/backend/capabilities | G03, G04, P00 timing/safety | Virtual-clock tests run separately for Fake and second-vendor stub; one active run maximum; no model-specific branches or multi-device scheduler |
 | G07 | GUI | Vendor-neutral per-`chamber_id` sample/event CSV, atomic manifests, crash reconciliation, history, plots and downloads | G06, G03 | Immutable chamber/backend/driver metadata and namespaced storage, wrong-device association prohibited, partial-run recovery and 1M samples |
-| G08 | GUI | Security/ops: offline initial-admin bootstrap, roles/leases, TLS/LAN restrictions, action audit, update/backup policy, service supervision/logoff/shutdown behavior | G01, G04, P00 lifecycle/security contract; parallelizable before hardware release | Air-gapped bootstrap/password recovery, two-user conflict, viewer denial, session expiry, service restart and logout tests |
+| G08 | GUI | Complete security/ops: encrypted transport for LAN, account recovery, rate limits, audit retention, update/backup policy, service supervision/logoff/shutdown behavior | G08-min, G04, P00 lifecycle/security contract; parallelizable before hardware release | Air-gapped bootstrap/password recovery, two-user conflict, viewer denial, session expiry, service restart and logout tests |
 | H01 | Driver + GUI | **Single** approved VT4011 HIL through Vötsch adapter/driver, certified gradients, readbacks/STOP/faults, operator conflict; separate architecture conformance for alternative test adapter | D01, G05–G08, site signoff | Site-signed VT4011 report and different-vendor stub substitution; no simultaneous multi-device HIL required for v1 |
 | W02 | GUI | Final Windows launcher/complete offline ZIP, registered adapter/vendor dependency freeze, data migration/rollback, Win10/11 x64 and clean disconnected VM | W01, G02–G08 | Installer/ZIP contains Vötsch and Fake backends, registry works offline, no runtime remote plugins/downloads; full app and data preserved |
 | R01 | GUI | Release checklist: documentation, packaging, manuals, formal parity signoff, security/hardware/offline evidence, tagged release; retire old UI only after approval | H01 + W02 + all release gates | Signed GO decision, updated README, recoverable legacy release, no unreviewed main deletions |
 
-P00 and D01 are the **critical path for physical operation**, but they must not block G01/G02/G03/W01 simulated/UI development. G08 security must land before exposing mutation endpoints outside loopback; it may be developed in parallel with G05–G07. W01 is an early feasibility gate, W02 is final offline certification.
+P00 and D01 are the **critical path for physical operation**, but they must not block G01/G02/G03/W01 simulated/UI development. G08-min is mandatory **before any physical device mutation even on localhost**; full G08 precedes operational LAN release and may develop alongside G05–G07. W01 is an early feasibility gate, W02 is final offline certification.
 
 ## Required design-review artifacts at P00
 
@@ -82,23 +82,23 @@ Do not silently convert PENDING choices to defaults. If site-signoff information
 
 ## Coverage-to-review traceability
 
-- BLOCKER-01 and HIGH-08: D01, G04, H01.
-- BLOCKER-02, HIGH-02, MEDIUM-02: P00, G04, G05, G06, H01.
-- BLOCKER-03 and HIGH-07: P00, G05, G06, G08, H01.
-- BLOCKER-04 and MEDIUM-01: P00, G03, G05, H01.
-- HIGH-01, HIGH-06, HIGH-09, MEDIUM-04: P00, W01, G08, W02.
-- HIGH-03: P00, G06.
-- HIGH-04 and MEDIUM-06: P00, G03, G07.
-- HIGH-05: P00, G07.
-- HIGH-10, MEDIUM-03, LOW-02: G01, G02, G07.
-- MEDIUM-05: each phase and release checklist.
-- MEDIUM-07, LOW-03: G02, W01, W02, R01.
-- LOW-01: phase naming in this sequence.
+The canonical reviewed issue IDs, owners, status and closure evidence are in [READINESS_FINDINGS.md](READINESS_FINDINGS.md). Previously used labels `BLOCKER-01`–`HIGH-10` lacked a committed definition and are **retired**, not silently assumed equivalent to this review.
+
+- B1/H1: driver D01; transport and numeric tests; hardware certification H01.
+- B2: driver D01, G04 STOP fencing and H01 site readback/STOP.
+- B3: P00 site-signed model/firmware, safety and gradient envelope; H01.
+- B4: G01–G08, H01, W01/W02 and R01.
+- H2/H3: P00 gradient and virtual-clock contracts, G06 tests, H01 gradients.
+- H4: G08-min **before** G05 physical controls and any live HIL.
+- H5: this traceability register and PR evidence.
+- H6/H7: G03, G07, CSV migration and crash recovery tests.
+- H8: CI and pinned dependencies; enforce per-PR independent checks.
+- M1/M2: G01 conformance and W01 Windows feasibility, respectively.
 
 ## Go / no-go rules
 
-- **GO now:** P00 abstraction review, D01 driver reliability, G01 typed backend contract/registry and 3-adapter conformance, G02/G03 UI/data and W01 early freeze, simulated generic G04/G06.
-- **CONDITIONAL GO:** any Vötsch real chamber command requires D01 merged/pinned, signed STOP policy, certified identity/envelope and controller ownership; additional vendor control requires its own reviewed maintained driver, new adapter and separate HIL signoff, never bypassing the generic `ChamberBackend` port.
+- **GO now:** P00 abstraction review, D01 driver reliability, G01 typed backend contract/registry and 3-adapter conformance, G02/G03 UI/data and W01 early freeze, simulated generic G04/G06 plus G08-min security scaffolding.
+- **CONDITIONAL GO:** any Vötsch real chamber command requires D01 merged/pinned, G08-min passed, signed STOP policy, certified identity/envelope and controller ownership; additional vendor control requires its own reviewed maintained driver, new adapter and separate HIL signoff, never bypassing the generic `ChamberBackend` port.
 - **NO-GO:** enabling hardware gradients until HIL proves units/ranges; physical-control release before BLOCKER-01..04 and H01; LAN mutation before G08; legacy retirement before both H01 and W02.
 
 ## Far-future multi-chamber roadmap (not part of initial implementation)
