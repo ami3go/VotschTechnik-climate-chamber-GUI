@@ -205,6 +205,8 @@ class ProfileEditorService:
                 raise ValueError("Repeat count must be 1..100")
         else:
             raise ValueError("Unknown metadata field")
+        if getattr(draft.profile, field) == value:
+            return draft  # Programmatic UI hydration must not create phantom edits.
         return replace(draft, profile=replace(draft.profile, **{field: value}), dirty=True)
 
     def edit_step(self, draft: EditorDraft, index: int, field: str,
