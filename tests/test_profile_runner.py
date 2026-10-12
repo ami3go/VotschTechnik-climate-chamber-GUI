@@ -348,6 +348,70 @@ class RunnerTests(unittest.TestCase):
         self.terminal(RunState.CANCELLED)
         self.assertFalse(self.backend._running)
 
+    def test_prepared_revision_is_immutable_after_editor_save(self):
+        snapshot = self.prepare()
+        self.store.save_revision(
+            "unit-chamber", snapshot.profile_id,
+            ParsedProfile((step(target="40"),), name="edited"),
+            expected_revision=1,
+        )
+        self.runner.advance()
+        self.assertEqual(self.backend._target, 25)
+        self.assertEqual(snapshot.revision, 1)
+        self.runner.cancel("unit-chamber")
+        self.terminal(RunState.CANCELLED)
+
+    def test_foreign_operator_cannot_pause_but_can_authorize_cancel(self):
+        self.prepare(step(dwell="20"))
+        self.runner.advance()
+        self.runner.advance()
+        self.runner._authorize = lambda action, chamber: "another-operator"
+        with self.assertRaisesRegex(ChamberSafetyError, "current operator"):
+            self.runner.pause("unit-chamber")
+        self.runner.cancel("unit-chamber")  # STOP independent of lease ownership
+        self.terminal(RunState.CANCELLED)
+
+    def test_first_step_transition_does_not_issue_setpoint_after_cancel(self):
+        second = replace(step(target="30", dwell="2"), step=2)
+        profile = ParsedProfile((step(), second), name="two steps")
+        self.prepare(profile=profile)
+        self.runner.advance()
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.TRANSITIONING)
+        self.runner.cancel("unit-chamber")
+        self.terminal(RunState.CANCELLED)
+        self.assertEqual(self.backend._target, 25)
+
+    def test_prepared_sink_failure_prevents_all_commands(self):
+        class FailingSink:
+            def prepare(self, snapshot):
+                raise OSError("Injected durable recorder failure")
+
+            def emit(self, event):
+                raise AssertionError("No events after failed prepare")
+
+        self.runner._sink = FailingSink()
+        header = self.store.create_profile("unit-chamber", ParsedProfile((step(),)))
+        with self.assertRaises(OSError):
+            self.runner.start("unit-chamber", header.profile_id, revision=1)
+        self.assertIsNone(self.runner.state)
+        self.assertFalse(self.backend._running)
+        self.assertFalse(self.manager.health("unit-chamber").stop_latched)
+
+    def test_repeated_poll_does_not_qualify_sparse_stabilization(self):
+        self.prepare(step(stabilize="4"))
+        self.runner.advance()
+        self.runner.advance()
+        self.clock.advance(6)
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.STABILIZING)
+        self.clock.advance(3)
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.STABILIZING)
+        self.clock.advance(1)
+        self.runner.advance()
+        self.terminal(RunState.COMPLETED)
+
     def test_post_stop_requires_explicit_reconciliation(self):
         self.prepare()
         self.runner.advance()
