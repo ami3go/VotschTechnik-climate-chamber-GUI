@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import Callable, TypeVar
 
 from chamber_web.domain.chamber import (
-    ChamberBackend, ChamberCapabilities, ChamberIdentity, ChamberSafetyError,
+    ChamberBackend, ChamberCapabilities, ChamberConnectionError, ChamberError,
+    ChamberIdentity, ChamberProtocolError, ChamberSafetyError, ChamberTimeoutError,
     ChamberSnapshot, OperationState, ReadingQuality, finite_temperature,
     validate_chamber_id,
 )
@@ -195,7 +196,21 @@ class ChamberController:
             except Exception as exc:
                 with self._state_lock:
                     self._trip("Backend " + work.name + " failed: " + type(exc).__name__)
-                work.future.set_exception(exc)
+                if isinstance(exc, ChamberError):
+                    normalized = exc
+                elif isinstance(exc, (ConnectionError, OSError)):
+                    normalized = ChamberConnectionError(
+                        "Backend " + work.name + " connection failed"
+                    )
+                elif isinstance(exc, TimeoutError):
+                    normalized = ChamberTimeoutError(
+                        "Backend " + work.name + " timed out"
+                    )
+                else:
+                    normalized = ChamberProtocolError(
+                        "Backend " + work.name + " failed"
+                    )
+                work.future.set_exception(normalized)
             else:
                 work.future.set_result(result)
 
@@ -214,7 +229,7 @@ class ChamberController:
         except FutureTimeout as exc:
             with self._state_lock:
                 self._trip("Backend " + name + " exceeded deadline; effect unknown")
-            raise ChamberSafetyError("I/O timeout; device state UNKNOWN") from exc
+            raise ChamberTimeoutError("I/O timeout; device state UNKNOWN") from exc
 
     def _trip(self, reason: str, *, fault: bool = False) -> None:
         # Must hold state lock; fences queued old-generation actions.
@@ -397,7 +412,8 @@ class ChamberController:
         self._submit("disconnect", self._backend.disconnect, priority=0)
         with self._state_lock:
             verified = (
-                self._last_snapshot is not None
+                not self._stop_latched
+                and self._last_snapshot is not None
                 and self._last_snapshot.operation_state is OperationState.STOPPED
                 and self._state == "VERIFIED_STOPPED"
             )
