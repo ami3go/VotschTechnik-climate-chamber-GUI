@@ -1,6 +1,6 @@
 # Migration readiness findings — canonical closure ledger
 
-Review baseline: GUI main `9bbbc6d`, driver main `67978f9`, 2026-10-12. `B`/`H`/`M` are the only valid IDs for the 2026-10-12 readiness review. Older unidentified `BLOCKER-01`–`HIGH-10` tags in previous plans have been retired rather than guessed into equivalence. See [P00 contracts](P00_DECISION_CONTRACTS.md).
+Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status rechecked against GUI `ef473e1` and driver `9323e37`. **Original review SHAs are historical, not the current implementation.** `B`/`H`/`M` are the only valid IDs for the 2026-10-12 readiness review. Older unidentified `BLOCKER-01`–`HIGH-10` tags in previous plans have been retired rather than guessed into equivalence. See [P00 contracts](P00_DECISION_CONTRACTS.md).
 
 | ID | Severity | Finding | Work item / closure evidence | Status |
 |---|---|---|---|---|
@@ -15,7 +15,7 @@ Review baseline: GUI main `9bbbc6d`, driver main `67978f9`, 2026-10-12. `B`/`H`/
 | H5 | HIGH | Previous finding IDs undefined | This ledger and sequence linkage, P00 PR #6 | CLOSED (documentation) |
 | H6 | HIGH | Legacy demo CSV migration ambiguous | GUI PR #8 `2ef81b6` adds strict parser, original-preserving canonical ZIP and tests; UI integration pending | CORE FIX MERGED; G03 UI/DB OPEN |
 | H7 | HIGH | SQLite/filesystem crash gap | G07 journal/recovery/fault tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
-| H8 | HIGH | CI/dependency/driver pin insufficient | Driver+GUI CI and pinned direct dependencies; hash-lock, typing and full Windows offline gates pending | PARTIALLY CLOSED |
+| H8 | HIGH | CI/dependency/driver pin insufficient | [GUI #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10) `ef473e1` pins direct dependencies and driver revision; [Windows CI green](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38261039285). Hash-locked transitive freeze, typing and offline VM gates pending | PARTIAL — release gate OPEN |
 | M1 | MEDIUM | One-device multi-vendor architecture unproven | GUI PR #7 `c978ef9` and follow-up #9 `e8519ad`, Windows 3.10/3.12 CI | G01 FOUNDATION MERGED; G04 CONTROL OPEN |
 | M2 | MEDIUM | Windows freezing/offline unverified | W01 scripts/Windows CI, W02 offline VM | OPEN |
 
@@ -28,5 +28,10 @@ Review baseline: GUI main `9bbbc6d`, driver main `67978f9`, 2026-10-12. `B`/`H`/
 - GUI [PR #7](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/7): vendor-neutral G01 foundation, `c978ef9`.
 - GUI [PR #9](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/9): vendor-specific branch isolation correction, `e8519ad`.
 - GUI [PR #8](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/8): G03 profile migration core, `2ef81b6`.
+- GUI [PR #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10): pins CI-tested direct dependencies and hardened driver revision, `ef473e1`.
 
 All release, HIL, Windows offline and operational security gates remain mandatory.
+
+## Active status/next-PR source of truth
+
+See [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md) for per-delivery-unit progress, proposed G02-A/G03-B/W01-A/G04-A/G08-min-A PR order, acceptance and review/merge loops. **No site approval or HIL is recorded.** Hardware remains disabled. Status updates must distinguish phase-complete evidence from a merged foundation or demo.
