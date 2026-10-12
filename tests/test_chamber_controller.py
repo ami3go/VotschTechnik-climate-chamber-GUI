@@ -195,6 +195,28 @@ class ControllerTests(unittest.TestCase):
             manager.set_temperature("device-1", 40)
         backend.release.set()
 
+    def test_running_readback_after_verified_stop_is_unknown(self):
+        backend = CountingBackend("device-1")
+        manager = self.manager(backend)
+        manager.stop("device-1")
+        backend.start()  # unexpected external state change, mock only
+        snapshot = manager.status("device-1")
+        self.assertEqual(snapshot.operation_state, OperationState.RUNNING)
+        self.assertEqual(manager.health("device-1").state, "UNKNOWN")
+        self.assertTrue(manager.health("device-1").stop_latched)
+
+    def test_unreconciled_stop_persists_across_restart(self):
+        manager = self.manager(CountingBackend("device-1"))
+        manager.stop("device-1")
+        self.assertTrue(manager.health("device-1").stop_latched)
+        manager.disconnect("device-1")
+        other = self.manager(CountingBackend("device-1"))
+        self.assertTrue(other.health("device-1").stop_latched)
+        with self.assertRaises(ChamberSafetyError):
+            other.start("device-1")
+        other.reconcile_stop("device-1")
+        other.start("device-1")
+
     def test_stale_readback_fences_writes(self):
         backend = FailingReadback("device-1")
         manager = self.manager(backend)
