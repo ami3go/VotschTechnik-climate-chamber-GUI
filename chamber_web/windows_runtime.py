@@ -281,9 +281,14 @@ def server_main() -> int:
     parser = argparse.ArgumentParser(description="W01 simulated NiceGUI server")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--bootstrap-admin", action="store_true",
+                        help="Interactive, offline first administrator; no web provisioning")
     parser.add_argument("--require-module", action="append", default=[])
     args = parser.parse_args()
     try:
+        if args.bootstrap_admin:
+            from chamber_web.security.bootstrap import interactive_bootstrap
+            return interactive_bootstrap()
         if args.self_test:
             return frozen_self_test(required_modules=tuple(args.require_module))
         return serve(port=args.port)
