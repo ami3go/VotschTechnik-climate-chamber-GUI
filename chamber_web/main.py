@@ -485,7 +485,8 @@ def run() -> None:
     # Fail safe: localhost-only until authentication / network controls exist.
     ui.run(title="Climate Chamber — server simulation", host="127.0.0.1",
            port=8080, reload=False, show=False,
-           storage_secret=cookie_secret())
+           storage_secret=cookie_secret(),
+           session_middleware_kwargs={"same_site": "strict", "max_age": 28800})
 
 
 if __name__ == "__main__":
