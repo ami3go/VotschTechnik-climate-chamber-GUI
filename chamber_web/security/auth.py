@@ -117,7 +117,8 @@ class SecurityStore:
         self.idle_timeout_s = idle_timeout_s
         self.absolute_timeout_s = absolute_timeout_s
         self._lock = threading.RLock()
-        with self._db() as db:
+        db = self._db()
+        try:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS bootstrap (
                     id INTEGER PRIMARY KEY CHECK (id=1),
@@ -155,6 +156,8 @@ class SecurityStore:
                     detail TEXT NOT NULL
                 );
             """)
+        finally:
+            db.close()
         if __import__("os").name != "nt":
             self.database.chmod(0o600)
 
@@ -178,9 +181,12 @@ class SecurityStore:
     def audit(self, actor: Actor | None, action: str, outcome: str,
               chamber_id: str | None = None, detail: str = "") -> None:
         # Audit insertion failure is never silently downgraded to success.
-        with self._db() as db:
+        db = self._db()
+        try:
             with db:
                 self._audit(db, actor, action, outcome, chamber_id, detail)
+        finally:
+            db.close()
 
     def is_bootstrapped(self) -> bool:
         db = self._db()
