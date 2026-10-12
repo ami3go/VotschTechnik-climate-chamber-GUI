@@ -410,19 +410,26 @@ class ProfileRunner:
             self._reason = "STOP unverified: " + type(exc).__name__
             self._terminal_after_stop = RunState.UNKNOWN
         self._state = self._terminal_after_stop
+        if self._owner_token is not None:
+            try:
+                self._manager.release_operator(self._id, self._owner_token)
+            except Exception:
+                self._state = RunState.UNKNOWN
+                self._reason = "Operator lease release unverified"
+            self._owner_token = None
         try:
             self._emit("TERMINAL", self._reason)
         except Exception:
             self._state = RunState.UNKNOWN
             self._reason = "Terminal event recording failed"
-        finally:
-            if self._owner_token is not None:
-                try:
-                    self._manager.release_operator(self._id, self._owner_token)
-                except Exception:
-                    self._state = RunState.UNKNOWN
-                    self._reason = "Operator lease release unverified"
-                self._owner_token = None
+
+    def _sample_fresh(self, sample) -> bool:
+        timestamp = sample.sampled_at_utc
+        if timestamp is None or timestamp.tzinfo is None:
+            return False
+        age = (datetime.now(timezone.utc) - timestamp).total_seconds()
+        assert self._snapshot is not None
+        return -1 <= age <= self._snapshot.parameters.max_age_s
 
     def _observe(self) -> None:
         assert self._snapshot is not None
@@ -434,6 +441,7 @@ class ProfileRunner:
         self._healthy(running=True)
         if (sample.identity != self._snapshot.identity or
                 sample.quality is not ReadingQuality.GOOD or
+                not self._sample_fresh(sample) or
                 sample.operation_state is not OperationState.RUNNING or
                 sample.measured_temperature_c is None or
                 not math.isfinite(sample.measured_temperature_c) or
@@ -536,8 +544,12 @@ class ProfileRunner:
                     sample = self._manager.status(self._id)
                     self._healthy(running=True)
                     if (sample.quality is not ReadingQuality.GOOD or
+                            not self._sample_fresh(sample) or
                             sample.identity != self._snapshot.identity or
-                            sample.operation_state is not OperationState.RUNNING):
+                            sample.operation_state is not OperationState.RUNNING or
+                            sample.setpoint_temperature_c is None or
+                            abs(sample.setpoint_temperature_c -
+                                float(self._step().target_temperature_c)) > 0.1):
                         raise ChamberSafetyError("Telemetry invalid while paused")
                 elif self._state in (RunState.REACHING, RunState.STABILIZING, RunState.DWELLING):
                     self._observe()
