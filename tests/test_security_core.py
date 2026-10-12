@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from chamber_web.adapters.fake import FakeBackend
 from chamber_web.domain.config import ChamberConfig
+from chamber_web.security.bootstrap import interactive_bootstrap
 from chamber_web.security.auth import (
     AuthenticationError, AuthorizationError, Role, SecurityStore,
 )
@@ -37,6 +38,11 @@ class SecurityCoreTests(unittest.TestCase):
         self.security.create_user(self.admin.session, self.admin.csrf,
                                   username, "StrongSecretPassword#2", role)
         return self.security.login(username, "StrongSecretPassword#2")
+
+    def test_noninteractive_bootstrap_is_denied(self):
+        with patch("chamber_web.security.bootstrap.sys.stdin") as fake_stdin:
+            fake_stdin.isatty.return_value = False
+            self.assertEqual(interactive_bootstrap(Path(self.temp.name) / "forbidden"), 2)
 
     def test_offline_bootstrap_is_atomic_and_never_repeatable(self):
         self.assertTrue(self.security.is_bootstrapped())
