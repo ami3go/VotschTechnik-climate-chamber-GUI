@@ -4,7 +4,7 @@ This module is the database/backend part of G03, **not the NiceGUI profile edito
 
 ## API
 
-`chamber_web.persistence.ProfileStore(db_path)` creates a new version 1 SQLite file when its path does not exist, or opens a matching, recognized application database. Unsupported version, application ID, missing tables, or missing immutability triggers **fail closed**. There is no automatic database downgrade or destructive migration.
+`chamber_web.persistence.ProfileStore(db_path)` creates a new version 1 SQLite file when its path does not exist, or opens a matching, recognized application database. Unsupported version, application ID, or any differing SQLite table, primary-key, foreign-key, index or trigger definitions **fail closed** (the full v1 DDL is compared). There is no automatic database downgrade or destructive migration.
 
 - `create_profile(chamber_id, ParsedProfile)` saves revision 1.
 - `import_profile(chamber_id, bytes, filename=".csv"/".zip", legacy_reach_timeout_s=...)` strictly validates the whole file before creating a profile. Legacy CSV requires an explicit reach timeout and retains its original bytes in the canonical ZIP.
