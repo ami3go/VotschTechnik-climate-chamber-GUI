@@ -67,10 +67,8 @@ class ChamberController:
             raise ValueError("Readback age must be finite, >0 and <=60 s")
         # The real vendor adapter is not activated by this release. Only a
         # separately injected mock may exercise its protocol translation.
-        if config.backend_id not in ("fake", "alternate_stub") and not (
-            config.backend_id == "votsch" and allow_mock_vendor_backend
-        ):
-            raise ChamberSafetyError("Physical hardware I/O DISABLED; mock backends only")
+        self._mock_vendor_allowed = allow_mock_vendor_backend
+        self._backend_id = config.backend_id
         self.chamber_id = config.chamber_id
         self._backend = backend
         self._lease = DeviceLease(config.chamber_id, lease_directory)
@@ -140,6 +138,10 @@ class ChamberController:
     def connect(self, chamber_id: str) -> None:
         self._check_id(chamber_id)
         with self._state_lock:
+            if self._backend_id not in ("fake", "alternate_stub") and not (
+                self._backend_id == "votsch" and self._mock_vendor_allowed
+            ):
+                raise ChamberSafetyError("Physical hardware I/O DISABLED; mock backends only")
             if self._connected:
                 return
             if self._closed or self._thread is not None:
@@ -189,7 +191,7 @@ class ChamberController:
                     )
                     continue
                 try:
-                    self._lease.verify(work.generation)
+                    self._lease.verify(self._generation if work.name == "stop" else work.generation)
                 except Exception as exc:
                     work.future.set_exception(exc)
                     self._trip("Lease/generation verification failed", fault=True)
@@ -308,6 +310,7 @@ class ChamberController:
             except Exception as exc:
                 self._state = "FAULT"
                 raise ChamberSafetyError("STOP fencing could not be persisted") from exc
+            intent_generation = self._generation
             if not self._connected:
                 self._state = "UNKNOWN"
                 raise ChamberSafetyError("STOP cannot be verified: not connected")
@@ -324,6 +327,8 @@ class ChamberController:
                     self._trip("STOP effect unverified")
             raise
         with self._state_lock:
+            if intent_generation != self._generation:
+                raise ChamberSafetyError("STOP superseded by another fault or STOP")
             self._last_snapshot = snapshot
             self._state = "VERIFIED_STOPPED"
             self._reason = None
