@@ -1,6 +1,6 @@
 # NiceGUI web migration and profile execution plan
 
-Status: PROPOSED — documentation only; no application code is changed by this plan.
+Status: REVISED PROPOSAL — documentation only; hardware release remains NO-GO until production blockers, signed safety policy, HIL and offline gates pass. Authoritative phased backlog: [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md).
 Repositories reviewed: [GUI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI) main and [Python driver](https://github.com/ami3go/VotschTechnik-climate-chamber-Python) main (2026-10-12).
 Owner decision: The NiceGUI web application replaces Tkinter. Desktop GUI support will be discontinued after web acceptance.
 
@@ -66,9 +66,9 @@ Non-goals for initial release: browser-to-chamber communications; chamber firmwa
 
 Critical invariants:
 - Browser events never directly call blocking driver methods. Use a single per-chamber controller that serializes hardware I/O, enforces mutually exclusive control and produces immutable telemetry snapshots.
-- At most one active profile or manual-control owner per chamber. Read-only viewers may connect concurrently. STOP is available to every authorized operator even when another operator owns the lease.
+- At most one active profile or manual-control owner per chamber, enforced by a single OS-level server process/chamber lock plus transactional SQLite control lease and generation fencing. STOP is allowed for any authorized OPERATOR/ADMIN without lease ownership, and invalidates queued older-generation writes.
 - No chamber object stored in NiceGUI user/session storage. A browser refresh/reconnect rehydrates state from the server.
-- Driver calls must not block the event loop or delay STOP indefinitely; all operations have bounded timeouts and observable errors.
+- Driver calls never block the NiceGUI event loop. STOP intent must be registered and fence future writes immediately; an in-flight blocking transport call cannot be assumed preemptible. Use finite driver deadlines and report attempted STOP separately from verified physical stop. On failed/unavailable readback report UNKNOWN/FAULT and local intervention.
 - Never infer physical stop/start solely from a UI command. Poll/verify `is_running`; report unverified result as UNKNOWN/FAULT.
 - Physical emergency stop and chamber manufacturer safety limits remain mandatory; browser STOP is not an emergency-stop replacement.
 - Web UI/profile runner never sends undocumented controller commands. Device protocol fixes belong in a separately reviewed driver PR with its own tests.
@@ -104,7 +104,7 @@ Navigation: **Dashboard**, **Profiles**, **Run History**, **Logs**, **Settings**
 ### Dashboard
 - Compact chamber selector (initially one physical chamber; architecture supports future multiple), Connect/Disconnect, ID/model/serial, last-successful reading age and connection status.
 - 3 large KPI cards: measured temperature °C, effective setpoint °C, equipment status (OFF/RUNNING/UNKNOWN). Small secondary metrics: active step, remaining/elapsed time and acquisition status.
-- Left: preset temperature chips and custom numeric entry/slider, apply/confirmation; start/stop manual operation. Manual setpoint changes are disabled or explicitly transferred/confirmed while a profile owns the chamber.
+- Left: preset temperature chips and custom numeric entry/slider, apply/confirmation; start/stop manual operation. Block manual changes while a profile owns the chamber; manual takeover requires audited abort/finish, confirmed safe release of the owner lease and an explicit new action.
 - Center: live measured + requested setpoint plot with chart legend, time selection, zoom, pause chart and download. Plot is for visualization only; raw CSV preserves every acquired measurement.
 - Right: active profile card (profile name/version, step N of M, target, tolerance, stabilization/dwell clock, progress) and active alarms/latest events.
 - Show a prominent SIMULATION banner for any fake-driver mode. No silently simulated measured values when disconnected.
@@ -113,8 +113,8 @@ Navigation: **Dashboard**, **Profiles**, **Run History**, **Logs**, **Settings**
 - Browse/new/clone/rename/delete with confirm, revision, author and update time; import CSV; export CSV; save draft; validate; show estimate; run from validated immutable revision.
 - Editable `ui.aggrid` or NiceGUI table with explicit save/validation events. Row add/remove/duplicate/reorder; enable/disable per step; bulk edit; keyboard navigation, copy/paste and undo where feasible.
 - Columns: `step` (positive sequence), `enabled` (bool), `target_temperature_c` (float), `ramp_up_c_per_min` (nullable), `ramp_down_c_per_min` (nullable), `tolerance_c` (positive float), `stabilize_s` (>=0), `dwell_s` (>=0), `reach_timeout_s` (>0), `notes` (text). Profile-level: `name`, `description`, `repeat_count` (>=1), `completion_action` ('STOP' by default; optional explicit HOLD_SETPOINT).
-- For ramp fields, `null` means hardware/default behavior, NOT 'zero ramp'. Any requested gradient is validated only after vendor unit/model confirmation.
-- Input validation rejects NaN/Infinity, invalid/negative dwell, duplicate/nonsequential steps, empty enabled profile, out-of-range temperature, unsupported ramp, unreachable timeouts and unsafe repeat count. All values revalidated **server-side at run launch** against current driver/chamber safe limits.
+- For ramp fields, null means hardware/default behavior and NO gradient write, not zero. Disable hardware gradient editing/execution until model-specific units/ranges/readback are HIL-certified; any unverified non-null ramp fails run validation.
+- Input validation rejects NaN/Infinity, unsupported/stale model capabilities, conflicting limits, nonsequential steps, empty enabled profiles, impossible timeouts, unsafe repeat counts, unsupported ramps and out-of-range targets. Validate on the server at save AND launch, using the intersection of certified physical/model/configured safe limits, never plot bounds.
 - Validation/preview panel graphs intended target-vs-time, labels estimates as *estimates*, and shows warnings/total minimum dwell; it cannot promise hardware ramp times.
 
 Example profile table:
@@ -156,12 +156,12 @@ State diagram:
 Rules:
 1. Launch requires chamber connection, verified identity, no conflicting run/manual owner, valid temperature limits and operator authorization. Reserve ownership atomically; create run record and initialize recorder **before** issuing START.
 2. Per step: set supported gradient only if enabled/validated; issue setpoint through driver; ensure chamber started; wait for measured temperature to enter the inclusive target ± tolerance band.
-3. Stabilization requires **continuous** time in band. Every out-of-band sample resets the stabilization timer; missing/stale samples never count as stable.
-4. Dwell begins after stabilization and counts only in-band elapsed monotonic time. Out-of-band dwell pauses counting, logs an excursion and can optionally trigger a stricter per-profile safety abort. A configurable absolute per-step watchdog bounds total elapsed time, including pauses.
-5. `reach_timeout_s` is a deadline to achieve initial in-band temperature; timeout aborts safely. Separate finite limits on stabilization and dwell completion must be configured to avoid indefinite runs.
-6. PAUSE freezes transitions and dwell accounting but keeps chamber at current target and keeps safety polling/logging. RESUME revalidates active state and condition. STOP cancels scheduled steps, requests driver `stop()`, verifies physical status, stops all future setpoint commands and finalizes recorded files. Software-stop failure is a prominent FAULT requiring local intervention.
-7. No repeat/skip/manual overrides while RUNNING without explicit audited operator action. No automatic resume after server restart/network reconnect. On restart, reconcile chamber status; mark unfinished runs INTERRUPTED, alert operator and do not guess that physical chamber has stopped.
-8. On browser disconnect, run continues server side. On chamber communication loss, mark readings stale immediately, stop advancing the profile, retry with bounded backoff, and attempt safe stop according to a reviewed site policy; fail visible rather than assuming safe shutdown.
+3. Stabilization requires a monotonic period of consecutive *observed* GOOD, fresh in-band readings (inclusive tolerance), with at least two distinct observations spanning positive stabilize_s. Any gap, stale/error sample or excursion resets stabilization. Samples do not prove physical continuity between observations.
+4. Dwell starts after stabilization and accumulates only monotonic intervals bracketed by GOOD/fresh in-band readings. Missing/stale/out-of-band/PAUSED time never counts; excursions are logged and may trigger policy-driven abort. An absolute step watchdog continues even on PAUSE.
+5. reach_timeout_s starts at successful setpoint dispatch and bounds initial valid in-band observation; independent finite stabilization, dwell-completion, absolute step and total run deadlines are mandatory. All time accounting uses monotonic clocks.
+6. PAUSE freezes transitions/dwell but retains physical regulation, polling and absolute watchdogs. RESUME revalidates state, identity, owner lease and fresh data. STOP atomically fences queued control, attempts driver stop and verifies physical readback when possible; unverified results remain UNKNOWN/FAULT, never 'stopped'.
+7. No repeat/skip/manual override during RUNNING. On process restart, acquire process lock, invalidate old command generations, mark unfinished runs INTERRUPTED, poll real hardware, require deliberate operator reconciliation, never auto-resume or auto-clear alarms.
+8. Browser disconnect does not stop supervised server-side execution; on chamber communication loss invalidate freshness, stop advancing profile, retry with bounded policy and attempt safe action per signed site matrix. A disconnected chamber must never be asserted physically stopped.
 9. Never use driver `set_and_wait()` or `time.sleep()` in the UI/event loop; implement cancellable orchestration around short driver reads/writes, monotonic deadlines and serialized I/O.
 
 ## 6. CSV contract and persistence
@@ -173,32 +173,44 @@ B. automatically preserved measured run samples and events CSV (autosave during 
 ### Profile CSV v1
 - UTF-8 with header, exactly one row per profile step; fields:
   `step,enabled,target_temperature_c,ramp_up_c_per_min,ramp_down_c_per_min,tolerance_c,stabilize_s,dwell_s,reach_timeout_s,notes`.
-- Metadata such as name, repeat count, schema version and completion action stored with profile in SQLite, plus an export sidecar `profile.json` when fidelity is required. Optionally provide an export ZIP with both profile.csv and profile.json.
-- Import accepts UTF-8 BOM, validates separator/comma vs semicolon, types, bounds, row count, headers, duplicates and schema version. Unknown columns error by default; empty ramp fields become null. Dry-run validation preview; no chamber writes on import.
-- Canonical export separator comma, decimal dot, standard CSV quoting, deterministic order and header. Export must round-trip profile steps without precision loss. Formula injection characters in free text escaped for spreadsheet-safe export without breaking canonical machine-readable import (choose and document one reversible policy).
+- Standalone profile.csv is *step-only* and requires separately supplied/defaulted metadata. Canonical lossless full-profile interchange MUST be a versioned ZIP containing profile.csv and profile.json with name/description/repeat_count/completion_action/schema version, plus checksums and archive limits.
+- Import accepts UTF-8 BOM and normal quoted CSV newlines, validates delimiter without silently changing decimal meaning, duplicate headers, finite types, row/size limits and schema version; ZIP imports validate entry names, expansion, checksums and metadata. Unknown columns error by default; null gradients are empty. Failed import never changes saved profile or chamber.
+- Canonical machine CSV uses comma delimiter, decimal dot, reversible numeric/text values, deterministic quoting/order and no precision loss; formula-like text is preserved but is NOT spreadsheet-safe. Provide a separate explicitly labeled spreadsheet-safe export with a documented potentially non-lossless neutralization policy.
 
 ### Run samples CSV v1 (one per run)
 Header:
-`timestamp_utc,elapsed_s,run_id,chamber_id,step_index,phase,measured_temperature_c,target_temperature_c,chamber_running,sample_quality`.
+`sample_index,timestamp_utc,elapsed_s,run_id,chamber_id,step_index,phase,measured_temperature_c,target_temperature_c,chamber_running,sample_quality`.
 - UTC RFC3339 timestamps with milliseconds; `elapsed_s` from monotonic clock; empty measured cell when acquisition fails; `sample_quality` indicates GOOD/STALE/ERROR. Do not record synthetic temperatures as valid readings.
 - A companion events CSV uses `timestamp_utc,elapsed_s,run_id,step_index,severity,event_code,message,operator`.
-- Create run folder and CSV headers at run start; stream append at configurable sample interval (default proposal: 2 seconds). Flush promptly (target <=5 seconds exposure window) and flush/fsync at transitions/finish. Create metadata atomically before first setpoint. If logging becomes unavailable, initiate a defined safe-stop/error policy.
+- Before any START/setpoint, commit an immutable run/settings/profile snapshot and recording-ready state, create run folder/CSV headers/atomic manifest, then stream samples with monotonically increasing sample_index (proposed 2 s polling). Flush within the defined exposure window (target <=5 s), fsync critical transitions, checksum/finalize after close. Detect incomplete fragments/SQLite mismatch on restart; recorder failures trigger signed FAULT/stop policy and never fabricated samples.
 - SQLite stores the run index and events for browsing; avoid storing millions of raw samples in SQLite unless necessary. Retain raw data, and downsample only in chart query response (e.g. <=2,000 rendered points preserving extrema).
 - Keep files on server-owned directories with safe generated run IDs; sanitize filenames, guard against CSV injection, limit import size/rows, enforce disk space quota/retention and block user-controlled path traversal.
 - Provide download links for profile CSV, run sample CSV, event CSV and an optional ZIP with manifest/checksums. Show data integrity warnings for recovered/incomplete runs.
 
 ## 7. Concurrency, security and operability
 
-- Device access: one command serialization point, bounded queue, connection state machine and serialized poller. STOP/abort intent has priority; cancellation prevents previously queued setpoints from executing after STOP.
-- Roles: VIEWER (monitor/download), OPERATOR (manual actions, create/edit profiles, run/stop), ADMIN (device config/users). Audit who did what and when. One exclusive control lease per chamber with heartbeat/expiry/recovery; STOP must not require the lease.
-- Authentication for the browser, secure cookies and CSRF/origin protections for mutations/websockets. Bind to loopback by default; LAN access only after explicit config; use HTTPS or protected reverse proxy. Do not expose unauthenticated chamber control to the internet.
+- Device access: one per-chamber serialized bounded queue, generation-fenced writes, poller and OS process lock. STOP intent is latched before queue scheduling, cancels/fences stale writes and is never equated with physical confirmation. Handle uncertain TCP acknowledgements without blindly repeating non-idempotent commands.
+- Roles: VIEWER (monitor/download), OPERATOR (manual, profile CRUD/run/STOP), ADMIN (config/users). Audit mutations/denials. Transactional SQLite exclusive lease with generation and expiry plus OS process lock; check ownership token immediately before dispatch. STOP needs authorization, not the owner's lease; expiration does not clear physical faults.
+- Browser authentication requires offline local first-run admin enrollment, credential recovery, secure cookies, session expiry and HTTP/WebSocket CSRF/origin checks; loopback by default, explicit HTTPS/protected proxy when LAN-enabled, no unauthenticated mutations or internet exposure.
 - Validate and restrict device target addresses to configured allowlist/LAN ranges to avoid use of connection form as arbitrary-network access.
-- Support systemd/Windows service launch, configuration from environment/TOML, health/readiness endpoints and durable data path. Never auto-start chamber on server boot.
+- Support independently supervised Windows service/systemd lifecycle and an explicitly limited portable per-user mode; closing a browser/launcher cannot stop an active service run, while user logoff MAY stop portable mode and must be documented/guarded. Distinguish process liveness, application readiness, driver connectivity and verified physical equipment state. Never auto-start chamber on server boot.
 - Pin compatible driver and NiceGUI dependency ranges with lockfile; driver still maintained in its original repository.
-- Choose a **single authoritative server process** for a connected device. Multi-worker processes require an explicit external owner/coordinator and are OUT of initial scope.
+- Enforce exactly one authoritative server process/chamber OS lock plus transactional lease and command generation; a second server cannot control the same physical IP. Multi-worker device processes remain out of scope.
 - Run count, sample/data retention, audit retention and recovery policy are administrator-configured; default to conservative safe choices.
-- On critical warning (over-temperature per configured safe limit, repeated communication timeout, out-of-band dwell, disk full, unverified stop), prevent further profile advancement and surface actionable recovery guidance.
+- On over-temperature per certified safety envelope, communication failure, invalid identity, stale data, out-of-band safety alarm, disk full or unverified STOP: prevent profile advancement, apply signed fault matrix and surface operator recovery guidance. Freeze target IP, safety limits, poll policy and recording path for each active run.
 
+## 7A. Mandatory review-closure contracts
+
+All of the following are required before a physical-control release and are expanded into specific PR tasks/tests in [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md). Unknown decisions remain PENDING SITE SIGNOFF, not automatically approved defaults.
+
+1. **Signed physical failure matrix:** specify requested device action, verification evidence, UNKNOWN/FAULT, operator alarm/intervention and HIL test for completion, STOP, communication error, readback mismatch, over-limit temperature, logging outage, service crash/logoff, power cycle and hardware alarm. Web STOP is not an emergency stop; do not assume ambient ramp is inherently safe.
+2. **Verified device capability registry:** key certified temperature envelope, gradient units/up/down limits/readbacks, model, controller and firmware where available to actual chamber identity. Disable unsupported/unverified commands; no direct TCP/protocol implementation in GUI.
+3. **Hard driver dependency:** make bounded connect/transport/error handling, safe numeric conversion and mocked failure-path tests in the external driver repository prerequisites for actual hardware use. Connection/readback timeouts do not prove a device stopped.
+4. **Control ownership and fencing:** one OS process/chamber lock, transactional lease/generation and immediate invalidation of queued control on STOP. Restart reconciles real hardware and marks old runs interrupted; no replay, automatic resume or alarm clearing.
+5. **Observational profile semantics:** monotonic time, fresh GOOD samples only, inclusive tolerance, gap resets stabilization, dwell credit only for eligible observed intervals, explicit PAUSE/deadline behavior and finite per-stage/per-run watchdogs. Deterministic virtual-clock tests required.
+6. **Lossless persistence:** canonical versioned ZIP with profile.csv + profile.json; plain CSV is step-only. Reversible machine CSV and separately spreadsheet-safe export; sample_index, atomic run manifest, crash reconciliation, durable event recording, quota/ENOSPC response and incomplete-file warnings.
+7. **Offline operational/security lifecycle:** local admin first-run enrollment, role permissions, LAN TLS/proxy, browser-independent supervised server, documented portable logoff limits, separate liveness/readiness/device status, migration backups, rollback compatibility, verified offline assets and Visteon licensing.
+8. **Quality evidence:** browser visual baselines, large plot downsampling/multiclient benchmarks, Windows clean-VM blocked-egress launcher/offline tests, and independent site HIL signoff. Never claim simulated success implies physical safety.
 ## 8. Windows builds: native web launcher and complete offline distribution
 
 Two separate, maintained build scripts are **mandatory**, committed to the GUI repository and exercised by Windows CI. The scripts MUST have distinct responsibilities; a shortcut, README-only instructions, or a Windows desktop rewrite does not satisfy this requirement.
@@ -209,10 +221,10 @@ Two separate, maintained build scripts are **mandatory**, committed to the GUI r
 
 Required behavior and output:
 - Build on Windows using a pinned toolchain; emit `dist/windows-launcher/ClimateChamberLauncher.exe`, version information, Visteon-authorized icon and a generated build manifest.
-- The launcher resolves the installed application/server path using its install location (not hardcoded developer paths); checks whether an instance is already listening; starts the web server if necessary, waits for a **health/readiness endpoint** with bounded timeout, then opens `http://127.0.0.1:<configured-port>/` in the default browser. No duplicate chamber controller or server on repeated launches.
+- The launcher discovers an installed independently supervised server using an authenticated instance identity/OS lock, never trusts arbitrary process occupying port; starts/attaches as configured and waits for distinct app readiness, then opens local browser. In portable mode document logoff/reboot limits; never create duplicate controller.
 - Default to loopback. Respect configured host/port and open the proper URL when HTTPS/reverse-proxy mode is configured, while ensuring the launcher never inadvertently exposes the service publicly. Distinguish an occupied non-app port from a running authenticated app; never blindly trust another process at the configured port.
 - Show actionable dialogs or log locations for missing server installation, invalid configuration, blocked port, startup failure, missing permissions and initial authentication. Avoid spawning visible terminal windows during normal operator operation.
-- Closing the browser MUST NOT terminate a running profile; the launcher never owns the chamber lifecycle. Explicit service/server shutdown must refuse unsafe shutdown when a run is active unless an authorized safe-stop policy is completed.
+- Closing browser or launcher must not end a supervised service run; per-user portable mode cannot promise logoff continuity. Explicit service shutdown follows signed STOP/reconciliation matrix; forced power loss is not a verifiable physical STOP.
 - Launcher build may target an already-installed online application; **the launcher alone is not represented as an offline install**. Document the dependency on the installed application and distinguish its artifact clearly from the complete distribution.
 - Build flags: `-Clean`, `-OutputDir`, `-Configuration`, `-Version` (or equivalent documented parameters). The build fails nonzero if a step or artifact verification fails.
 
@@ -225,13 +237,13 @@ Mandatory artifact and dependencies:
 - Include the NiceGUI server entry point, `ClimateChamberLauncher.exe` from Script A, compatible embedded/frozen Python runtime, the **exact pinned version** of `VotschTechnikClimateChamber`, all transitive Python dependencies, NiceGUI/Quasar/AG Grid/Plot assets, locally bundled fonts/icons, approved Visteon logo/icon, configuration example, licenses/third-party notices, version and build metadata.
 - Do not ship or depend on a **copied virtual environment** that embeds development-host absolute paths. Prefer a pinned, reproducible Windows `PyInstaller --onedir`-style frozen server distribution (or an equivalently verified embedded-Python layout). Build natively on Windows for supported architecture; no assumed Linux-to-Windows cross-compilation.
 - Preserve the Python driver as the sole chamber interface inside the bundle. Never duplicate protocol commands in generated launcher/runtime code.
-- Installer/ZIP extraction creates writable application data/log/CSV/SQLite storage in a supported Windows user or `ProgramData` directory, **not** the read-only installation folder; initial config points to loopback. No admin privileges are required for ordinary operator launch if using the portable mode.
+- Installer/ZIP extracts writable user data/CSV/SQLite to persistent Windows user or ProgramData location separate from installation, protected by OS ACLs, with backup-before-schema-migration, incompatible-downgrade refusal and recovery policy; requires offline first-run admin enrollment. Normal portable launch needs no admin privileges.
 - Treat the Windows browser as an explicitly verified OS prerequisite (e.g. installed Edge/other default browser); if an air-gapped target cannot provide one, supply an optional legally redistributable bundled browser or compatible offline webview mode, without downloading components on the target.
 - Self-contained web assets: audit rendered pages for remote scripts, fonts, stylesheets, CDN-hosted assets, telemetry/update checks and online authentication. Configure local alternatives or disable these features. No `pip`, `uv`, `npm`, `dotnet restore`, Git, remote URLs or network installer steps on the **target PC**.
 - Test against a clean Windows x64 VM with **no Python, pip, uv, Node.js, development tools or internet connectivity**; only the documented OS baseline/browser and direct chamber LAN (or fake device) may be assumed.
 - Provide `README_OFFLINE_WINDOWS.md`: how to build, version/support matrix, transfer via USB, verify SHA-256, extract/install, start/stop server, open UI, select/configure chamber IP, store/backup logs and profiles, update to a newer offline bundle and roll back without data loss.
 - Fail build on unresolved imports, missing assets, missing DLL/driver, omitted licenses, non-matching hashes or smoke-test failure. Include a machine-readable manifest with Python/package/driver versions, lockfile hash and bundled file hashes.
-- Rebuild from locked dependency versions and a clean work directory. Document signing/SBOM provenance and offline patch/update delivery. Exclude developer keys, source secrets, `build/` caches and previously generated `dist/` trees.
+- Rebuild from pinned hashed dependencies in a clean Windows workdir, with licenses/SBOM/integrity metadata, no secrets or cached dist. Test offline upgrade N -> N+1 and rollback with real profiles, history and interrupted runs, preserving external data or restoring pre-migration backup.
 
 ### Separation and workflow
 
@@ -249,25 +261,23 @@ Mandatory artifact and dependencies:
 - Package runs without Python/pip/uv/Node/npm or admin privileges, assuming only the documented supported OS/browser; all assets load locally.
 - Repeated launches, graceful app/server shutdown and update/rollback keep durable settings/history/profile data intact; executable and ZIP checksum manifests match expected hashes.
 
-## 9. Delivery PR sequence and acceptance criteria
+## 9. Review-gated development sequence and acceptance
 
-Every PR must pass lint/type check, unit tests and relevant fake-driver integration tests before merge; do not combine unrelated infrastructure and profile behavior changes.
+**Authoritative implementation plan:** [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md). Its phase IDs refer to work items, not existing GitHub PR numbers. Each phase gets a separate focused PR, independently reviewed with test evidence and blocker/high issues corrected before merge.
 
-| PR | Scope | Exit criteria |
-|---|---|---|
-| 01 | Foundation: packaging, clean root package, CI, settings schema, README, test harness, fake driver | `python -m chamber_web` serves placeholder locally; install/test CI clean; no chamber required. |
-| 02 | Visteon NiceGUI shell + responsive layouts/components | Dashboard, Profiles, History, Logs, Settings route successfully; approved logo, tokens and keyboard/touch check; no device changes. |
-| 03 | Device adapter, controller, poller, bounded execution, status stream | Driver is sole comm path; connection/identity/poll/stop/timeout behavior tested with fake; shared state survives browser reconnect. |
-| 04 | Manual control parity + persistent settings | All existing functional controls operate; true start/stop readback; no erroneous state on connection failure; limit changes enforced. |
-| 05 | Profile data/schema/CRUD + AG Grid editor + CSV import/export | Operator can create/save/edit/clone/reorder/reopen/validate/export/import profiles; malformed/out-of-range inputs never reach driver; CSV round trip. |
-| 06 | Server-side cancellable profile engine, pause/resume, ownership | Test all state transitions, stable/dwell semantics, reach timeout, repeat, abort latency, browser disconnect and restart interruption. |
-| 07 | Autosaving CSV, history, plots, events and downloads | Headers/quality fields valid, raw points preserved, downloadable logs, bounded visual chart points, recover partial runs. |
-| 08 | Roles/auth/TLS, observability, HIL certification | Two browsers cannot start conflicting jobs; STOP always available; health checks; fault injection; real VT4011 test matrix signed off. |
-| 09 | Windows launcher and offline packaging scripts | Both mandatory PowerShell scripts build on clean Windows CI; launcher startup/reuse passes, offline ZIP works on an internet-disconnected clean Windows VM. |
-| 10 | Cutover, updated README, desktop deprecation and removal | Support documentation points to web launch/offline install; last parity and air-gap checklist complete; stop distributing legacy Tkinter/PyInstaller .exe/build artifacts. |
+| Phase | Scope and gate |
+|---|---|
+| P00 | Resolve and sign off safety matrix, gradient capability and timing/data/ownership/lifecycle contracts; record pending site decisions |
+| D01 (driver repo) | Harden finite TCP connect/send/response, numeric safety and mocked failure tests; pin tested driver before live integration |
+| G01–G03 | Root NiceGUI package, simulator, branded UI, profile revisions/AG Grid, SQLite and canonical full-profile export |
+| W01 (early, parallel) | Both Windows launcher and offline-build script feasibility with frozen fake-driver server |
+| G04–G06 | Controller, generation-fenced STOP/ownership, manual parity and deterministic state-machine runner |
+| G07–G08 | Crash-safe recording, history/performance, multiuser roles/auth and supervised lifecycle |
+| H01 | Site-approved real VT4011/LabEvent HIL incl. gradient verification, faults and STOP readback |
+| W02 | Clean air-gapped Windows x64 launcher/offline ZIP, upgrade/rollback and data preservation |
+| R01 | Formal release signoff and legacy-desktop retirement only after H01 and W02 |
 
-Driver changes are made as separate, backward-compatible PRs in `ami3go/VotschTechnik-climate-chamber-Python` before consuming new driver features; pin their tested version in GUI. PR 03 should NOT wait for unrelated driver improvements if existing functions can safely support mock/initial implementation.
-
+Developer must follow dependency prerequisites and full acceptance checklist in the linked sequence. Simulated tests alone do not certify hardware safety. Driver modifications remain in the separate driver repository.
 ### Minimum automated tests (fake transport + browser)
 - Network connect succeeds/fails/timeouts; disconnect calls driver and clears session; recovery does not pretend chamber is stopped.
 - Temperature setpoint boundaries, non-finite input, unsupported gradients, unauthorized actions.
@@ -292,7 +302,7 @@ Driver changes are made as separate, backward-compatible PRs in `ami3go/VotschTe
 8. Both `scripts/build_windows_launcher.ps1` and `scripts/build_windows_offline.ps1` exist and pass Windows CI/release tests. Their generated launcher EXE and self-contained offline ZIP are attached to a versioned release.
 9. Offline ZIP is transferred to a clean, internet-disconnected Windows machine; it runs without Python or developer tools, renders all pages/assets, runs an offline simulated profile, preserves results/CSV and does not access public internet endpoints.
 
-## 10. Decisions to confirm before implementation
+## 10. Decisions to confirm before enabling physical control
 
 - Supported physical chambers and actual temperature/gradient limits; validate model/controller differences, especially gradient command units.
 - Approved **current** Visteon logo and design tokens; usage rights in a public MIT repository.
@@ -304,6 +314,9 @@ Driver changes are made as separate, backward-compatible PRs in `ami3go/VotschTe
 
 ## 11. Readiness
 
-GO for PR 01 and PR 02 (non-hardware foundation/UI), fake-driver development and the two Windows packaging scripts against the fake driver.
-CONDITIONAL GO for manual hardware integration and profile engine until gradient units, safe stop policy, operator ownership behavior and chamber-in-the-loop test access are settled.
-NO-GO for desktop removal until the above release gates are verified on real hardware **and the self-contained offline Windows bundle passes the air-gapped target-machine acceptance test**.
+- **GO now:** P00, driver hardening D01, NiceGUI UI/fake driver foundation G01–G03, early offline build feasibility W01 and simulated controller work.
+- **CONDITIONAL GO for hardware:** only after D01 is reviewed/pinned; site safety STOP matrix signed; verified device envelope/identity; command fencing and exclusive owner enforced.
+- **NO-GO for gradients:** until model-specific gradient units/ranges and readback/slope are HIL-certified.
+- **NO-GO for release / desktop retirement:** until all four blockers, signed real-device HIL (H01), full air-gapped Windows test (W02) and R01 release approval pass.
+
+Each development phase, PR checklist, test matrix and traceability to the independent review is in [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md).
