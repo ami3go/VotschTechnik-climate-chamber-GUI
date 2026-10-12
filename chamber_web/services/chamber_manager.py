@@ -32,15 +32,20 @@ class ChamberManager:
     def configured_ids(self) -> tuple[str, ...]:
         return (self._config.chamber_id,)
 
-    def get(self, chamber_id: str) -> ChamberBackend:
+    def _backend_for_id(self, chamber_id: str) -> ChamberBackend:
         validate_chamber_id(chamber_id)
         if chamber_id != self._config.chamber_id:
             raise ChamberSafetyError("Wrong/stale chamber_id: operation refused")
         return self._backend
 
+    def get(self, chamber_id: str) -> "ChamberManager":
+        """Return the guarded controller facade, never a raw backend."""
+        self._backend_for_id(chamber_id)
+        return self
+
     def connect(self, chamber_id: str) -> None:
         with self._lock:
-            backend = self.get(chamber_id)
+            backend = self._backend_for_id(chamber_id)
             if self._connected:
                 return
             backend.connect()
@@ -51,7 +56,7 @@ class ChamberManager:
 
     def disconnect(self, chamber_id: str) -> None:
         with self._lock:
-            backend = self.get(chamber_id)
+            backend = self._backend_for_id(chamber_id)
             try:
                 backend.disconnect()
             finally:
@@ -60,7 +65,7 @@ class ChamberManager:
 
     def status(self, chamber_id: str):
         with self._lock:
-            return self.get(chamber_id).read_status()
+            return self._backend_for_id(chamber_id).read_status()
 
     def set_temperature(self, chamber_id: str, target_c: float) -> None:
         with self._lock:
@@ -80,14 +85,14 @@ class ChamberManager:
 
     def stop(self, chamber_id: str) -> None:
         with self._lock:
-            backend = self.get(chamber_id)
+            backend = self._backend_for_id(chamber_id)
             self._stop_latched = True
             if not self._connected:
                 raise ChamberSafetyError("STOP cannot be verified: not connected")
             backend.stop()
 
     def _guard_mutation(self, chamber_id: str) -> ChamberBackend:
-        backend = self.get(chamber_id)
+        backend = self._backend_for_id(chamber_id)
         if not self._connected or self._stop_latched:
             raise ChamberSafetyError("Operation blocked: disconnected or STOP-latched")
         if self._config.backend_id == "votsch":
@@ -96,7 +101,7 @@ class ChamberManager:
 
     def reconcile_stop(self, chamber_id: str) -> None:
         with self._lock:
-            backend = self.get(chamber_id)
+            backend = self._backend_for_id(chamber_id)
             snapshot = backend.read_status()
             if not self._connected or snapshot.quality is not ReadingQuality.GOOD or (
                 snapshot.operation_state is not OperationState.STOPPED

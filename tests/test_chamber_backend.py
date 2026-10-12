@@ -74,6 +74,11 @@ class BackendContractTests(unittest.TestCase):
                 command()
         self.assertEqual(manager.status("ch1").operation_state, OperationState.STOPPED)
 
+    def test_manager_does_not_expose_backend_bypass(self):
+        manager = ChamberManager([ChamberConfig("ch1", "fake")], backend_factory=make_backend)
+        self.assertIs(manager.get("ch1"), manager)
+        self.assertFalse(hasattr(manager.get("ch1"), "set_ramp_up"))
+
     def test_stop_latch_blocks_old_commands(self):
         manager = ChamberManager([ChamberConfig("ch1", "fake")], backend_factory=make_backend)
         manager.connect("ch1")
