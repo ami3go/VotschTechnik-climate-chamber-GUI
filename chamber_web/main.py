@@ -1,20 +1,58 @@
-"""NiceGUI dashboard scaffold based on the supplied Visteon mockup.
+"""NiceGUI read-only Dashboard bound to the server-owned generic service.
 
-DEMO ONLY. Physical chamber integration must use VotschTechnikClimateChamber
-in a separate server-side controller and is deliberately not present here.
+G02-A exposes no chamber mutations, no page-owned chamber state, and no hardware.
+The legacy CSV editor remains a browser-local unpersisted draft until G03-C.
 """
 from __future__ import annotations
 
 import math
 from datetime import datetime, timedelta
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from nicegui import ui
+from nicegui import app, ui
+
+from .bootstrap import create_demo_dashboard_service
+from .domain.chamber import ReadingQuality
 
 from .model import (
-    MAX_TEMP, MIN_TEMP, DemoChamber, Step, default_steps,
+    MAX_TEMP, MIN_TEMP, Step, default_steps,
     export_profile_csv, import_profile_csv,
 )
+
+
+@dataclass
+class ProfileDraft:
+    """Unpersisted per-page profile editing data, not chamber/control state."""
+    profile_name: str = "Temperature Cycle – Automotive"
+    steps: list[Step] = field(default_factory=default_steps)
+    logs: list[dict] = field(default_factory=list)
+    run_steps: list[Step] = field(default_factory=list)
+    step_index: int = 0
+    completed: bool = False
+
+    @property
+    def active_steps(self) -> list[Step]:
+        return self.steps
+
+    def log(self, message: str) -> None:
+        self.logs.insert(0, {
+            "id": str(datetime.now().timestamp()),
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "level": "DRAFT", "message": message,
+        })
+        del self.logs[40:]
+
+
+# One process-level Fake service, independent of any client/browser lifecycle.
+_dashboard_service = create_demo_dashboard_service()
+app.on_startup(_dashboard_service.start)
+app.on_shutdown(_dashboard_service.close)
+
+
+def get_dashboard_service():
+    return _dashboard_service
+
 
 CSS = (Path(__file__).parent / "assets" / "style.css").read_text(encoding="utf-8")
 ui.add_css(CSS, shared=True)
@@ -33,14 +71,12 @@ def _panel_title(icon: str, title: str) -> None:
 
 @ui.page("/")
 def dashboard() -> None:
-    # Per-browser simulation is deliberate. No shared physical controller
-    # or server-side autonomous run is claimed by this initial UI scaffold.
-    state = DemoChamber()
+    service = get_dashboard_service()
+    # Local drafts are not executable runs or chamber state.
+    state = ProfileDraft()
 
     def warn_while_running() -> bool:
-        if state.running:
-            ui.notify("Stop the demo before editing profile steps", color="warning")
-            return True
+        # No runnable profile engine exists in G02-A.
         return False
 
     def scroll_to(section: str) -> None:
@@ -139,36 +175,6 @@ def dashboard() -> None:
                 return
         step_overview.refresh()
 
-    def start_demo() -> None:
-        try:
-            state.start()
-            editor_rows.refresh()
-            step_overview.refresh()
-            ui.notify("Simulation started (NO chamber connected)", color="warning")
-        except ValueError as exc:
-            ui.notify(f"Cannot start: {exc}", color="negative")
-
-    def stop_demo() -> None:
-        state.stop()
-        editor_rows.refresh()
-        step_overview.refresh()
-
-    def hold_demo() -> None:
-        state.hold()
-
-    def set_manual_target(value) -> None:
-        if value is None:
-            return
-        if state.running:
-            ui.notify("Manual temperature disabled during demo profile", color="warning")
-            return
-        value = float(value)
-        if not math.isfinite(value) or not MIN_TEMP <= value <= MAX_TEMP:
-            ui.notify("Temperature is outside configured limits", color="negative")
-            return
-        state.manual_target = value
-        manual_target_label.set_text(f"{value:.1f} °C")
-
     with ui.dialog() as import_dialog:
         with ui.card().classes("w-96"):
             ui.label("Import profile CSV").classes("text-lg font-bold")
@@ -180,13 +186,10 @@ def dashboard() -> None:
 
     with ui.dialog() as settings_dialog:
         with ui.card().classes("w-96"):
-            ui.label("Simulation Settings").classes("text-lg font-bold")
-            ui.label("Simulated seconds per real second")
-            ui.select([1, 5, 10, 20, 60], value=state.speed,
-                      on_change=lambda e: setattr(state, "speed", int(e.value))).classes("w-full")
-            ui.label("DEMO ONLY: no chamber IP or device connection is available in this phase.").classes(
+            ui.label("Backend Settings (read-only)").classes("text-lg font-bold")
+            ui.label("Server telemetry is provided by the single configured Fake backend.")
+            ui.label("Live configuration, controller and permissions are not implemented.").classes(
                 "text-sm text-orange-9")
-            ui.label(f"Demo temperature limits: {MIN_TEMP:g} to {MAX_TEMP:g} °C")
             ui.button("Close", on_click=settings_dialog.close).props("flat")
 
     with ui.dialog() as history_dialog:
@@ -210,7 +213,7 @@ def dashboard() -> None:
                     ui.label(title).classes("nav-text")
                 if index == 0:
                     button.classes("nav-active")
-            ui.label("Climate Chamber | DEMO\nNo physical device connected").classes(
+            ui.label("Climate Chamber | G02-A\nServer-side simulation only").classes(
                 "side-note whitespace-pre-line")
 
         with ui.column().classes("main-area gap-0"):
@@ -219,50 +222,44 @@ def dashboard() -> None:
                     ui.label("Climate Chamber").classes("top-title")
                     ui.label("Test Control Platform").classes("top-subtitle")
                 with ui.column().classes("items-end gap-0"):
-                    ui.label("● SIMULATION · DISCONNECTED").classes("demo-status")
-                    ui.label("No chamber IP configured").classes("text-xs text-grey-4")
+                    backend_label = ui.label("● SIMULATION · CONNECTED").classes("demo-status")
+                    backend_id_label = ui.label("Backend: fake · demo-chamber").classes("text-xs text-grey-4")
                     clock_label = ui.label("").classes("text-xs text-grey-4")
 
             with ui.column().classes("dashboard gap-0").props('id="dashboard-content"'):
                 ui.label(
-                    "DEMO MODE — simulated temperatures only. Start, Stop and Hold do not control real hardware."
+                    "SIMULATION — server-owned Fake backend telemetry. Hardware controls are unavailable."
                 ).classes("demo-banner w-full")
                 with ui.element("div").classes("top-grid"):
                     with ui.column().classes("panel"):
                         with ui.row().classes("panel-head"):
                             _panel_title("power_settings_new", "Chamber Control")
                             with ui.row().classes("gap-1"):
-                                ui.button("Start", icon="play_arrow", on_click=start_demo).props(
-                                    "color=blue no-caps").classes("toolbar-button")
-                                ui.button("Stop", icon="stop", on_click=stop_demo).props(
-                                    "color=deep-orange no-caps").classes("toolbar-button")
-                                ui.button("Hold", icon="pause", on_click=hold_demo).props(
-                                    "outline color=dark no-caps").classes("toolbar-button")
+                                ui.button("Start", icon="play_arrow").props(
+                                    "color=blue no-caps disable").classes("toolbar-button")
+                                ui.button("Stop", icon="stop").props(
+                                    "color=deep-orange no-caps disable").classes("toolbar-button")
+                                ui.button("Hold", icon="pause").props(
+                                    "outline color=dark no-caps disable").classes("toolbar-button")
                         ui.separator()
                         with ui.element("div").classes("metric-row"):
                             with ui.column().classes("metric gap-1"):
-                                ui.label("Simulated temperature").classes("metric-caption")
-                                current_label = ui.label("23.4 °C").classes("metric-value")
+                                ui.label("Backend measured (simulation)").classes("metric-caption")
+                                current_label = ui.label("—").classes("metric-value")
                             with ui.column().classes("metric gap-1"):
-                                ui.label("Manual target (demo)").classes("metric-caption")
-                                manual_target_label = ui.label("25.0 °C").classes("metric-value")
+                                ui.label("Backend setpoint (simulation)").classes("metric-caption")
+                                manual_target_label = ui.label("—").classes("metric-value")
                             with ui.column().classes("metric gap-1"):
-                                ui.label("Simulation status").classes("metric-caption")
-                                status_label = ui.label("Stopped").classes("status-pill")
-                                ui.label("Hardware: disconnected").classes("text-xs text-grey-7")
+                                ui.label("Backend reported state").classes("metric-caption")
+                                status_label = ui.label("UNKNOWN").classes("status-pill")
+                                quality_label = ui.label("Awaiting telemetry").classes("text-xs text-grey-7")
                         ui.separator()
                         with ui.element("div").classes("controls-line"):
                             with ui.column().classes("gap-1"):
-                                ui.label("Set Temperature (°C)").classes("text-xs")
-                                temp_number = ui.number(value=25, min=MIN_TEMP, max=MAX_TEMP,
-                                                        step=0.5,
-                                                        on_change=lambda e: set_manual_target(e.value)).props(
-                                                            "outlined dense").classes("w-full")
-                            ui.slider(min=MIN_TEMP, max=MAX_TEMP, value=25,
-                                      on_change=lambda e: set_manual_target(e.value)).props("color=blue")
-                            with ui.column().classes("gap-1"):
-                                ui.label("Demo ramp (°C/min)").classes("text-xs")
-                                ui.label("Set in profile table").classes("text-xs text-grey-7")
+                                ui.label("Verified capability range (view only)").classes("text-xs")
+                                limits_label = ui.label("Waiting for backend capabilities")
+                                ui.label("Start / Stop / Hold / setpoint locked until G04/G08-min")
+
 
                     with ui.column().classes("panel"):
                         with ui.row().classes("panel-head"):
@@ -274,8 +271,8 @@ def dashboard() -> None:
                                 progress_label = ui.label("0%").classes("text-xs")
                         with ui.column().classes("profile-intro gap-1"):
                             active_name = ui.label("Profile: " + state.profile_name).classes("font-bold")
-                            elapsed_label = ui.label("Elapsed: 0:00:00")
-                            ui.label("Cycle: 1 / 1 • Simulation").classes("text-xs")
+                            elapsed_label = ui.label("Execution unavailable (G06)")
+                            ui.label("Draft preview only · no server-side profile runner").classes("text-xs")
 
                         @ui.refreshable
                         def step_overview():
@@ -331,20 +328,19 @@ def dashboard() -> None:
                     }).classes("chart-box")
 
                     def update_chart() -> None:
-                        # Demo samples use real timestamps. The control affects
-                        # the visible time window but not simulation speed.
+                        # Server-owned history is independent of page refresh/close.
                         hours = {"1h": 1, "6h": 6, "12h": 12, "24h": 24}[range_toggle.value]
                         threshold = datetime.now().astimezone() - timedelta(hours=hours)
-                        series = [row for row in state.samples
-                                  if datetime.fromisoformat(row["time"]) >= threshold]
+                        series = [sample for sample in service.recent_samples()
+                                  if sample.time_utc.astimezone() >= threshold]
                         chart.options["xAxis"]["data"] = [
-                            datetime.fromisoformat(row["time"]).astimezone().strftime("%H:%M:%S")
-                            for row in series
+                            sample.time_utc.astimezone().strftime("%H:%M:%S")
+                            for sample in series
                         ]
                         chart.options["series"][0]["data"] = [
-                            row["measured"] for row in series] if measured_cb.value else []
+                            sample.measured_c for sample in series] if measured_cb.value else []
                         chart.options["series"][1]["data"] = [
-                            row["target"] for row in series] if target_cb.value else []
+                            sample.target_c for sample in series] if target_cb.value else []
                         chart.update()
 
                     for widget in (range_toggle, measured_cb, target_cb):
@@ -402,7 +398,7 @@ def dashboard() -> None:
                                 "outline no-caps").classes("toolbar-button")
                             ui.button("Duplicate Last", icon="content_copy", on_click=duplicate_step).props(
                                 "outline no-caps").classes("toolbar-button")
-                        ui.label("Editor values are only drafts; this demo has no hardware connection.").classes(
+                        ui.label("Local draft only: not persisted or executable. G03-C adds revision editing.").classes(
                             "text-xs text-grey-7")
 
                     with ui.column().classes("panel"):
@@ -410,14 +406,14 @@ def dashboard() -> None:
                             _panel_title("storage", "Live Data")
                         live_table = ui.table(
                             columns=_columns([("time", "Time"), ("measured", "Measured"),
-                                              ("target", "Target"), ("status", "Phase")]),
+                                              ("target", "Target"), ("status", "Quality")]),
                             rows=[], row_key="id", pagination=0).props(
                                 "dense flat hide-bottom separator=horizontal").classes(
                                     "small-table w-full")
 
                     with ui.column().classes("panel").props('id="event-log"'):
                         with ui.row().classes("panel-head"):
-                            _panel_title("list_alt", "Event Log")
+                            _panel_title("list_alt", "Draft Events (not device log)")
                             def clear_log() -> None:
                                 state.logs.clear()
                                 log_table.update_rows([])
@@ -430,26 +426,50 @@ def dashboard() -> None:
                                 "dense flat hide-bottom separator=horizontal").classes(
                                     "small-table w-full")
 
-    previous_running = [state.running, state.step_index]
-
     def refresh() -> None:
-        state.tick()
-        current_label.set_text(f"{state.current:.1f} °C")
-        status_label.set_text(state.status)
-        step_indicator.set_text(
-            f"Step {state.step_index + 1} of {len(state.active_steps)}"
-            if state.run_steps else "Draft")
-        progress.value = state.progress
-        progress_label.set_text(f"{state.progress:.0%}")
-        active_name.set_text("Profile: " + state.profile_name)
-        elapsed_label.set_text("Elapsed: " + str(timedelta(seconds=int(state.elapsed))))
+        view = service.view()
+        identity = view.identity
+        backend_label.set_text(
+            f"● SIMULATION · {view.quality.value}" if identity is None or identity.is_simulation
+            else f"● READ ONLY · {view.quality.value}"
+        )
+        backend_id_label.set_text(
+            f"Backend: {identity.backend_id} · {view.chamber_id}" if identity
+            else f"Backend: awaiting status · {view.chamber_id}"
+        )
+        current_label.set_text(
+            f"{view.measured_temperature_c:.1f} °C"
+            if view.measured_temperature_c is not None else "— (unverified)"
+        )
+        manual_target_label.set_text(
+            f"{view.setpoint_temperature_c:.1f} °C"
+            if view.setpoint_temperature_c is not None else "— (unverified)"
+        )
+        status_label.set_text(view.operation_state.value)
+        quality_label.set_text(
+            view.error or f"Quality: {view.quality.value} · {view.sampled_at_utc}"
+        )
+        limits_label.set_text(
+            f"{view.capabilities.temperature_min_c:g} to "
+            f"{view.capabilities.temperature_max_c:g} °C"
+            if view.capabilities else "Capability data unavailable"
+        )
+        if view.capabilities:
+            chart.options["yAxis"]["min"] = view.capabilities.temperature_min_c - 10
+            chart.options["yAxis"]["max"] = view.capabilities.temperature_max_c + 10
+        step_indicator.set_text("Draft")
+        progress.value = 0
+        progress_label.set_text("0%")
+        active_name.set_text("Draft: " + state.profile_name)
         clock_label.set_text(datetime.now().strftime("%b %d, %Y %H:%M"))
         update_chart()
-        if previous_running != [state.running, state.step_index]:
-            step_overview.refresh()
-            editor_rows.refresh()
-            previous_running[:] = [state.running, state.step_index]
-        live_table.update_rows(list(state.readings))
+        recent = service.recent_samples()[-12:]
+        live_table.update_rows([{
+            "id": str(index), "time": s.time_utc.astimezone().strftime("%H:%M:%S"),
+            "measured": f"{s.measured_c:.1f}",
+            "target": f"{s.target_c:.1f}" if s.target_c is not None else "—",
+            "status": "SIMULATED" if identity is None or identity.is_simulation else "READ ONLY",
+        } for index, s in enumerate(recent)])
         log_table.update_rows(list(state.logs))
 
     ui.timer(1.0, refresh, immediate=False)
@@ -458,7 +478,7 @@ def dashboard() -> None:
 
 def run() -> None:
     # Fail safe: localhost-only until authentication / network controls exist.
-    ui.run(title="Climate Chamber — DEMO", host="127.0.0.1",
+    ui.run(title="Climate Chamber — server simulation", host="127.0.0.1",
            port=8080, reload=False, show=False)
 
 
