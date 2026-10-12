@@ -238,6 +238,8 @@ def serve(*, port: int) -> int:
         try:
             from nicegui import app, ui
             import chamber_web.main  # noqa: F401 - register demo page/assets
+            from chamber_web.security.nicegui import cookie_secret
+            os.environ["CHAMBER_PORT"] = str(port)
 
             @app.get("/__w01_ready")
             def ready(challenge: str = "") -> dict:
@@ -250,7 +252,8 @@ def serve(*, port: int) -> int:
                 }
 
             ui.run(title="Climate Chamber - SIMULATION ONLY", host="127.0.0.1",
-                   port=port, reload=False, show=False)
+                   port=port, reload=False, show=False,
+                    storage_secret=cookie_secret())
         finally:
             if read_instance() == identity:
                 path.unlink(missing_ok=True)
