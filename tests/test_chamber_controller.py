@@ -361,6 +361,55 @@ class ControllerTests(unittest.TestCase):
         self.assertTrue(errors)
         self.assertEqual(manager.health("device-1").state, "DISCONNECTED")
 
+    def test_inflight_start_during_disconnect_preserves_restart_uncertainty(self):
+        class BlockedStart(CountingBackend):
+            def __init__(self, chamber_id):
+                super().__init__(chamber_id)
+                self.entered = threading.Event()
+                self.release = threading.Event()
+
+            def start(self):
+                self.entered.set()
+                if not self.release.wait(4):
+                    raise TimeoutError("Injected in-flight START")
+                super().start()
+
+        backend = BlockedStart("device-1")
+        manager = self.manager(backend, timeout=3.0)
+        self.addCleanup(backend.release.set)
+        errors = []
+
+        def start():
+            try:
+                manager.start("device-1")
+            except ChamberError as exc:
+                errors.append(str(exc))
+
+        starting = threading.Thread(target=start)
+        starting.start()
+        self.assertTrue(backend.entered.wait(1))
+        shutdown = threading.Thread(target=lambda: manager.disconnect("device-1"))
+        shutdown.start()
+        deadline = time.monotonic() + 2
+        while not manager._controller._disconnecting and time.monotonic() < deadline:
+            time.sleep(0.005)
+        self.assertTrue(manager._controller._disconnecting)
+        backend.release.set()
+        for thread in (starting, shutdown):
+            thread.join(timeout=4)
+            self.assertFalse(thread.is_alive())
+        self.assertTrue(errors, "START cannot succeed after shutdown fence")
+        self.assertFalse(backend._running, "Mock must be disconnected")
+        recovered = self.manager(CountingBackend("device-1"))
+        self.assertTrue(
+            recovered.health("device-1").stop_latched,
+            "An in-flight START after the prior sample must preserve uncertainty",
+        )
+        with self.assertRaises(ChamberSafetyError):
+            recovered.start("device-1")
+        recovered.reconcile_stop("device-1")
+        recovered.start("device-1")
+
     def test_stale_pre_disconnect_readback_requires_reconciliation_after_restart(self):
         manager = self.manager(CountingBackend("device-1"))
         good = manager.status("device-1")
