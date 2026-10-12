@@ -155,8 +155,16 @@ class ChamberController:
             if identity.chamber_id != self.chamber_id or not identity.is_simulation:
                 raise ChamberSafetyError("Device identity mismatch / live hardware DISABLED")
             caps = self._backend.capabilities()
-            snapshot = self._backend.read_status()
-            self._require_readback(snapshot, identity)
+            try:
+                snapshot = self._backend.read_status()
+                if snapshot.operation_state is not OperationState.FAULT:
+                    self._require_readback(snapshot, identity)
+                elif snapshot.identity != identity:
+                    raise ChamberSafetyError("Readback device identity mismatch")
+            except Exception:
+                # A connected mock with stale/failed telemetry is still
+                # available for STOP but NEVER ready for ordinary writes.
+                snapshot = None
             return identity, caps, snapshot
         identity, caps, snapshot = self._submit(
             "connect", initialize, priority=0,
@@ -165,7 +173,9 @@ class ChamberController:
             self._identity, self._capabilities = identity, caps
             self._last_snapshot = snapshot
             self._connected = True
-            if snapshot.operation_state is OperationState.FAULT:
+            if snapshot is None:
+                self._trip("Initial telemetry unavailable")
+            elif snapshot.operation_state is OperationState.FAULT:
                 self._trip("Backend fault at connection", fault=True)
             elif snapshot.operation_state is not OperationState.STOPPED:
                 self._trip("Chamber not verified stopped at connection")
