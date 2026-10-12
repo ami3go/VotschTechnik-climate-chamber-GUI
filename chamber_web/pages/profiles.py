@@ -37,7 +37,9 @@ def default_database_path() -> Path:
 @lru_cache(maxsize=1)
 def get_profile_editor_service() -> ProfileEditorService:
     # Single application composition root: no browser input chooses chamber_id.
-    return ProfileEditorService(ProfileStore(default_database_path()), "demo-chamber")
+    from chamber_web.main import get_dashboard_service
+    chamber_id = get_dashboard_service().view().chamber_id
+    return ProfileEditorService(ProfileStore(default_database_path()), chamber_id)
 
 
 def _grid_columns() -> list[dict]:
