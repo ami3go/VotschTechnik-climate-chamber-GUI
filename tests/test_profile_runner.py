@@ -200,6 +200,37 @@ class RunnerTests(unittest.TestCase):
         self.runner.advance()
         self.terminal(RunState.FAULT)
 
+    def test_repeat_count_uses_frozen_schedule(self):
+        profile = ParsedProfile((step(),), name="repeat", repeat_count=2)
+        self.prepare(profile=profile)
+        self.runner.advance()
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.TRANSITIONING)
+        self.runner.advance()
+        self.runner.advance()
+        self.terminal(RunState.COMPLETED)
+        self.assertEqual(sum(e.kind == "STEP_COMPLETED" for e in self.sink.events), 2)
+
+    def test_paused_out_of_envelope_temperature_is_unknown(self):
+        self.prepare(step(dwell="20"))
+        self.runner.advance()
+        self.runner.advance()
+        self.runner.pause("unit-chamber")
+        self.backend._measured = 1000
+        self.runner.advance()
+        self.terminal(RunState.UNKNOWN)
+
+    def test_stricter_sample_age_policy_is_enforced(self):
+        self.prepare(step(dwell="5"), params=RunParameters(max_age_s=0.1))
+        self.runner.advance()
+        original = self.backend.read_status
+        self.backend.read_status = lambda: replace(
+            original(), sampled_at_utc=datetime.now(timezone.utc) -
+            timedelta(seconds=1),
+        )
+        self.runner.advance()
+        self.terminal(RunState.UNKNOWN)
+
     def test_reach_timeout_and_boundary_equality(self):
         self.prepare(step(target="30", reach="4"))
         self.runner.advance()
