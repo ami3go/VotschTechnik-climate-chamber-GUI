@@ -41,3 +41,21 @@ body{background:var(--bg);color:var(--ink);font-family:Inter,Arial,sans-serif;}
 @media(max-width:1300px){.bottom-grid{grid-template-columns:1fr 1fr}.editor-panel{grid-column:1/-1}}
 @media(max-width:970px){.top-grid,.bottom-grid{grid-template-columns:1fr}.editor-panel{grid-column:auto}.sidebar{width:76px;min-width:76px}.sidebar .nav-text,.sidebar .brand,.sidebar .side-note{display:none}.sidebar .q-btn{font-size:0}.sidebar .q-btn .q-icon{font-size:22px}.topbar{padding:10px 13px}}
 @media(max-width:580px){.metric-value{font-size:20px}.metric{padding:5px}.controls-line{grid-template-columns:105px 1fr 110px;gap:6px}.profile-row{grid-template-columns:21px 1fr 53px 46px 75px;font-size:10px}.panel{padding:9px}.top-title{font-size:19px}}
+
+/* G02-B: consistent keyboard focus and responsive service-backed pages. */
+.sidebar .q-btn:focus-visible,.dashboard .q-btn:focus-visible,.dashboard .q-field:focus-within{outline:3px solid #f5922e;outline-offset:2px}
+.settings-row{width:100%;padding:8px 4px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.settings-key{width:220px;min-width:160px;flex-shrink:0}
+.settings-value{flex:1;min-width:180px;overflow-wrap:anywhere}
+.panel .q-table__middle{max-width:100%;overflow-x:auto}
+@media(max-width:580px){
+ .sidebar{width:57px;min-width:57px;padding:12px 3px}
+ .sidebar .q-btn{padding:10px 8px}
+ .dashboard{padding:8px}
+ .metric-row{grid-template-columns:1fr}
+ .metric{border-right:0;border-bottom:1px solid var(--line)}
+ .controls-line{grid-template-columns:1fr}
+ .topbar{flex-wrap:wrap}
+ .settings-key,.settings-value{min-width:0;width:100%;flex:auto}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
