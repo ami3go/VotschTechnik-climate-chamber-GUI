@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import sqlite3
-import tempfile
 import threading
 import uuid
 from pathlib import Path
@@ -27,6 +26,7 @@ class DeviceLease:
         )
         self.directory = self.directory.resolve()
         self._file = None
+        self._locked = False
         self._db = None
         self.owner = uuid.uuid4().hex
         self.generation = 0
@@ -55,6 +55,7 @@ class DeviceLease:
                     fcntl.flock(self._file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except (OSError, BlockingIOError) as exc:
                 raise ChamberSafetyError("Device process lock is held") from exc
+            self._locked = True
             self._db = sqlite3.connect(
                 self.directory / "ownership.sqlite3", timeout=2.0,
                 isolation_level=None, check_same_thread=False,
@@ -165,14 +166,15 @@ class DeviceLease:
         if self._file is not None:
             try:
                 self._file.seek(0)
-                if os.name == "nt":
+                if self._locked and os.name == "nt":
                     import msvcrt
                     msvcrt.locking(self._file.fileno(), msvcrt.LK_UNLCK, 1)
-                else:
+                elif self._locked:
                     import fcntl
                     fcntl.flock(self._file.fileno(), fcntl.LOCK_UN)
             finally:
                 self._file.close()
                 self._file = None
+                self._locked = False
         with _MUTEX:
             _IN_PROCESS.discard(self.directory / (self.chamber_id + ".lock"))
