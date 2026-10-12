@@ -96,6 +96,17 @@ class SecurityCoreTests(unittest.TestCase):
         with self.assertRaises(AuthenticationError):
             restarted.authenticate(tokens.session)
 
+    def test_passive_browser_polling_cannot_extend_idle_session(self):
+        for _ in range(3):
+            self.now[0] += 15
+            self.assertEqual(
+                self.security.authenticate(self.admin.session, touch=False).role,
+                Role.ADMIN,
+            )
+        self.now[0] += 15
+        with self.assertRaises(AuthenticationError):
+            self.security.authenticate(self.admin.session, touch=False)
+
     def test_absolute_expiry_even_with_continuous_activity(self):
         for _ in range(3):
             self.now[0] += 30
