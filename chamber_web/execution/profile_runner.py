@@ -134,6 +134,7 @@ class RunEvent:
 
 
 class EventSink(Protocol):
+    def prepare(self, snapshot: ExecutionSnapshot) -> None: ...
     def emit(self, event: RunEvent) -> None: ...
 
 
@@ -332,6 +333,9 @@ class ProfileRunner:
                 self._stable_from = self._last_good = None
                 self._stable_count = 0
                 self._dwell_elapsed = 0.0
+                if self._sink is not None:
+                    # G07 must commit PREPARED snapshot before any mutation.
+                    self._sink.prepare(self._snapshot)
                 self._emit("PREPARED", "Immutable G03 revision and chamber snapshot")
                 return self._snapshot
             except BaseException:
@@ -368,12 +372,15 @@ class ProfileRunner:
         self._step_started = self._now()
         self._step_deadline = self._step_started + self._step_budget(step, self._snapshot.parameters)
         target = float(step.target_temperature_c)
+        if self._step_index == 0:
+            # START_INTENT fences the entire first mutating sequence,
+            # including its setpoint, for G07 crash reconciliation.
+            self._emit("START_INTENT", "First chamber mutation about to dispatch")
         self._emit("SETPOINT_INTENT", "Step " + str(step.step), temperature=target)
         if self._cancel_requested:
             return
         self._manager.set_temperature(self._id, target, operator_token=self._owner_token)
         if self._step_index == 0:
-            self._emit("START_INTENT", "G04 verified start requested")
             if self._cancel_requested:
                 return
             self._manager.start(self._id, operator_token=self._owner_token)
