@@ -29,7 +29,7 @@ The CLI prompts for a **chosen** administrator username, a password of at least
 no initial bearer token in a file, no web/bootstrap endpoint and no automated
 password reset. Provisioning is an atomic SQLite transaction, permitted **once**
 per data directory. Concurrent bootstrap is rejected for the losing process.
-Keep local recovery/backup procedures outside the web GUI; do not publish
+NiceGUI server-side per-browser session storage is redirected to\n\`~/.chamber_web/security/nicegui_storage\` (never cwd/.nicegui).\nKeep local recovery/backup procedures outside the web GUI; do not publish
 database or signing-key files.
 
 By default sensitive state is stored under
