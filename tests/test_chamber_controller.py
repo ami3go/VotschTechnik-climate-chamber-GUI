@@ -12,6 +12,7 @@ from pathlib import Path
 
 from chamber_web.adapters.alternate_stub import AlternateStubBackend
 from chamber_web.adapters.fake import FakeBackend
+from chamber_web.adapters.votsch import VotschBackend
 from chamber_web.domain.chamber import (
     ChamberSafetyError, ChamberSnapshot, OperationState, ReadingQuality,
 )
@@ -273,6 +274,31 @@ class ControllerTests(unittest.TestCase):
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.communicate(timeout=5)
+
+    def test_votsch_mock_substitution_without_vendor_branches(self):
+        class Driver:
+            test_system_type = "VT4011-MOCK"
+            serial_number = "MOCK-1"
+            temperature_measured = 25.0
+            temperature_set_point = 25.0
+            is_running = False
+
+            def disconnect(self):
+                pass
+
+            def start(self):
+                self.is_running = True
+
+            def stop(self):
+                self.is_running = False
+
+        mock = VotschBackend(
+            "device-1", "example.invalid", mock_driver_factory=Driver,
+        )
+        manager = self.manager(mock, backend_id="votsch")
+        manager.set_temperature("device-1", 26)
+        manager.start("device-1")
+        manager.stop("device-1")
 
     def test_physical_backend_denied_before_connect(self):
         class Physical:
