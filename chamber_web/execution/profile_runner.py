@@ -132,6 +132,9 @@ class RunEvent:
     detail: str = ""
     temperature_c: float | None = None
     quality: ReadingQuality | None = None
+    observed_at_utc: str = ""
+    source_sampled_at_utc: str | None = None
+    sample_index: int | None = None
 
 
 class EventSink(Protocol):
@@ -179,6 +182,7 @@ class ProfileRunner:
         self._reason = ""
         self._events: deque[RunEvent] = deque(maxlen=1024)  # diagnostic, NOT G07
         self._event_sequence = 0
+        self._sample_index = 0
         self._owner_token: str | None = None
         self._t0 = 0.0
         self._run_deadline = 0.0
@@ -247,14 +251,20 @@ class ProfileRunner:
 
     def _emit(self, kind: str, detail: str = "", *,
               temperature: float | None = None,
-              quality: ReadingQuality | None = None) -> None:
+              quality: ReadingQuality | None = None,
+              source_sampled_at_utc: datetime | None = None) -> None:
         assert self._snapshot is not None and self._state is not None
         with self._event_guard:
             self._event_sequence += 1
+            if kind == "SAMPLE":
+                self._sample_index += 1
             event = RunEvent(
                 self._snapshot.run_id, self._id, self._event_sequence,
                 kind, self._state, max(0.0, self._now() - self._t0),
                 self._step_index, detail, temperature, quality,
+                datetime.now(timezone.utc).isoformat(timespec="microseconds"),
+                source_sampled_at_utc.isoformat() if source_sampled_at_utc else None,
+                self._sample_index if kind == "SAMPLE" else None,
             )
             if self._sink is not None:
                 self._sink.emit(event)  # fail closed; not best-effort logging
@@ -336,6 +346,7 @@ class ProfileRunner:
                 with self._event_guard:
                     self._events.clear()
                     self._event_sequence = 0
+                    self._sample_index = 0
                 self._cancel_requested = False
                 self._prepared = False
                 self._stop_future = None
@@ -476,7 +487,8 @@ class ProfileRunner:
                            self._snapshot.capabilities.temperature_min_c,
                            self._snapshot.capabilities.temperature_max_c)
         self._emit("SAMPLE", temperature=sample.measured_temperature_c,
-                   quality=sample.quality)
+                   quality=sample.quality,
+                   source_sampled_at_utc=sample.sampled_at_utc)
         source_time = sample.sampled_at_utc
         assert source_time is not None
         if self._last_source_timestamp is not None:
