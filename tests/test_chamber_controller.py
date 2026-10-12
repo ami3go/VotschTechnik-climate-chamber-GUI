@@ -244,6 +244,17 @@ class ControllerTests(unittest.TestCase):
         self.assertIn(("stop",), backend.log)
         manager.release_operator("device-1", token)
 
+    def test_v1_rejects_two_live_mock_controllers_even_with_distinct_ids(self):
+        first = self.manager(CountingBackend("device-1"))
+        other = ChamberManager(
+            [ChamberConfig("device-2", "fake")],
+            backend_factory=lambda cfg, **kwargs: CountingBackend(cfg.chamber_id),
+            lease_directory=self.directory / "separate-lease-root",
+        )
+        with self.assertRaisesRegex(ChamberSafetyError, "one active controller"):
+            other.connect("device-2")
+        self.assertTrue(first.health("device-1").connected)
+
     def test_wrong_id_and_second_manager_never_touch_backend(self):
         backend = CountingBackend("device-1")
         manager = self.manager(backend)
