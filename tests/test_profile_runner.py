@@ -34,6 +34,33 @@ def step(target="25", *, stabilize="0", dwell="0", reach="20", up=None, down=Non
     )
 
 
+class AdvancingSampleTime:
+    """Windows clock granularity must not alias distinct simulated observations.
+
+    Keep a separate cached-sample fixture to explicitly test equal timestamps.
+    Unique timestamps are capped to microseconds ahead of current UTC so G04
+    freshness checks remain active.
+    """
+    def read_status(self):
+        sample = super().read_status()
+        if sample.sampled_at_utc is None:
+            return sample
+        previous = getattr(self, "_last_test_sample_utc", None)
+        stamped = sample.sampled_at_utc
+        if previous is not None and stamped <= previous:
+            stamped = previous + timedelta(microseconds=1)
+        self._last_test_sample_utc = stamped
+        return replace(sample, sampled_at_utc=stamped)
+
+
+class DistinctFake(AdvancingSampleTime, FakeBackend):
+    pass
+
+
+class DistinctAlternate(AdvancingSampleTime, AlternateStubBackend):
+    pass
+
+
 class CaptureSink:
     def __init__(self):
         self.events = []
@@ -52,7 +79,7 @@ class RunnerTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.clock = VirtualClock()
-        self.backend = FakeBackend("unit-chamber")
+        self.backend = DistinctFake("unit-chamber")
         self.sink = CaptureSink()
         self.manager = ChamberManager(
             [ChamberConfig("unit-chamber", "fake")],
@@ -525,7 +552,7 @@ class AlternateFixtureTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             manager = ChamberManager(
                 [ChamberConfig("alternate", "alternate_stub")],
-                backend_factory=lambda config, **kwargs: AlternateStubBackend("alternate"),
+                backend_factory=lambda config, **kwargs: DistinctAlternate("alternate"),
                 lease_directory=Path(directory) / "lease",
             )
             manager.connect("alternate")
