@@ -441,7 +441,7 @@ def dashboard() -> None:
                                     "small-table w-full")
 
     def refresh() -> None:
-        if not require_authenticated_page():
+        if not require_authenticated_page(touch=False):
             return
         view = safe_view(service)
         display = project_telemetry(view)
