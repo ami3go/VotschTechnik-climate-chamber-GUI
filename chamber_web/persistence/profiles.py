@@ -174,21 +174,32 @@ class ProfileStore:
 
     @staticmethod
     def _verify_schema(db: sqlite3.Connection) -> None:
-        expected = {
-            "profiles": {"profile_id", "chamber_id", "name", "current_revision",
-                         "created_at_utc", "updated_at_utc"},
-            "profile_revisions": {"profile_id", "revision", "saved_at_utc",
-                                  "source_format", "archive", "archive_sha256"},
-        }
-        for table, columns in expected.items():
-            actual = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
-            if not columns.issubset(actual):
-                raise ProfileSchemaError(f"Missing or incompatible {table} table")
-        triggers = {row[0] for row in db.execute(
-            "SELECT name FROM sqlite_master WHERE type='trigger'"
-        )}
-        if not {"revision_no_update", "revision_no_delete"}.issubset(triggers):
-            raise ProfileSchemaError("Immutable revision triggers missing")
+        """Reject any unrecognized schema objects or weakened constraints.
+
+        Column-name checks alone can silently accept missing primary keys,
+        foreign keys, indexes or no-op triggers. Compare the persisted SQL
+        definitions with this version's authoritative DDL, using the same
+        SQLite runtime to avoid SQL-formatting/version discrepancies.
+        """
+        def schema(connection: sqlite3.Connection) -> dict[str, tuple[str, str, str]]:
+            return {
+                row[0]: (row[1], row[2], row[3])
+                for row in connection.execute(
+                    "SELECT name, type, tbl_name, sql FROM sqlite_master "
+                    "WHERE name NOT LIKE 'sqlite_%'"
+                )
+            }
+
+        expected_db = sqlite3.connect(":memory:")
+        try:
+            ProfileStore._create_schema(expected_db)
+            expected = schema(expected_db)
+        finally:
+            expected_db.close()
+        if schema(db) != expected:
+            raise ProfileSchemaError(
+                "Profile database schema differs from recognized version 1 DDL"
+            )
 
     @staticmethod
     def _header(row: sqlite3.Row) -> ProfileHeader:
