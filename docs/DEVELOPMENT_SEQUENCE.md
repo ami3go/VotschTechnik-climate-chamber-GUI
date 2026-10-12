@@ -1,6 +1,6 @@
 # NiceGUI migration — implementation and merge sequence
 
-Status: **ACTIVE / PARTIALLY IMPLEMENTED** (2026-10-12; GUI `main` `252b0fb`, driver `main` `9323e37`). Verified: driver D01 software fix, G01 backend foundation, G03 CSV/ZIP core and SQLite revision store, and P00 engineering contracts. **Physical operation/release remains NO-GO.** This is the execution plan for [WEB_GUI_MIGRATION_PLAN.md](WEB_GUI_MIGRATION_PLAN.md). Phase IDs are **not** GitHub PR numbers. Each delivery unit must have its own PR and review; driver work belongs exclusively to [VotschTechnik-climate-chamber-Python](https://github.com/ami3go/VotschTechnik-climate-chamber-Python).
+Status: **ACTIVE / PARTIALLY IMPLEMENTED** (2026-10-12; GUI `main` `138d1b4` at the PR #15 baseline, driver `main` `9323e37`). Verified: driver D01 software fix, G01 backend foundation, G03 CSV/ZIP core and SQLite revision store, and P00 engineering contracts. **Physical operation/release remains NO-GO.** This is the execution plan for [WEB_GUI_MIGRATION_PLAN.md](WEB_GUI_MIGRATION_PLAN.md). Phase IDs are **not** GitHub PR numbers. Each delivery unit must have its own PR and review; driver work belongs exclusively to [VotschTechnik-climate-chamber-Python](https://github.com/ami3go/VotschTechnik-climate-chamber-Python).
 
 ## Non-negotiable boundaries
 
@@ -59,6 +59,16 @@ P00 and D01 are the **critical path for physical operation**, but they must not 
 ## G03-B persistence delivery
 
 - **G03-B persistence:** [GUI PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) is **MERGED / SOFTWARE VERIFIED** and adds versioned SQLite immutable profile revisions, strict DDL verification, per-`chamber_id` isolation and atomic canonical/legacy CSV/ZIP import. Merge evidence and Windows CI are recorded in the ledger above. It **does not** implement the NiceGUI editor, execution history, controller or any physical I/O; do not mark G03 complete before G03-C.
+
+## Independent G03-B follow-up review (2026-10-12)
+
+The original [PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) is **already merged** (`252b0fb`). Its exact final source head was `a06874c`; [Windows run 38276777330](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38276777330) passed on that head, including Python 3.10 and 3.12. A separate AI-assisted independent inspection of architecture, transaction consistency, data validation and security produced a follow-up [PR #15](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/15). This does not reopen #12 or rewrite the merged commit.
+
+- **Architecture / integrity:** one profile SQLite store, parametrized per-chamber queries, atomic revision append plus optimistic head compare-and-swap. Concurrent eight-writer regression is added in #15. Profile persistence remains vendor-neutral, with no physical control or browser authorization endpoint.
+- **HIGH, G03-B review R1 — resource exhaustion:** constructing a `ParsedProfile` directly could allocate/compress oversized notes, metadata warnings or original legacy bytes before canonical re-import rejected them. PR #15 performs size/type preflight, bounded CSV/JSON expansion and compressed ZIP output checks; regression tests reject oversize fields before the ZIP compressor is invoked.
+- **MEDIUM, G03-B review R2 — malformed manifest:** JSON arrays or scalar manifests previously failed with an uncontrolled attribute error. PR #15 returns an explicit validation error and rejects boolean schema versions.
+- **Residual risks:** file-system/SQLite corruption beyond transaction rollback, explicit authorized operator identity, CSV spreadsheet-formula interpretation and full crash-recovery journaling are **not** certified by G03-B; G03-C, G07, G08-min and HIL still gate release. Machine CSV and spreadsheet-safe CSV are separate export modes, and UI download endpoints must intentionally choose the safe mode for spreadsheets.
+- **Verification gate:** #15 must complete [final-head Windows checks](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/15/checks) on both supported Python versions and undergo a final diff review with no BLOCKER/HIGH unresolved before merge. The linked PR/check page is the authoritative live evidence; green #12 CI alone does not verify #15 changes. No simulated test authorizes physical operations.
 
 ## Immediate development queue — proposed next PRs
 
