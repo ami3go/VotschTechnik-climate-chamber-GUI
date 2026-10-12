@@ -183,8 +183,8 @@ class ChamberController:
             if work is None:
                 return
             with self._state_lock:
-                if work.mutation and (
-                    self._stop_latched or work.generation != self._generation
+                if (work.name != "stop" and work.generation != self._generation) or (
+                    work.mutation and self._stop_latched
                 ):
                     work.future.set_exception(
                         ChamberSafetyError("Queued command fenced by STOP/FAULT")
