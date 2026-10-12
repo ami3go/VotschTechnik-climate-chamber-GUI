@@ -8,6 +8,7 @@ on:
       - "main.py"
       - "tests/test_web_*.py"
       - "tests/test_chamber_*.py"
+      - "tests/test_profile_*.py"
       - "requirements-web.txt"
       - ".github/workflows/web-gui-demo.yml"
   push:
@@ -18,6 +19,7 @@ on:
       - "main.py"
       - "tests/test_web_*.py"
       - "tests/test_chamber_*.py"
+      - "tests/test_profile_*.py"
       - "requirements-web.txt"
       - ".github/workflows/web-gui-demo.yml"
 
@@ -42,6 +44,8 @@ jobs:
         run: python -m ruff check chamber_web/domain chamber_web/adapters chamber_web/services tests/test_chamber_backend.py --select E4,E7,E9,F
       - name: Contract and single-device safety unit tests
         run: python -m unittest discover -s tests -p "test_chamber_*.py" -v
+      - name: Canonical and legacy profile CSV/ZIP tests
+        run: python -m unittest discover -s tests -p "test_profile_*.py" -v
       - name: Compile Python sources
         run: python -m compileall -q chamber_web main.py
       - name: Profile validation and demo tests
