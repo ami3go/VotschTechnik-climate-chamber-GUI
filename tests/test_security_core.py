@@ -202,7 +202,7 @@ class SecurityCoreTests(unittest.TestCase):
         called = []
 
         class Manager:
-            def start(self, chamber_id):
+            def stop(self, chamber_id):
                 called.append(chamber_id)
 
         facade = AuthorizedChamber(Manager(), self.security)
@@ -215,7 +215,7 @@ class SecurityCoreTests(unittest.TestCase):
 
         with patch.object(self.security, "audit", side_effect=fail_intent):
             with self.assertRaises(OSError):
-                facade.execute(self.admin.session, self.admin.csrf, "device-1", "start")
+                facade.execute(self.admin.session, self.admin.csrf, "device-1", "stop")
         self.assertEqual(called, [])
 
     def test_mock_controller_stop_bypasses_lease_not_authorization(self):
