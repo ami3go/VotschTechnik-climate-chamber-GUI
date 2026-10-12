@@ -1,12 +1,21 @@
-# Visteon Climate Chamber NiceGUI dashboard — first implementation
+# Climate Chamber NiceGUI — G02-A server-backed simulation
 
-This initial web scaffold uses the [operator-supplied NiceGUI concept](chamber_web/main.py), with the same Visteon-inspired navy/orange layout, sidebar, chamber controls, chart, active profile, inline step editor, import/export and live event table.
+The Visteon-inspired NiceGUI Dashboard now reads normalized status and
+capabilities from a **single shared server-side DashboardService**, backed by
+the vendor-neutral ChamberManager and ChamberBackend contract. It no longer
+creates one DemoChamber per browser tab or uses a browser timer to advance a
+profile. Browser reloads and disconnects do not reset the shared backend
+object. The root Python package remains in `chamber_web/` (no `src/`).
 
-**Important: demo only.** This code is an isolated browser-local simulation. It does **not** connect to a Vötsch chamber, never opens device sockets and is not safe for unattended hardware runs. Temperature readings are **simulated** and labelled accordingly. Device integration will exclusively use the separate [Python chamber driver](https://github.com/ami3go/VotschTechnik-climate-chamber-Python) via a server-side controller in a later PR. Browser closure currently ends the demo; persistence and autonomous execution have not been implemented yet.
+**SIMULATION ONLY. No physical I/O.** The application composition root
+(`chamber_web/bootstrap.py`) hardcodes an allowlisted FakeBackend. It does
+not read a physical backend from browser input, a config file or an environment
+variable; it cannot connect to a Vötsch chamber. The G01 Vötsch adapter
+continues to reject real connections. Hardware commands remain disabled until
+the separate G04 controller, G08-min authorization, signed site safety policy
+and HIL gates are satisfied. Web STOP is not a certified emergency stop.
 
-## Run on development workstation
-
-Requires Python 3.10+ and a compatible browser.
+## Run (Python 3.10+)
 
 ~~~powershell
 py -m venv .venv
@@ -14,34 +23,47 @@ py -m venv .venv
 .venv\Scripts\python main.py
 ~~~
 
-Open http://127.0.0.1:8080. The server intentionally binds **localhost only** until access control exists.
+Open http://127.0.0.1:8080. The server deliberately binds only to loopback
+until authentication, origin checks and LAN transport requirements are met.
 
-## Features implemented
+## G02-A delivery
 
-- Responsive NiceGUI Visteon-inspired header/sidebar and dashboard.
-- Start, Stop and Hold for the **simulation only** (no hardware controls).
-- Manual target display (demo only), simulated temperature measurement, ECharts live curve.
-- In-page editable profile steps, add/duplicate/delete and atomic CSV import/validated export.
-- Strict CSV columns: `target,ramp,tolerance,dwell,description,enabled`, with seconds for dwell, °C for target/tolerance and °C/min for **simulated** ramp. Import limit: 1 MB, 200 rows. The profile name and run history are **not** persisted in this phase.
-- Recent in-memory measurement/event tables; 1,500-point plot retention.
+- Live measured/setpoint/operation-state/reading-quality fields come from
+  `ChamberSnapshot`, with chamber identity and detected capabilities.
+- Temperature graph and recent observations use a bounded **server-owned,
+  volatile** dashboard cache, not a durable telemetry/run recording. A read
+  fault displays UNKNOWN/ERROR and never reuses a formerly GOOD measurement.
+- Every browser tab binds to the same stable `chamber_id` and the same server
+  service; status reads run off the NiceGUI event loop.
+- The layout retains the single-device Dashboard, profile draft CSV
+  import/export/editor, chart, history/settings placeholders and navigation.
+  Drafts are page-local, non-persisted and **cannot be executed**. The legacy
+  `DemoChamber` class remains solely for existing `test_web_model.py`
+  backward-compatibility tests, not as the NiceGUI state source.
+- Start, Stop, Hold, manual target and gradient controls are disabled even
+  though the FakeBackend supports test-only simulated mutations. Unsupported
+  adapter features are labelled using capabilities, never vendor-name checks.
 
-## Deliberately not implemented yet
+G02-B/G03-C will implement the remaining service-backed pages and persisted
+profile editor, G04 will implement serialized controller ownership/fencing,
+G06/G07 will add execution and durable logging, and G08-min is mandatory for
+any future physical mutation.
 
-Physical driver adapter/connection, live chamber setpoints, real gradient control, user authentication, official brand-logo asset licensing, profile database, autonomous server-side execution, persisted CSV measurements, historical runs and Windows launcher/offline bundles. These remain in the migration plan.
+## Verification
 
-### UI and safety notes
-
-The demo temperature range (-40 to +130 °C) and ramp limits are **not hardware specifications**. Real limits must be discovered and validated for each chamber via the Python driver and operating manuals. The user-supplied text "Visteon" is a **brand placeholder** until an approved corporate logo is supplied. This app intentionally does not contact an external CDN or cloud service from its own code, but offline packaging must independently verify framework static-asset loading.
-
-To exercise profile CSV parsing without starting a UI:
-
-~~~bash
-python -m unittest discover -s tests -p "test_web_*.py"
+~~~powershell
+py -m unittest discover -s tests -p "test_chamber_*.py" -v
+py -m unittest discover -s tests -p "test_web_*.py" -v
+py -m pytest -q tests/test_web_ui.py
 ~~~
 
-Source: `chamber_web/main.py`, `chamber_web/model.py`, `chamber_web/assets/style.css`.
+`tests/test_web_dashboard_service.py` exercises server sharing, wrong-ID
+rejection, read-fault fail-closed behavior, bounded observations and sequential
+Fake/alternate/Vötsch-mock substitution. UI tests render the same page using
+those three backends in separate fixture instances. The Vötsch mock test uses
+only an injected fake driver; no physical connections occur.
 
-
-## Dependency pinning and safety gate
-
-The demo web dependency is fixed at `nicegui==3.18.0`, verified by Windows CI on Python 3.10 and 3.12. The hardened external Vötsch driver is separately pinned by full commit SHA in `requirements-hardware.txt`. Neither installing that driver nor merging its transport fixes enables physical control: the G01 `VotschBackend` intentionally blocks real-device connections until the dedicated safety/controller/authentication/HIL stages are approved. W01/W02 still require a complete hash-locked transitive dependency manifest and air-gapped packaging verification.
+The externally maintained driver is pinned separately in
+`requirements-hardware.txt`; neither that dependency nor these mock tests
+certify hardware or authorize its operation. Packaging/offline verification,
+Windows service supervision and physical HIL remain open release gates.

@@ -67,6 +67,11 @@ class ChamberManager:
         with self._lock:
             return self._backend_for_id(chamber_id).read_status()
 
+    def capabilities(self, chamber_id: str):
+        """Read-only normalized capabilities through the guarded ID boundary."""
+        with self._lock:
+            return self._backend_for_id(chamber_id).capabilities()
+
     def set_temperature(self, chamber_id: str, target_c: float) -> None:
         with self._lock:
             backend = self._guard_mutation(chamber_id)
