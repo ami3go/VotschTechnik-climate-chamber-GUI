@@ -4,6 +4,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing, contextmanager
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
@@ -13,6 +14,15 @@ from chamber_web.domain.profile import export_profile_zip, import_profile_zip, p
 from chamber_web.persistence.profiles import (
     ProfileConflictError, ProfileNotFoundError, ProfileSchemaError, ProfileStore,
 )
+
+@contextmanager
+def _sqlite(path: Path):
+    # sqlite3.Connection.__exit__ commits/rolls back but does NOT close the
+    # handle. Windows prevents TemporaryDirectory cleanup until it is closed.
+    with closing(sqlite3.connect(path)) as db:
+        with db:
+            yield db
+
 
 LEGACY = (
     b"target,ramp,tolerance,dwell,description,enabled\n"
@@ -80,14 +90,14 @@ class ProfileStoreTests(unittest.TestCase):
 
     def test_transaction_rollback_on_failure_after_insert(self):
         saved = self.store.create_profile("alpha", self.profile)
-        with sqlite3.connect(self.db_path) as db:
+        with _sqlite(self.db_path) as db:
             db.execute("CREATE TRIGGER reject_head BEFORE UPDATE ON profiles "
                        "BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
         with self.assertRaises(sqlite3.IntegrityError):
             self.store.save_revision("alpha", saved.profile_id,
                                      replace(self.profile, name="Uncommitted"),
                                      expected_revision=1)
-        with sqlite3.connect(self.db_path) as db:
+        with _sqlite(self.db_path) as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM profile_revisions").fetchone()[0], 1)
         self.assertEqual(self.store.get_revision("alpha", saved.profile_id).revision, 1)
 
@@ -124,7 +134,7 @@ class ProfileStoreTests(unittest.TestCase):
 
     def test_immutability_trigger_blocks_unexpected_sql_updates(self):
         saved = self.store.create_profile("alpha", self.profile)
-        with sqlite3.connect(self.db_path) as db:
+        with _sqlite(self.db_path) as db:
             with self.assertRaises(sqlite3.IntegrityError):
                 db.execute("DELETE FROM profile_revisions WHERE profile_id=?",
                            (saved.profile_id,))
@@ -134,7 +144,7 @@ class ProfileStoreTests(unittest.TestCase):
 
     def test_checksum_tampering_refuses_corrupt_revision(self):
         saved = self.store.create_profile("alpha", self.profile)
-        with sqlite3.connect(self.db_path) as db:
+        with _sqlite(self.db_path) as db:
             db.execute("DROP TRIGGER revision_no_update")
             db.execute("UPDATE profile_revisions SET archive=? WHERE profile_id=?",
                        (b"tampered", saved.profile_id))
@@ -144,18 +154,18 @@ class ProfileStoreTests(unittest.TestCase):
             ProfileStore(self.db_path)
 
     def test_unrecognized_schema_and_version_fail_closed(self):
-        with sqlite3.connect(self.db_path) as db:
+        with _sqlite(self.db_path) as db:
             db.execute("PRAGMA user_version=99")
         with self.assertRaises(ProfileSchemaError):
             ProfileStore(self.db_path)
 
     def test_unversioned_nonempty_db_is_not_overwritten(self):
         path = Path(self.temporary.name) / "unknown.sqlite3"
-        with sqlite3.connect(path) as db:
+        with _sqlite(path) as db:
             db.execute("CREATE TABLE unrelated(data TEXT)")
         with self.assertRaises(ProfileSchemaError):
             ProfileStore(path)
-        with sqlite3.connect(path) as db:
+        with _sqlite(path) as db:
             self.assertTrue(db.execute("SELECT name FROM sqlite_master "
                                        "WHERE name='unrelated'").fetchone())
 
