@@ -4,6 +4,9 @@ import ast
 import pathlib
 import unittest
 
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
+
 from chamber_web.adapters.alternate_stub import AlternateStubBackend
 from chamber_web.adapters.fake import FakeBackend
 from chamber_web.adapters.votsch import VotschBackend
@@ -89,6 +92,34 @@ class DashboardServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(failed.operation_state, OperationState.UNKNOWN)
         self.assertEqual(failed.quality, ReadingQuality.ERROR)
         self.assertEqual(len(service.recent_samples()), 1)
+
+    async def test_expired_backend_timestamp_is_not_reported_as_live(self):
+        class OldBackend(FakeBackend):
+            def read_status(self):
+                status = super().read_status()
+                return replace(status, sampled_at_utc=datetime.now(timezone.utc)
+                               - timedelta(seconds=60))
+        manager = ChamberManager([ChamberConfig("test", "fake")],
+                                 backend_factory=lambda cfg, **kw: OldBackend(cfg.chamber_id))
+        manager.connect("test")
+        service = DashboardService(manager, "test")
+        bad = await service.poll_once()
+        self.assertEqual(bad.operation_state, OperationState.UNKNOWN)
+        self.assertEqual(bad.quality, ReadingQuality.ERROR)
+        self.assertIsNone(bad.measured_temperature_c)
+        self.assertEqual(len(service.recent_samples()), 0)
+
+    async def test_future_dated_backend_timestamp_is_not_reported_as_live(self):
+        class FutureBackend(FakeBackend):
+            def read_status(self):
+                status = super().read_status()
+                return replace(status, sampled_at_utc=datetime.now(timezone.utc)
+                               + timedelta(minutes=10))
+        manager = ChamberManager([ChamberConfig("test", "fake")],
+                                 backend_factory=lambda cfg, **kw: FutureBackend(cfg.chamber_id))
+        manager.connect("test")
+        service = DashboardService(manager, "test")
+        self.assertEqual((await service.poll_once()).quality, ReadingQuality.ERROR)
 
     async def test_stale_does_not_report_old_running_state(self):
         manager = ChamberManager([ChamberConfig("test", "fake")],

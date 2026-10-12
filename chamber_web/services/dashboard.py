@@ -11,7 +11,7 @@ import math
 import time
 from collections import deque
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from chamber_web.domain.chamber import (
@@ -88,6 +88,10 @@ class DashboardService:
                     raise ChamberSafetyError("Invalid/nonfinite telemetry")
                 if snapshot.sampled_at_utc is None or snapshot.sampled_at_utc.tzinfo is None:
                     raise ChamberSafetyError("Missing timezone-aware sample timestamp")
+                sample_age_s = (datetime.now(timezone.utc) -
+                                snapshot.sampled_at_utc.astimezone(timezone.utc)).total_seconds()
+                if not -self._stale_after <= sample_age_s <= self._stale_after:
+                    raise ChamberSafetyError("Expired or future-dated telemetry")
                 self._view = DashboardView(
                     chamber_id=self.chamber_id,
                     identity=snapshot.identity,

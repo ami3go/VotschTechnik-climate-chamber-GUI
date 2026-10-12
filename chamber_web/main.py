@@ -221,7 +221,7 @@ def dashboard() -> None:
                     ui.label("Climate Chamber").classes("top-title")
                     ui.label("Test Control Platform").classes("top-subtitle")
                 with ui.column().classes("items-end gap-0"):
-                    backend_label = ui.label("● SIMULATION · CONNECTED").classes("demo-status")
+                    backend_label = ui.label("● SIMULATION · UNKNOWN").classes("demo-status")
                     backend_id_label = ui.label("Backend: fake · demo-chamber").classes("text-xs text-grey-4")
                     clock_label = ui.label("").classes("text-xs text-grey-4")
 
