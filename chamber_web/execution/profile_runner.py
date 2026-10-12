@@ -190,6 +190,7 @@ class ProfileRunner:
         self._stable_count = 0
         self._dwell_elapsed = 0.0
         self._cancel_requested = False
+        self._prepared = False
         self._stop_future: Future | None = None
         self._terminal_after_stop = RunState.UNKNOWN
 
@@ -333,6 +334,7 @@ class ProfileRunner:
                     self._events.clear()
                     self._event_sequence = 0
                 self._cancel_requested = False
+                self._prepared = False
                 self._stop_future = None
                 self._stable_from = self._last_good = None
                 self._stable_count = 0
@@ -341,10 +343,12 @@ class ProfileRunner:
                     # G07 must commit PREPARED snapshot before any mutation.
                     self._sink.prepare(self._snapshot)
                 self._emit("PREPARED", "Immutable G03 revision and chamber snapshot")
+                self._prepared = True  # external STOP cannot predate journal preparation
                 return self._snapshot
             except BaseException:
                 self._manager.release_operator(self._id, owner)
                 self._owner_token = None
+                self._prepared = False
                 self._state = None
                 self._snapshot = None
                 raise
@@ -638,8 +642,8 @@ class ProfileRunner:
         call already in flight cannot be preempted; G04 invalidates queued writes.
         """
         self._check_action(chamber_id, "profile.cancel")
-        if self._state is None or self._state in TERMINAL:
-            raise ChamberSafetyError("No active run")
+        if not self._prepared or self._state is None or self._state in TERMINAL:
+            raise ChamberSafetyError("No fully prepared active run")
         self._cancel_requested = True
         self._begin_stop(RunState.CANCELLED, "Operator cancellation")
 
