@@ -441,6 +441,10 @@ def dashboard() -> None:
     refresh()
 
 
+
+# G03-C Profiles route, independently owned by the persistent editor workstream.
+from .pages import profiles as _profile_editor_page  # noqa: E402,F401
+
 def run() -> None:
     # Fail safe: localhost-only until authentication / network controls exist.
     ui.run(title="Climate Chamber — server simulation", host="127.0.0.1",
@@ -449,7 +453,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-
-
-# G03-C Profiles route, independently owned by the persistent editor workstream.
-from .pages import profiles as _profile_editor_page  # noqa: E402,F401
