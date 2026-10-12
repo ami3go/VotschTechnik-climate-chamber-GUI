@@ -57,7 +57,9 @@ the session against SQLite and the current DB role/enabled flag. Logout revokes
 the token in SQLite, clears NiceGUI storage and navigates to /login. Role changes
 and account disable revoke all affected sessions immediately.
 
-Idle expiry defaults to **30 minutes**, absolute expiry to **8 hours** from login. Passive NiceGUI dashboard/page timer reads do **not** refresh idle activity.\nOnly explicit navigation/interactions or mutating service calls renew last activity.\nLive callbacks recheck the session and redirect to sign-in on revocation/expiry.
+Idle expiry defaults to **30 minutes**, absolute expiry to **8 hours** from login. Passive NiceGUI dashboard/page timer reads do **not** refresh idle activity.
+Only explicit navigation/interactions or mutating service calls renew last activity.
+Live callbacks recheck the session and redirect to sign-in on revocation/expiry.
 Expiry survives page refresh and application restarts if both SQLite and the
 cookie signing secret are retained. Session continuity across restart must be
 smoke-tested in the packaged Windows build; NiceGUI storage is not a multi-host
