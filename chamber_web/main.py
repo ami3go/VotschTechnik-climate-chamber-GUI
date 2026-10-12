@@ -19,6 +19,9 @@ from nicegui import app, ui  # noqa: E402
 from .bootstrap import create_demo_dashboard_service
 from .security.nicegui import (cookie_secret, current_actor, logout,
                                require_authenticated_page)
+from .ui_pages import (NavigationContext, install_navigation_resolver,
+                       register_pages, render_navigation)
+from .ui_state import project_capabilities, project_telemetry, safe_view
 
 from .model import (
     MAX_TEMP, MIN_TEMP, Step, default_steps,
@@ -57,6 +60,23 @@ app.on_shutdown(_dashboard_service.close)
 
 def get_dashboard_service():
     return _dashboard_service
+
+
+# G02-B stable navigation resolver: cosmetic labels, never the permission gate.
+def _server_navigation_context() -> NavigationContext:
+    actor = current_actor()
+    return NavigationContext(
+        authenticated=actor is not None,
+        role=actor.role.value if actor else None,
+        permitted_routes=frozenset({"/", "/profiles", "/history", "/logs", "/settings"})
+        if actor else frozenset(),
+    )
+
+
+install_navigation_resolver(_server_navigation_context)
+
+# G07 readers are injected when the recording service is implemented.
+register_pages(get_dashboard_service)
 
 
 CSS = (Path(__file__).parent / "assets" / "style.css").read_text(encoding="utf-8")
@@ -191,37 +211,9 @@ def dashboard() -> None:
                 "accept=.csv").classes("w-full")
             ui.button("Close", on_click=import_dialog.close).props("flat")
 
-    with ui.dialog() as settings_dialog:
-        with ui.card().classes("w-96"):
-            ui.label("Backend Settings (read-only)").classes("text-lg font-bold")
-            ui.label("Server telemetry is provided by the single configured Fake backend.")
-            ui.label("Live configuration, controller and permissions are not implemented.").classes(
-                "text-sm text-orange-9")
-            ui.button("Close", on_click=settings_dialog.close).props("flat")
-
-    with ui.dialog() as history_dialog:
-        with ui.card().classes("w-96"):
-            ui.label("Run History").classes("text-lg font-bold")
-            ui.label("Persistent run history will be implemented with the server-side runner.")
-            ui.label("Current page demo is not recorded to disk.").classes("text-orange-9")
-            ui.button("Close", on_click=history_dialog.close).props("flat")
-
     with ui.row().classes("app-shell no-wrap"):
         with ui.column().classes("sidebar gap-1"):
-            ui.label("Visteon").classes("brand")
-            for index, (icon, title, callback) in enumerate([
-                ("dashboard", "Dashboard", lambda: scroll_to("dashboard-content")),
-                ("description", "Profiles", lambda: scroll_to("profile-editor")),
-                ("history", "Run History", history_dialog.open),
-                ("list_alt", "Logs", lambda: scroll_to("event-log")),
-                ("settings", "Settings", settings_dialog.open),
-            ]):
-                with ui.button(on_click=callback, icon=icon).props("flat no-caps align=left") as button:
-                    ui.label(title).classes("nav-text")
-                if index == 0:
-                    button.classes("nav-active")
-            ui.label("Climate Chamber | G02-A\nServer-side simulation only").classes(
-                "side-note whitespace-pre-line")
+            render_navigation("/")
 
         with ui.column().classes("main-area gap-0"):
             with ui.row().classes("topbar"):
@@ -268,6 +260,8 @@ def dashboard() -> None:
                                 ui.label("Verified capability range (view only)").classes("text-xs")
                                 limits_label = ui.label("Waiting for backend capabilities")
                                 ui.label("Start / Stop / Hold / setpoint locked until G04/G08-min")
+                                capability_detail_label = ui.label("Capabilities unverified").classes("text-xs text-orange-9")
+                                ramp_detail_label = ui.label("Gradient support unverified").classes("text-xs text-grey-7")
 
 
                     with ui.column().classes("panel"):
@@ -317,6 +311,7 @@ def dashboard() -> None:
                                 "dense no-caps")
                             measured_cb = ui.checkbox("Measured", value=True).props("dense color=blue")
                             target_cb = ui.checkbox("Target", value=True).props("dense color=orange")
+                    ui.label("In-memory telemetry cache — NOT a G07 recorded run. Samples may predate disconnection.").classes("text-xs text-grey-7")
                     chart = ui.echart({
                         "animation": False,
                         "grid": {"left": 58, "right": 18, "top": 18, "bottom": 34},
@@ -340,7 +335,11 @@ def dashboard() -> None:
                         # Server-owned history is independent of page refresh/close.
                         hours = {"1h": 1, "6h": 6, "12h": 12, "24h": 24}[range_toggle.value]
                         threshold = datetime.now().astimezone() - timedelta(hours=hours)
-                        series = [sample for sample in service.recent_samples()
+                        try:
+                            recent_samples = service.recent_samples()
+                        except Exception:
+                            recent_samples = ()
+                        series = [sample for sample in recent_samples
                                   if sample.time_utc.astimezone() >= threshold]
                         chart.options["xAxis"]["data"] = [
                             sample.time_utc.astimezone().strftime("%H:%M:%S")
@@ -436,33 +435,24 @@ def dashboard() -> None:
                                     "small-table w-full")
 
     def refresh() -> None:
-        view = service.view()
+        view = safe_view(service)
+        display = project_telemetry(view)
+        capability = project_capabilities(view)
         identity = view.identity
-        backend_label.set_text(
-            f"● SIMULATION · {view.quality.value}" if identity is None or identity.is_simulation
-            else f"● READ ONLY · {view.quality.value}"
-        )
+        backend_label.set_text(f"● {display.mode} · {display.quality} · {display.operation}")
         backend_id_label.set_text(
             f"Backend: {identity.backend_id} · {view.chamber_id}" if identity
             else f"Backend: awaiting status · {view.chamber_id}"
         )
-        current_label.set_text(
-            f"{view.measured_temperature_c:.1f} °C"
-            if view.measured_temperature_c is not None else "— (unverified)"
-        )
-        manual_target_label.set_text(
-            f"{view.setpoint_temperature_c:.1f} °C"
-            if view.setpoint_temperature_c is not None else "— (unverified)"
-        )
-        status_label.set_text(view.operation_state.value)
-        quality_label.set_text(
-            view.error or f"Quality: {view.quality.value} · {view.sampled_at_utc}"
-        )
-        limits_label.set_text(
-            f"{view.capabilities.temperature_min_c:g} to "
-            f"{view.capabilities.temperature_max_c:g} °C"
-            if view.capabilities else "Capability data unavailable"
-        )
+        current_label.set_text(display.measured)
+        manual_target_label.set_text(display.setpoint)
+        status_label.set_text(display.operation)
+        quality_label.set_text(f"Quality: {display.quality} · {display.message} · "
+                               f"sample: {display.sampled_utc}")
+        limits_label.set_text(capability.temperature_range)
+        capability_detail_label.set_text(capability.controls_locked_reason)
+        ramp_detail_label.set_text(f"Ramp up: {capability.ramp_up} · "
+                                   f"ramp down: {capability.ramp_down}")
         if view.capabilities:
             chart.options["yAxis"]["min"] = view.capabilities.temperature_min_c - 10
             chart.options["yAxis"]["max"] = view.capabilities.temperature_max_c + 10
@@ -470,9 +460,12 @@ def dashboard() -> None:
         progress.value = 0
         progress_label.set_text("0%")
         active_name.set_text("Draft: " + state.profile_name)
-        clock_label.set_text(datetime.now().strftime("%b %d, %Y %H:%M"))
+        clock_label.set_text(f"Sample: {display.sampled_utc}")
         update_chart()
-        recent = service.recent_samples()[-12:]
+        try:
+            recent = service.recent_samples()[-12:]
+        except Exception:
+            recent = ()
         live_table.update_rows([{
             "id": str(index), "time": s.time_utc.astimezone().strftime("%H:%M:%S"),
             "measured": f"{s.measured_c:.1f}",
