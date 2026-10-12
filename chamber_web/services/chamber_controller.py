@@ -59,16 +59,11 @@ class ChamberController:
         self, config: ChamberConfig, backend: ChamberBackend, *,
         lease_directory: Path | None = None,
         io_timeout_s: float = 2.0, max_sample_age_s: float = 5.0,
-        allow_mock_vendor_backend: bool = False,
     ):
         if not 0 < io_timeout_s <= 60 or not math.isfinite(io_timeout_s):
             raise ValueError("I/O timeout must be finite, >0 and <=60 s")
         if not 0 < max_sample_age_s <= 60 or not math.isfinite(max_sample_age_s):
             raise ValueError("Readback age must be finite, >0 and <=60 s")
-        # The real vendor adapter is not activated by this release. Only a
-        # separately injected mock may exercise its protocol translation.
-        self._mock_vendor_allowed = allow_mock_vendor_backend
-        self._backend_id = config.backend_id
         self.chamber_id = config.chamber_id
         self._backend = backend
         self._lease = DeviceLease(config.chamber_id, lease_directory)
@@ -138,9 +133,8 @@ class ChamberController:
     def connect(self, chamber_id: str) -> None:
         self._check_id(chamber_id)
         with self._state_lock:
-            if self._backend_id not in ("fake", "alternate_stub") and not (
-                self._backend_id == "votsch" and self._mock_vendor_allowed
-            ):
+            # Pre-connect marker is adapter-supplied, fail-closed, vendor-neutral.
+            if getattr(self._backend, "simulation_only", False) is not True:
                 raise ChamberSafetyError("Physical hardware I/O DISABLED; mock backends only")
             if self._connected:
                 return
