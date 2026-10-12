@@ -22,10 +22,10 @@ Additional server-only methods:
 | `release_operator(chamber_id, token)` | Only current owner can release. |
 | `start(chamber_id, operator_token=...)` and `set_temperature(..., operator_token=...)` | Require token when an operator ownership claim exists. Trusted server-side no-token calls remain only for G01 compatibility; G08-min must require authentication/authorization before exposing ANY mutation to clients. |
 | `stop(chamber_id)` | Independently authorized by future OPERATOR/ADMIN auth gate; never blocked by a foreign operator token. No successful return until fresh GOOD STOPPED readback. |
-| `reconcile_stop(chamber_id)` | Requires a fresh GOOD STOPPED readback; clears the persistent uncertainty latch only following explicit server-side reconciliation. G08-min must assign permission/audit policy to this action. |
+| `reconcile_stop(chamber_id)` | Requires a fresh GOOD STOPPED readback; clears the persistent uncertainty latch only following explicit server-side reconciliation. G08-min must assign permission/audit policy to this action. A newer\n  STOP/FAULT generation invalidates even an already-running reconciliation read;\n  old readback may never clear a newer STOP latch. |
 | `start_polling(chamber_id, interval_s=2.0)` | Optional bounded queued server-side periodic reads; `status` is also a serialized poll. No polling is started by the current demo page. |
 
-A manager wraps one `ChamberController` per deployment. Controller owns
+A manager wraps one `ChamberController` per deployment. It also preserves\nG02-A's ID-guarded `capabilities(chamber_id)` snapshot projection and\nbootstrap-owned demo dashboard teardown; separately injected dashboard managers\nremain caller-owned. Controller owns
 `ChamberBackend` and does not import vendor adapters or protocol packages;
 only registry/adapter code resolves a backend. For Vötsch, the maintained
 external driver remains the exclusive eventual hardware communication layer.
