@@ -5,6 +5,7 @@ G04 trusted server-only token-free compatibility calls to web requests.
 """
 from __future__ import annotations
 
+import threading
 from enum import Enum
 from typing import Any
 
@@ -60,6 +61,10 @@ class AuthorizedChamber:
     def __init__(self, manager: Any, security: SecurityStore):
         self._manager = manager
         self._security = security
+        # A token belongs to the authenticated identity which claimed it.
+        # Single server-owned facade; never give its token registry to browsers.
+        self._token_lock = threading.RLock()
+        self._token_owner: dict[str, int] = {}
 
     def authorize(self, session: str | None, csrf: str | None,
                   permission: Permission, *, chamber_id: str | None = None) -> Actor:
@@ -82,6 +87,20 @@ class AuthorizedChamber:
             raise AuthorizationError("Unknown chamber mutation")
         actor = self.authorize(session, csrf, _COMMAND_PERMISSIONS[command],
                                chamber_id=chamber_id)
+        # Only the claimant may use or release a G04 lease token; the G04
+        # backend token itself is NOT a login credential. Never fall back to
+        # token-free G04 trusted server compatibility from a browser.
+        if command == "claim_operator":
+            args, kwargs = (actor.username,), {}
+        if command in {"start", "set_temperature", "release_operator"}:
+            token = (args[0] if args else kwargs.get("token")) if (
+                command == "release_operator") else kwargs.get("operator_token")
+            with self._token_lock:
+                owner_id = self._token_owner.get(token) if isinstance(token, str) else None
+            if owner_id != actor.user_id:
+                self._security.audit(actor, "chamber." + command, "DENIED",
+                                     chamber_id, "operator ownership")
+                raise AuthorizationError("Authenticated operator ownership required")
         # Durable INTENT must commit BEFORE dispatch. A full disk blocks writes.
         self._security.audit(actor, "chamber." + command, "INTENT", chamber_id)
         try:
@@ -91,6 +110,12 @@ class AuthorizedChamber:
             self._security.audit(actor, "chamber." + command, "FAILED",
                                  chamber_id, type(exc).__name__)
             raise
+        if command == "claim_operator":
+            with self._token_lock:
+                self._token_owner[result] = actor.user_id
+        elif command == "release_operator":
+            with self._token_lock:
+                self._token_owner.pop(token, None)
         self._security.audit(actor, "chamber." + command, "SUCCESS", chamber_id)
         return result
 
