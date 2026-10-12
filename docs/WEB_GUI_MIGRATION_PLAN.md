@@ -12,9 +12,9 @@ Owner decision: The NiceGUI web application replaces Tkinter. Desktop GUI suppor
 4. Save sampled measurements incrementally to CSV during runs, not only after completion. Permit retrieval of profiles, measurement logs and event logs as CSV.
 5. Apply Visteon-approved identity/logo to a clean and accessible UI.
 6. ALL GUI screens, profile editor/runner, persistence and shared services MUST depend on a generic `ChamberBackend` abstraction, never directly on a manufacturer driver. Only `VotschBackend` uses the separately maintained `VotschTechnikClimateChamber` driver for Vötsch hardware communication. Future manufacturers use their own adapters/external drivers. The GUI package never reimplements physical chamber protocol. See [CHAMBER_ABSTRACTION_CONTRACT.md](CHAMBER_ABSTRACTION_CONTRACT.md).
-7. The web server remains responsible for ongoing runs when browser windows close or disconnect.
+7. The web server remains responsible for ongoing runs when browser windows close. In v1 only ONE physical chamber per deployment is allowed; device-scoped `chamber_id` contracts prepare for future multiple chambers. See [FUTURE_MULTI_CHAMBER_ARCHITECTURE.md](FUTURE_MULTI_CHAMBER_ARCHITECTURE.md).
 
-Non-goals for initial release: browser-to-chamber protocol communications; chamber firmware programming; native PROGRAM upload; unsupported humidity; cloud dependency; preserving old exe; implementing a second real vendor driver in v1. **Mandatory in v1:** vendor-neutral typed interface, capability-driven screens/profile execution, Vötsch and Fake implementations, and a second simulated manufacturer stub for contract testing.
+Non-goals for initial release: browser-to-chamber protocol, firmware programming, native PROGRAM upload, unverified humidity, cloud dependency, old desktop support, second real vendor driver, and MULTIPLE simultaneous physical chambers/fleet UI/parallel profiles. v1 MUST have a future-proof stable `chamber_id`, one-device cardinality validation, generic backend interface and sequential alternate-backend tests.
 
 ## 2. Verified current implementation and gaps
 
@@ -56,8 +56,8 @@ Non-goals for initial release: browser-to-chamber protocol communications; chamb
                                        v             v
                                  VotschBackend    FakeBackend
                                        |          (simulation/test)
-                                external Vötsch                                      Python driver         + future vendor adapter
-                                       |                  + its own external driver
+                                 Vötsch Python driver       Future backend adapter
+                                       |                       | external vendor driver
                                      VT4011
 
     Durable layer: SQLite for metadata, profiles/revisions, runs, events and operator lease;
@@ -65,10 +65,10 @@ Non-goals for initial release: browser-to-chamber protocol communications; chamb
     Runtime layer: bounded command executor; poller; cancellable profile state machine;
                    immutable run snapshot; shared status event stream.
 
-**Normative contract:** [CHAMBER_ABSTRACTION_CONTRACT.md](CHAMBER_ABSTRACTION_CONTRACT.md) specifies the typed vendor-neutral interface, identity/telemetry/capability DTOs, normalized units/errors, explicit backend registry, per-chamber controller ownership, driver isolation, configuration, testing and extension policy. Generic services must never import vendor adapters or manufacturer drivers.
+**Normative contracts:** [CHAMBER_ABSTRACTION_CONTRACT.md](CHAMBER_ABSTRACTION_CONTRACT.md) defines the vendor-independent driver interface; [FUTURE_MULTI_CHAMBER_ARCHITECTURE.md](FUTURE_MULTI_CHAMBER_ARCHITECTURE.md) specifies strict v1 one-device enforcement and the deferred MC01–MC05 multi-chamber design. The architecture is ready for future fleet expansion; no fleet implementation is included in v1.
 
 Critical invariants:
-- Browser events never directly call blocking backend methods. A per-chamber controller serializes adapter I/O, owns STOP/leases and produces normalized immutable status snapshots; dashboard, runner, logs, exports and shared services must use only this generic domain/controller API.
+- Browser events never directly call blocking backend methods. The generic, `chamber_id`-scoped controller owns serialization, STOP and leases, and provides normalized status snapshots; **v1 allows only one configured physical controller**.
 - At most one active profile or manual-control owner per chamber, enforced by a single OS-level server process/chamber lock plus transactional SQLite control lease and generation fencing. STOP is allowed for any authorized OPERATOR/ADMIN without lease ownership, and invalidates queued older-generation writes.
 - No chamber object stored in NiceGUI user/session storage. A browser refresh/reconnect rehydrates state from the server.
 - Driver calls never block the NiceGUI event loop. STOP intent must be registered and fence future writes immediately; an in-flight blocking transport call cannot be assumed preemptible. Use finite driver deadlines and report attempted STOP separately from verified physical stop. On failed/unavailable readback report UNKNOWN/FAULT and local intervention.
@@ -91,7 +91,7 @@ Suggested root-level package layout (no `src/` wrapper):
       adapters/registry.py      # typed allowlisted backend factory
       adapters/votsch.py        # sole import of existing Vötsch driver
       adapters/fake.py          # deterministic simulated backend
-      services/chamber_manager.py # chamber_id -> isolated controller
+      services/chamber_manager.py # chamber_id-based interface; v1 maximum one physical device
       design_tokens.py
     tests/
       unit/
@@ -104,12 +104,19 @@ Suggested root-level package layout (no `src/` wrapper):
     README.md
     config.example.toml
 
+### v1 physical-device limit and far-future extension seam
+
+- First release: zero or one configured physical chamber, one live device controller and at most one running profile; fail validation if a second physical chamber is configured. Different Fake/vendor-stub devices are tested as **substitutes in separate single-device runs**, never simultaneously.
+- Keep stable `chamber_id` in command routing, device configuration, ownership, run manifests, samples/events/audits, and namespaced server-owned `data/chambers/<chamber_id>/runs/<run_id>/`. Profiles remain hardware-neutral.
+- Define a small controller manager interface returning the only configured physical chamber in v1; unknown IDs are rejected. Do not implement multi-controller instantiation, multi-device polling, selectors, parallel profile scheduling or fleet management.
+- When multi-chamber support is actually scheduled, perform separate MC01–MC05 requirements, safety review, implementation, tests and HIL as described in [FUTURE_MULTI_CHAMBER_ARCHITECTURE.md](FUTURE_MULTI_CHAMBER_ARCHITECTURE.md).
+
 ## 4. User experience and screen map
 
-Navigation: **Dashboard**, **Profiles**, **Run History**, **Logs**, **Settings**. Persistent app header carries the approved horizontal Visteon logo, 'Climate Chamber Control', selected chamber/model, connection and running state, current UTC/local time and signed-in role. Persistent fault banner and accessible STOP when a chamber is actively controlled.
+Navigation: **Dashboard**, **Profiles**, **Run History**, **Logs**, **Settings**. Header shows approved Visteon logo, the sole configured chamber's identity/connection/running state, UTC/local time and role. STOP applies to that chamber; any fleet/selector view is deferred.
 
 ### Dashboard
-- Compact chamber selector (initial release may support just one physical device, but stable `chamber_id`, per-device controllers and registry support later expansion), Connect/Disconnect, vendor-neutral identity/model/serial, last-successful reading age and connection status. Render action availability from `ChamberCapabilities`.
+- In v1 show only the configured chamber's label/ID/model/serial, Connect/Disconnect, reading age and connection status; no multi-chamber selector or overview required. Keep service data bound to explicit `chamber_id` and capability-driven controls.
 - 3 large KPI cards: measured temperature °C, effective setpoint °C, equipment status (OFF/RUNNING/UNKNOWN). Small secondary metrics: active step, remaining/elapsed time and acquisition status.
 - Left: preset temperature chips and custom numeric entry/slider, apply/confirmation; start/stop manual operation. Block manual changes while a profile owns the chamber; manual takeover requires audited abort/finish, confirmed safe release of the owner lease and an explicit new action.
 - Center: live measured + requested setpoint plot with chart legend, time selection, zoom, pause chart and download. Plot is for visualization only; raw CSV preserves every acquired measurement.
@@ -136,7 +143,7 @@ Example profile table:
 ### Run History, Logs, Settings
 - Run History: searchable run ID/profile revision/operator/start/end/outcome/elapsed; details show step timeline, plot, sampled data CSV and events CSV.
 - Logs: structured timestamp/severity/chamber/operator/run/step/message with filtering and bounded browser rendering. Retain audited control actions.
-- Settings: allowlisted adapter/backend choice and validated adapter-specific configuration (IP when relevant), certified capabilities and temperature limits, sample interval, defaults, data paths/quotas, roles and signed stop policy. Never expose generic protocol commands. Disallow backend changes during a live/uncertain run.
+- Settings: validated single-device `chamber_id`/backend/configuration with `physical_device_count <= 1` in v1, safe model limits, sample interval, storage, roles and fault policy. Reject a second physical chamber BEFORE connection; disallow backend changes during running/UNKNOWN status.
 - Responsive desktop/tablet layout (tablet minimum width to approve); touch-friendly buttons, clear contrast, descriptive units, keyboard support and no temperature-based rainbow styling as primary navigation.
 
 ### Branding
@@ -188,7 +195,7 @@ B. automatically preserved measured run samples and events CSV (autosave during 
 Header:
 `sample_index,timestamp_utc,elapsed_s,run_id,chamber_id,step_index,phase,measured_temperature_c,target_temperature_c,chamber_running,sample_quality`.
 - UTC RFC3339 timestamps with milliseconds; `elapsed_s` from monotonic clock; empty measured cell when acquisition fails; `sample_quality` indicates GOOD/STALE/ERROR. Do not record synthetic temperatures as valid readings.
-- A companion events CSV uses `timestamp_utc,elapsed_s,run_id,step_index,severity,event_code,message,operator`.
+- A companion events CSV uses `timestamp_utc,elapsed_s,run_id,chamber_id,step_index,severity,event_code,message,operator`, with backend/driver/serial/capabilities in immutable run metadata.
 - Before any START/setpoint, commit an immutable run/settings/profile snapshot and recording-ready state, create run folder/CSV headers/atomic manifest, then stream samples with monotonically increasing sample_index (proposed 2 s polling). Flush within the defined exposure window (target <=5 s), fsync critical transitions, checksum/finalize after close. Detect incomplete fragments/SQLite mismatch on restart; recorder failures trigger signed FAULT/stop policy and never fabricated samples.
 - SQLite stores the run index and events for browsing; avoid storing millions of raw samples in SQLite unless necessary. Retain raw data, and downsample only in chart query response (e.g. <=2,000 rendered points preserving extrema).
 - Keep files on server-owned directories with safe generated run IDs; sanitize filenames, guard against CSV injection, limit import size/rows, enforce disk space quota/retention and block user-controlled path traversal.
@@ -202,7 +209,7 @@ Header:
 - Validate and restrict device target addresses to configured allowlist/LAN ranges to avoid use of connection form as arbitrary-network access.
 - Support independently supervised Windows service/systemd lifecycle and an explicitly limited portable per-user mode; closing a browser/launcher cannot stop an active service run, while user logoff MAY stop portable mode and must be documented/guarded. Distinguish process liveness, application readiness, driver connectivity and verified physical equipment state. Never auto-start chamber on server boot.
 - Pin NiceGUI, contract version, registered backend versions and tested external driver dependencies. Vötsch transport stays in its separately maintained driver; supporting another vendor adds a dedicated adapter and its separately maintained driver, not GUI command logic.
-- Enforce exactly one authoritative server process/chamber OS lock plus transactional lease and command generation; a second server cannot control the same physical IP. Multi-worker device processes remain out of scope.
+- Enforce one authoritative server process and **one physical chamber/controller in v1**. Keep OS lock, lease and command fencing scoped to `chamber_id` for later expansion; do not implement parallel controllers or fleet orchestration yet.
 - Run count, sample/data retention, audit retention and recovery policy are administrator-configured; default to conservative safe choices.
 - On over-temperature per certified safety envelope, communication failure, invalid identity, stale data, out-of-band safety alarm, disk full or unverified STOP: prevent profile advancement, apply signed fault matrix and surface operator recovery guidance. Freeze target IP, safety limits, poll policy and recording path for each active run.
 
@@ -213,11 +220,11 @@ All of the following are required before a physical-control release and are expa
 1. **Signed physical failure matrix:** specify requested device action, verification evidence, UNKNOWN/FAULT, operator alarm/intervention and HIL test for completion, STOP, communication error, readback mismatch, over-limit temperature, logging outage, service crash/logoff, power cycle and hardware alarm. Web STOP is not an emergency stop; do not assume ambient ramp is inherently safe.
 2. **Verified device capability registry:** `ChamberBackend` reports actual manufacturer/model/serial and site-certified safe temperature limits, supported start/stop/readback, gradients, units/ranges and polling behavior. UI/profile engine automatically reject unsupported actions. Require conformance testing and safe capability snapshots; see [abstraction contract](CHAMBER_ABSTRACTION_CONTRACT.md).
 3. **Driver and adapter boundary:** `VotschBackend` alone imports `VotschTechnikClimateChamber`, and real Vötsch I/O passes exclusively through that hardened external driver. Future vendor adapters must use independent dedicated drivers. Generic GUI/controller/runner must not import vendor drivers, implement protocols or silently fall back to simulation.
-4. **Control ownership and fencing:** independent `ChamberController(chamber_id)`, OS process/device lock, SQLite transactional lease/generation and STOP fencing. Driver/backend swaps while running or in UNKNOWN state are forbidden. No old command replay or auto-resume. Chamber A STOP/controls must never reach chamber B.
+4. **Control ownership and fencing:** generic `ChamberController(chamber_id)`, one-device manager, per-device-ready lock/lease/generation and STOP fence. Reject second physical device and wrong/stale ID before I/O. Future multi-device controller concurrency and cross-chamber isolation HIL are deferred to MC01–MC05.
 5. **Observational profile semantics:** monotonic time, fresh GOOD samples only, inclusive tolerance, gap resets stabilization, dwell credit only for eligible observed intervals, explicit PAUSE/deadline behavior and finite per-stage/per-run watchdogs. Deterministic virtual-clock tests required.
 6. **Lossless persistence:** canonical versioned ZIP with profile.csv + profile.json; plain CSV is step-only. Reversible machine CSV and separately spreadsheet-safe export; sample_index, atomic run manifest, crash reconciliation, durable event recording, quota/ENOSPC response and incomplete-file warnings.
 7. **Offline operational/security lifecycle:** local admin first-run enrollment, role permissions, LAN TLS/proxy, browser-independent supervised server, documented portable logoff limits, separate liveness/readiness/device status, migration backups, rollback compatibility, verified offline assets and Visteon licensing.
-8. **Quality evidence:** architecture import-boundary CI, conformance suite for Vötsch/Fake/second-manufacturer stub, dashboard/runner behavior using only capabilities without edits to generic modules, synthetic plot benchmarks, Windows air-gap tests and independent site HIL. Addition of a vendor must not require modifying base GUI/profile/CSV/controller for existing functions.
+8. **Quality evidence:** adapter/static import tests, different-vendor stubs tested ONE AT A TIME, second-physical-device rejection, wrong/stale `chamber_id` dispatch denial, namespace/metadata checks, scale tests, offline Windows and VT4011 HIL. No simultaneous multi-chamber testing in v1.
 ## 8. Windows builds: native web launcher and complete offline distribution
 
 Two separate, maintained build scripts are **mandatory**, committed to the GUI repository and exercised by Windows CI. The scripts MUST have distinct responsibilities; a shortcut, README-only instructions, or a Windows desktop rewrite does not satisfy this requirement.
@@ -276,9 +283,9 @@ Mandatory artifact and dependencies:
 |---|---|
 | P00 | Resolve and sign off safety matrix, gradient capability and timing/data/ownership/lifecycle contracts; record pending site decisions |
 | D01 (driver repo) | Harden finite TCP connect/send/response, numeric safety and mocked failure tests; pin tested driver before live integration |
-| G01–G03 | Vendor-neutral typed `ChamberBackend` interface + registry, Vötsch/Fake/second-vendor stub conformance, NiceGUI shell, capability-driven screens, profile data/schema/CSV/SQLite |
+| G01–G03 | Backend interface, typed `chamber_id`, one-device manager/configuration schema and guard, Fake/Vötsch/second-vendor stub sequential tests, single-chamber NiceGUI and versioned data |
 | W01 (early, parallel) | Both Windows launcher and offline-build script feasibility with frozen fake-driver server |
-| G04–G06 | Generic per-chamber controller, command fencing, ownership, manual controls and profile runner via `ChamberBackend` (no direct Vötsch dependency) |
+| G04–G06 | ONE active generic `ChamberController(chamber_id)`, scoped STOP/leases, manual control and profile runner; reject second physical chamber and invalid ID |
 | G07–G08 | Crash-safe recording, history/performance, multiuser roles/auth and supervised lifecycle |
 | H01 | Site-approved real VT4011/LabEvent HIL incl. gradient verification, faults and STOP readback |
 | W02 | Clean air-gapped Windows x64 launcher/offline ZIP, upgrade/rollback and data preservation |
@@ -299,7 +306,7 @@ Developer must follow dependency prerequisites and full acceptance checklist in 
 - Windows offline: clean VM with internet disabled, no developer runtimes, complete static asset load, profile CSV round-trip, sample CSV recording, offline updates/rollback, file integrity, and zero external network fetches.
 
 ### Release gates
-1. Manual workflows demonstrated with VT4011 through `ChamberBackend`, and a second-vendor test adapter runs the same generic dashboard/profile workflows without modifying generic source. CI enforces no direct Vötsch imports outside its adapter; unsupported features disabled.
+1. Test manual VT4011 workflow through generic backend and separately run the same UI/runner with a second-vendor stub. Reject simultaneous second physical device configuration; no generic manufacturer branching; wrong/stale `chamber_id` must fail before sending commands.
 2. A 4-step cold/hot/ambient table profile successfully runs and produces correctly timed data/events, including pause, resume and controlled stop.
 3. Importing then exporting valid CSV steps reproduces all step values, including optional gradients; failed import never changes current profile or chamber state.
 4. At least two clients concurrently view one live run without competing hardware ownership; operator closes browser and server-side run continues.
