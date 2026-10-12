@@ -74,7 +74,11 @@ external driver remains the exclusive eventual hardware communication layer.
    become invalid, including after an operator lease handover. A clean
    shutdown only releases persisted uncertainty when the last identity-bound
    GOOD STOPPED sample remains within the configured freshness window; a stale
-   sample forces explicit reconciliation on restart. Concurrent second
+   sample forces explicit reconciliation on restart. A **second worker-serialized
+   readback just before backend disconnect** must also confirm STOPPED: an
+   in-flight START admitted before disconnect intent may complete afterward.
+   Missing/changed readback preserves uncertainty, even if the adapter's
+   disconnect subsequently stops a simulator. Concurrent second
    disconnects are rejected.
 6. **No preemption claim:** a synchronous backend call already admitted by the
    worker may finish *after* STOP intent. If it hangs, STOP cannot reach the
@@ -137,6 +141,7 @@ and Windows 3.10/3.12 fault suites, using only simulated backends.
 | HIGH | Operator A's queued command survived lease release and takeover by B | Operator generation rechecked at worker dispatch; handover race regression |
 | HIGH | Disconnect could overtake a queued old-generation setpoint without fencing it | Atomically latch/fence before priority backend disconnect; delayed-read/queued-write regression |
 | HIGH | A stale previous STOPPED sample could allow an apparently clean restart | Freshness/quality/identity bound required for clear-on-close, otherwise uncertainty persists |
+| HIGH | A blocking START admitted before disconnect could complete after the previous STOP sample | Worker-serialized STOPPED readback **after all in-flight commands**, immediately before disconnect; restart uncertainty regression |
 | HIGH | A delayed reconciliation read could clear a newer STOP | Persistent command generation checked again before clearing stop latch |
 | MEDIUM | Windows lock acquisition and test fixture cleanup could fail under contention | Lock byte before reading it; Windows cross-process and teardown regression |
 | MEDIUM | G02-A dashboard lifecycle could retain the single process lease | Preserve read-only capabilities DTO and explicit owned-bootstrap cleanup |
