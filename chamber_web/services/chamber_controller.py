@@ -232,6 +232,8 @@ class ChamberController:
             generation = self._generation
             if mutation and (not self._connected or self._stop_latched):
                 raise ChamberSafetyError("Operation blocked: disconnected or STOP-latched")
+            if name != "stop" and self._queue.qsize() >= 32:
+                raise ChamberSafetyError("Device I/O queue full")
             request = _Work(name, action, Future(), generation, mutation)
             self._queue.put((priority, next(self._sequence), request))
         try:
