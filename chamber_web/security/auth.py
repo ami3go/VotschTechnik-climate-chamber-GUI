@@ -341,6 +341,27 @@ class SecurityStore:
         finally:
             db.close()
 
+    def _require_current_admin(self, db: sqlite3.Connection, session: str,
+                               actor: Actor) -> None:
+        """Recheck role and session inside the mutation's write transaction.
+
+        Pre-transaction authenticate() can race with another administrator's
+        role change, account disable, session logout, or session expiry.
+        """
+        row = db.execute(
+            "SELECT u.id,u.enabled,u.role,s.revoked,s.created_at,s.last_seen"
+            " FROM sessions s JOIN users u ON s.user_id=u.id"
+            " WHERE s.token_hash=?", (_digest(session),),
+        ).fetchone()
+        now = self.clock()
+        if (row is None or row[0] != actor.user_id or not row[1] or
+                row[2] != Role.ADMIN.value or row[3] or
+                now - row[4] >= self.absolute_timeout_s or
+                now - row[5] >= self.idle_timeout_s):
+            self._audit(db, actor, "user.admin", "DENIED",
+                        detail="stale administrator authority")
+            raise AuthorizationError("Administrator session no longer authorized")
+
     def create_user(self, admin_session: str, csrf: str, username: str,
                     password: str, role: Role) -> None:
         admin = self.authenticate(admin_session, csrf=csrf, mutation=True)
@@ -354,6 +375,7 @@ class SecurityStore:
         db = self._db()
         try:
             db.execute("BEGIN IMMEDIATE")
+            self._require_current_admin(db, admin_session, admin)
             db.execute("INSERT INTO users(username,password_hash,role) VALUES(?,?,?)",
                        (username, pw, role.value))
             self._audit(db, admin, "user.create", "SUCCESS", detail=username)
@@ -375,6 +397,7 @@ class SecurityStore:
         db = self._db()
         try:
             db.execute("BEGIN IMMEDIATE")
+            self._require_current_admin(db, admin_session, admin)
             row = db.execute("SELECT id,role FROM users WHERE username=? AND enabled=1",
                              (username,)).fetchone()
             if row is None:
@@ -399,6 +422,7 @@ class SecurityStore:
         db = self._db()
         try:
             db.execute("BEGIN IMMEDIATE")
+            self._require_current_admin(db, admin_session, admin)
             row = db.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
             if not row or row[0] == admin.user_id:
                 raise AuthorizationError("Cannot disable missing or own account")
