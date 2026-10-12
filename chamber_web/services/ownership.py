@@ -42,10 +42,6 @@ class DeviceLease:
         try:
             self._file = open(path, "a+b")
             self._file.seek(0)
-            if self._file.read(1) == b"":
-                self._file.write(b"0")
-                self._file.flush()
-            self._file.seek(0)
             try:
                 if os.name == "nt":
                     import msvcrt
@@ -56,6 +52,10 @@ class DeviceLease:
             except (OSError, BlockingIOError) as exc:
                 raise ChamberSafetyError("Device process lock is held") from exc
             self._locked = True
+            self._file.seek(0)
+            if self._file.read(1) == b"":
+                self._file.write(b"0")
+                self._file.flush()
             self._db = sqlite3.connect(
                 self.directory / "ownership.sqlite3", timeout=2.0,
                 isolation_level=None, check_same_thread=False,
