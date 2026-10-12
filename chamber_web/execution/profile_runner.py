@@ -562,10 +562,17 @@ class ProfileRunner:
                             not self._sample_fresh(sample) or
                             sample.identity != self._snapshot.identity or
                             sample.operation_state is not OperationState.RUNNING or
+                            sample.measured_temperature_c is None or
                             sample.setpoint_temperature_c is None or
+                            not math.isfinite(sample.setpoint_temperature_c) or
                             abs(sample.setpoint_temperature_c -
                                 float(self._step().target_temperature_c)) > 0.1):
                         raise ChamberSafetyError("Telemetry invalid while paused")
+                    finite_temperature(
+                        sample.measured_temperature_c,
+                        self._snapshot.capabilities.temperature_min_c,
+                        self._snapshot.capabilities.temperature_max_c,
+                    )
                 elif self._state in (RunState.REACHING, RunState.STABILIZING, RunState.DWELLING):
                     self._observe()
                     if (self._state in (RunState.REACHING, RunState.STABILIZING)
