@@ -40,3 +40,8 @@ python -m unittest discover -s tests -p "test_web_*.py"
 ~~~
 
 Source: `chamber_web/main.py`, `chamber_web/model.py`, `chamber_web/assets/style.css`.
+
+
+## Dependency pinning and safety gate
+
+The demo web dependency is fixed at `nicegui==3.18.0`, verified by Windows CI on Python 3.10 and 3.12. The hardened external Vötsch driver is separately pinned by full commit SHA in `requirements-hardware.txt`. Neither installing that driver nor merging its transport fixes enables physical control: the G01 `VotschBackend` intentionally blocks real-device connections until the dedicated safety/controller/authentication/HIL stages are approved. W01/W02 still require a complete hash-locked transitive dependency manifest and air-gapped packaging verification.

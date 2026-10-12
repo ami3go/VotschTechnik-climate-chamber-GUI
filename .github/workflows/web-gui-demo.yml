@@ -10,6 +10,7 @@ on:
       - "tests/test_chamber_*.py"
       - "tests/test_profile_*.py"
       - "requirements-web.txt"
+      - "requirements-hardware.txt"
       - ".github/workflows/web-gui-demo.yml"
   push:
     branches: [main]
@@ -21,6 +22,7 @@ on:
       - "tests/test_chamber_*.py"
       - "tests/test_profile_*.py"
       - "requirements-web.txt"
+      - "requirements-hardware.txt"
       - ".github/workflows/web-gui-demo.yml"
 
 jobs:
@@ -37,9 +39,9 @@ jobs:
       - name: Install web dependencies
         run: python -m pip install -r requirements-web.txt
       - name: Install UI test tools
-        run: python -m pip install pytest pytest-asyncio
+        run: python -m pip install pytest==9.1.1 pytest-asyncio==1.4.0
       - name: Install architecture lint
-        run: python -m pip install ruff
+        run: python -m pip install ruff==0.17.0
       - name: Lint G01 port and tests
         run: python -m ruff check chamber_web/domain chamber_web/adapters chamber_web/services tests/test_chamber_backend.py --select E4,E7,E9,F
       - name: Contract and single-device safety unit tests
