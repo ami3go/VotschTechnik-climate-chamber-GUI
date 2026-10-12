@@ -234,6 +234,15 @@ class SecurityCoreTests(unittest.TestCase):
                         "start", operator_token=owner_token)
         with self.assertRaises(AuthorizationError):
             guarded.stop(viewer.session, viewer.csrf, "device-1")
+        with self.assertRaises(AuthorizationError):
+            guarded.execute(operator.session, operator.csrf, "device-1",
+                            "start", operator_token=owner_token)
+        with self.assertRaises(AuthorizationError):
+            guarded.execute(operator.session, operator.csrf, "device-1",
+                            "release_operator", owner_token)
+        with self.assertRaises(AuthorizationError):
+            guarded.execute(operator.session, operator.csrf, "device-1",
+                            "set_temperature", 30)
         # Operator does NOT know admin's G04 ownership token, but may STOP.
         guarded.stop(operator.session, operator.csrf, "device-1")
         self.assertTrue(manager.health("device-1").stop_latched)
