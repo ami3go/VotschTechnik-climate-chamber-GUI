@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections import deque
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -175,7 +176,8 @@ class ProfileRunner:
         self._snapshot: ExecutionSnapshot | None = None
         self._state: RunState | None = None
         self._reason = ""
-        self._events: list[RunEvent] = []  # diagnostic only; NOT a G07 journal
+        self._events: deque[RunEvent] = deque(maxlen=1024)  # diagnostic, NOT G07
+        self._event_sequence = 0
         self._owner_token: str | None = None
         self._t0 = 0.0
         self._run_deadline = 0.0
@@ -245,8 +247,9 @@ class ProfileRunner:
               quality: ReadingQuality | None = None) -> None:
         assert self._snapshot is not None and self._state is not None
         with self._event_guard:
+            self._event_sequence += 1
             event = RunEvent(
-                self._snapshot.run_id, self._id, len(self._events) + 1,
+                self._snapshot.run_id, self._id, self._event_sequence,
                 kind, self._state, max(0.0, self._now() - self._t0),
                 self._step_index, detail, temperature, quality,
             )
@@ -327,7 +330,8 @@ class ProfileRunner:
                 self._state = RunState.PREPARING
                 self._reason = ""
                 with self._event_guard:
-                    self._events = []
+                    self._events.clear()
+                    self._event_sequence = 0
                 self._cancel_requested = False
                 self._stop_future = None
                 self._stable_from = self._last_good = None
