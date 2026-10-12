@@ -1,6 +1,6 @@
 # G04-A — mock-only ChamberController API and safety contract
 
-Status: **implementation PR; not HIL certified and NOT authorized for physical I/O**.
+Status: **G04-A MOCK-ONLY SOFTWARE MERGED** via [GUI PR #19](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/19), merge commit [`7a5d643`](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/7a5d643ca8b53be9705d6b2f244d1766684d7011). [Final-head Windows CI 3.10/3.12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38283603116) passed. **HIL not certified; physical I/O NOT authorized.**
 Normative upstream: [P00_DECISION_CONTRACTS.md](P00_DECISION_CONTRACTS.md),
 [CHAMBER_ABSTRACTION_CONTRACT.md](CHAMBER_ABSTRACTION_CONTRACT.md),
 [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md). This addendum documents an
