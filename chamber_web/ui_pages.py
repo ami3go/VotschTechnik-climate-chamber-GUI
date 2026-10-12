@@ -10,8 +10,8 @@ from typing import Callable
 from nicegui import ui
 
 from chamber_web.services.web_read_models import (
-    EventReader, HistoryReader, UnavailableEventReader, UnavailableHistoryReader,
-    bounded_search,
+    EventReader, HistoryReader, RecordPage, UnavailableEventReader,
+    UnavailableHistoryReader, bounded_search,
 )
 from chamber_web.ui_state import project_capabilities, project_telemetry, safe_view
 
@@ -179,22 +179,24 @@ def register_pages(
 
                 def reload():
                     try:
-                        page = history.list_runs(service.chamber_id,
-                                                 search=bounded_search(search.value), limit=50)
+                        page = history.list_runs(
+                            service.chamber_id, search=bounded_search(search.value), limit=50)
+                        rows = [{
+                            "run_id": row.run_id,
+                            "profile": f"{row.profile_name} · r{row.profile_revision}",
+                            "operator": row.operator or "—",
+                            "started": row.started_at_utc.astimezone(timezone.utc).isoformat(),
+                            "ended": (row.ended_at_utc.astimezone(timezone.utc).isoformat()
+                                      if row.ended_at_utc else "—"),
+                            "outcome": row.outcome,
+                        } for row in page.records if row.chamber_id == service.chamber_id][:50]
                     except Exception:
-                        page = UnavailableHistoryReader().list_runs(service.chamber_id)
+                        page = RecordPage(False, detail="Run history service failed; retry later.")
+                        rows = []
                     status.clear()
                     with status:
                         _status_panel(page, empty_text="No recorded runs match this search.")
-                    table.update_rows([{
-                        "run_id": row.run_id,
-                        "profile": f"{row.profile_name} · r{row.profile_revision}",
-                        "operator": row.operator or "—",
-                        "started": row.started_at_utc.astimezone(timezone.utc).isoformat(),
-                        "ended": (row.ended_at_utc.astimezone(timezone.utc).isoformat()
-                                  if row.ended_at_utc else "—"),
-                        "outcome": row.outcome,
-                    } for row in page.records if row.chamber_id == service.chamber_id][:50])
+                    table.update_rows(rows)
                 ui.button("Search", icon="search", on_click=reload).props("outline no-caps")
                 reload()
 
@@ -228,21 +230,23 @@ def register_pages(
                         page = events.list_events(
                             service.chamber_id, severity=severity.value,
                             search=bounded_search(search.value), limit=50)
+                        rows = [{
+                            "id": row.event_id,
+                            "timestamp": row.timestamp_utc.astimezone(timezone.utc).isoformat(),
+                            "severity": row.severity,
+                            "chamber": row.chamber_id,
+                            "operator": row.operator or "—",
+                            "run": row.run_id or "—",
+                            "step": row.step if row.step is not None else "—",
+                            "message": row.message,
+                        } for row in page.records if row.chamber_id == service.chamber_id][:50]
                     except Exception:
-                        page = UnavailableEventReader().list_events(service.chamber_id)
+                        page = RecordPage(False, detail="Event log service failed; retry later.")
+                        rows = []
                     status.clear()
                     with status:
                         _status_panel(page, empty_text="No recorded events match the filters.")
-                    table.update_rows([{
-                        "id": row.event_id,
-                        "timestamp": row.timestamp_utc.astimezone(timezone.utc).isoformat(),
-                        "severity": row.severity,
-                        "chamber": row.chamber_id,
-                        "operator": row.operator or "—",
-                        "run": row.run_id or "—",
-                        "step": row.step if row.step is not None else "—",
-                        "message": row.message,
-                    } for row in page.records if row.chamber_id == service.chamber_id][:50])
+                    table.update_rows(rows)
                 reload()
 
     @ui.page("/settings")
