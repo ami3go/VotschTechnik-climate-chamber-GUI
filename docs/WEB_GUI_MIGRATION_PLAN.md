@@ -199,7 +199,57 @@ Header:
 - Run count, sample/data retention, audit retention and recovery policy are administrator-configured; default to conservative safe choices.
 - On critical warning (over-temperature per configured safe limit, repeated communication timeout, out-of-band dwell, disk full, unverified stop), prevent further profile advancement and surface actionable recovery guidance.
 
-## 8. Delivery PR sequence and acceptance criteria
+## 8. Windows builds: native web launcher and complete offline distribution
+
+Two separate, maintained build scripts are **mandatory**, committed to the GUI repository and exercised by Windows CI. The scripts MUST have distinct responsibilities; a shortcut, README-only instructions, or a Windows desktop rewrite does not satisfy this requirement.
+
+### Script A — `scripts/build_windows_launcher.ps1`
+
+**Purpose:** Build a Windows **web launcher** executable (`ClimateChamberLauncher.exe`) and a Start Menu/Desktop shortcut configuration that opens the NiceGUI application in the default browser, without reimplementing any UI as a Windows desktop application.
+
+Required behavior and output:
+- Build on Windows using a pinned toolchain; emit `dist/windows-launcher/ClimateChamberLauncher.exe`, version information, Visteon-authorized icon and a generated build manifest.
+- The launcher resolves the installed application/server path using its install location (not hardcoded developer paths); checks whether an instance is already listening; starts the web server if necessary, waits for a **health/readiness endpoint** with bounded timeout, then opens `http://127.0.0.1:<configured-port>/` in the default browser. No duplicate chamber controller or server on repeated launches.
+- Default to loopback. Respect configured host/port and open the proper URL when HTTPS/reverse-proxy mode is configured, while ensuring the launcher never inadvertently exposes the service publicly. Distinguish an occupied non-app port from a running authenticated app; never blindly trust another process at the configured port.
+- Show actionable dialogs or log locations for missing server installation, invalid configuration, blocked port, startup failure, missing permissions and initial authentication. Avoid spawning visible terminal windows during normal operator operation.
+- Closing the browser MUST NOT terminate a running profile; the launcher never owns the chamber lifecycle. Explicit service/server shutdown must refuse unsafe shutdown when a run is active unless an authorized safe-stop policy is completed.
+- Launcher build may target an already-installed online application; **the launcher alone is not represented as an offline install**. Document the dependency on the installed application and distinguish its artifact clearly from the complete distribution.
+- Build flags: `-Clean`, `-OutputDir`, `-Configuration`, `-Version` (or equivalent documented parameters). The build fails nonzero if a step or artifact verification fails.
+
+### Script B — `scripts/build_windows_offline.ps1`
+
+**Purpose:** On an **internet-connected Windows build host**, construct a complete, portable, self-contained **offline Windows application bundle** (versioned ZIP or installer) which can be transferred by USB to a Windows computer **without internet access** and launched locally. The **installed runtime must make zero network calls to package repositories, CDNs or cloud services**. Local loopback and configured LAN access to the physical chamber are allowed.
+
+Mandatory artifact and dependencies:
+- Emit `dist/ClimateChamber-Web-Windows-x64-<version>-offline.zip` and a SHA-256 checksum manifest; optionally emit signed installer as an additional artifact, not a substitute for the ZIP.
+- Include the NiceGUI server entry point, `ClimateChamberLauncher.exe` from Script A, compatible embedded/frozen Python runtime, the **exact pinned version** of `VotschTechnikClimateChamber`, all transitive Python dependencies, NiceGUI/Quasar/AG Grid/Plot assets, locally bundled fonts/icons, approved Visteon logo/icon, configuration example, licenses/third-party notices, version and build metadata.
+- Do not ship or depend on a **copied virtual environment** that embeds development-host absolute paths. Prefer a pinned, reproducible Windows `PyInstaller --onedir`-style frozen server distribution (or an equivalently verified embedded-Python layout). Build natively on Windows for supported architecture; no assumed Linux-to-Windows cross-compilation.
+- Preserve the Python driver as the sole chamber interface inside the bundle. Never duplicate protocol commands in generated launcher/runtime code.
+- Installer/ZIP extraction creates writable application data/log/CSV/SQLite storage in a supported Windows user or `ProgramData` directory, **not** the read-only installation folder; initial config points to loopback. No admin privileges are required for ordinary operator launch if using the portable mode.
+- Treat the Windows browser as an explicitly verified OS prerequisite (e.g. installed Edge/other default browser); if an air-gapped target cannot provide one, supply an optional legally redistributable bundled browser or compatible offline webview mode, without downloading components on the target.
+- Self-contained web assets: audit rendered pages for remote scripts, fonts, stylesheets, CDN-hosted assets, telemetry/update checks and online authentication. Configure local alternatives or disable these features. No `pip`, `uv`, `npm`, `dotnet restore`, Git, remote URLs or network installer steps on the **target PC**.
+- Test against a clean Windows x64 VM with **no Python, pip, uv, Node.js, development tools or internet connectivity**; only the documented OS baseline/browser and direct chamber LAN (or fake device) may be assumed.
+- Provide `README_OFFLINE_WINDOWS.md`: how to build, version/support matrix, transfer via USB, verify SHA-256, extract/install, start/stop server, open UI, select/configure chamber IP, store/backup logs and profiles, update to a newer offline bundle and roll back without data loss.
+- Fail build on unresolved imports, missing assets, missing DLL/driver, omitted licenses, non-matching hashes or smoke-test failure. Include a machine-readable manifest with Python/package/driver versions, lockfile hash and bundled file hashes.
+- Rebuild from locked dependency versions and a clean work directory. Document signing/SBOM provenance and offline patch/update delivery. Exclude developer keys, source secrets, `build/` caches and previously generated `dist/` trees.
+
+### Separation and workflow
+
+1. Script A can be run independently to produce the thin Windows web launcher for a normal deployment.
+2. Script B orchestrates a clean app freeze, **invokes or incorporates Script A**, assembles the complete runtime and local assets, verifies its manifest and creates the transfer archive; operators use the same launcher UX in both deployment styles.
+3. CI on Windows tests Script A startup/re-use and Script B extraction/launch. Release artifacts are attached to tagged GitHub releases instead of committing binaries into the source repository.
+4. App startup is never coupled to a browser session: closing the launcher/browser leaves profile execution controlled by the server/service policy. Restarting the launcher attaches to the existing server; conflicting owners are rejected.
+5. The offline runtime may communicate with the physical chamber over a private network, but **never requires general internet connectivity**. Tests must block internet egress to prove this.
+
+### Windows packaging acceptance criteria
+
+- Launcher executable starts a local installed server, waits for readiness, opens browser and reports missing/occupied-port failures; second invocation does not launch a second server.
+- A running profile continues after the browser is closed and reopened; logs/CSV continue to be written.
+- Offline archive extracted on a clean internet-disconnected Windows 10/11 x64 VM starts from the bundled launcher, renders dashboard and profile editor, executes a fake-device profile, saves CSV, and performs CSV import/export with **no runtime downloads**.
+- Package runs without Python/pip/uv/Node/npm or admin privileges, assuming only the documented supported OS/browser; all assets load locally.
+- Repeated launches, graceful app/server shutdown and update/rollback keep durable settings/history/profile data intact; executable and ZIP checksum manifests match expected hashes.
+
+## 9. Delivery PR sequence and acceptance criteria
 
 Every PR must pass lint/type check, unit tests and relevant fake-driver integration tests before merge; do not combine unrelated infrastructure and profile behavior changes.
 
@@ -212,8 +262,9 @@ Every PR must pass lint/type check, unit tests and relevant fake-driver integrat
 | 05 | Profile data/schema/CRUD + AG Grid editor + CSV import/export | Operator can create/save/edit/clone/reorder/reopen/validate/export/import profiles; malformed/out-of-range inputs never reach driver; CSV round trip. |
 | 06 | Server-side cancellable profile engine, pause/resume, ownership | Test all state transitions, stable/dwell semantics, reach timeout, repeat, abort latency, browser disconnect and restart interruption. |
 | 07 | Autosaving CSV, history, plots, events and downloads | Headers/quality fields valid, raw points preserved, downloadable logs, bounded visual chart points, recover partial runs. |
-| 08 | Roles/auth/TLS/deployment, observability, HIL certification | Two browsers cannot start conflicting jobs; STOP always available; health checks; fault injection; real VT4011 test matrix signed off. |
-| 09 | Cutover, updated README, desktop deprecation and removal | Support documentation points to web install; last parity checklist complete; stop distributing PyInstaller .exe/build artifacts. |
+| 08 | Roles/auth/TLS, observability, HIL certification | Two browsers cannot start conflicting jobs; STOP always available; health checks; fault injection; real VT4011 test matrix signed off. |
+| 09 | Windows launcher and offline packaging scripts | Both mandatory PowerShell scripts build on clean Windows CI; launcher startup/reuse passes, offline ZIP works on an internet-disconnected clean Windows VM. |
+| 10 | Cutover, updated README, desktop deprecation and removal | Support documentation points to web launch/offline install; last parity and air-gap checklist complete; stop distributing legacy Tkinter/PyInstaller .exe/build artifacts. |
 
 Driver changes are made as separate, backward-compatible PRs in `ami3go/VotschTechnik-climate-chamber-Python` before consuming new driver features; pin their tested version in GUI. PR 03 should NOT wait for unrelated driver improvements if existing functions can safely support mock/initial implementation.
 
@@ -227,6 +278,8 @@ Driver changes are made as separate, backward-compatible PRs in `ami3go/VotschTe
 - CSV flushed before chamber command, complete sample and event fields, disk-full behavior, ZIP protection and retention.
 - High-volume chart test at >=100k samples, tablet layout and keyboard workflow; chart DOM remains bounded and controls usable.
 - HIL: verified chamber VT4011 manual control, gradient unit/range, out-of-range hardware rejection, setpoint readback, stop after fault and network cable unplug.
+- Windows launcher: port conflict and readiness timeout, duplicate starts, browser close/reopen during a running profile, troubleshooting logs, path with spaces/non-ASCII.
+- Windows offline: clean VM with internet disabled, no developer runtimes, complete static asset load, profile CSV round-trip, sample CSV recording, offline updates/rollback, file integrity, and zero external network fetches.
 
 ### Release gates
 1. Manual workflows from desktop demonstrated with a VT4011 and *no unimplemented settings falsely represented as functional*.
@@ -236,18 +289,21 @@ Driver changes are made as separate, backward-compatible PRs in `ami3go/VotschTe
 5. Fault tests demonstrate bounded stopping, no unsafe queued setpoints, clear UNKNOWN/FAULT state after communication loss, correct handling of interrupted runs.
 6. Full run sample CSV is readable while run is active and final downloads include no silently lost or invented samples; meaningful timestamps and units.
 7. Web application runs headless with start-on-boot and documented backup/restore. Desktop artifacts are removed only after sign-off.
+8. Both `scripts/build_windows_launcher.ps1` and `scripts/build_windows_offline.ps1` exist and pass Windows CI/release tests. Their generated launcher EXE and self-contained offline ZIP are attached to a versioned release.
+9. Offline ZIP is transferred to a clean, internet-disconnected Windows machine; it runs without Python or developer tools, renders all pages/assets, runs an offline simulated profile, preserves results/CSV and does not access public internet endpoints.
 
-## 9. Decisions to confirm before implementation
+## 10. Decisions to confirm before implementation
 
 - Supported physical chambers and actual temperature/gradient limits; validate model/controller differences, especially gradient command units.
 - Approved **current** Visteon logo and design tokens; usage rights in a public MIT repository.
 - Whether required profile semantics are software-driven only (recommended v1), or native chamber PROGRAM uploads are also needed later.
 - In a failure or user STOP, what should the chamber do: power OFF (proposed default), maintain current setpoint, or return to safe ambient? This must follow site/hardware safety policy.
 - Preferred run storage period/quota, operators/authentication method and network boundary (single local PC vs LAN-wide lab server).
+- Supported offline Windows OS/CPU baseline, availability of built-in Edge or requirement to bundle a browser, and whether an additional installer/code signing is expected.
 - Clarify whether 'pre-save CSV' means profile CSV export, measurement autosave, or both; **this plan provides both**.
 
-## 10. Readiness
+## 11. Readiness
 
-GO for PR 01 and PR 02 (non-hardware foundation/UI) and fake-driver development.
+GO for PR 01 and PR 02 (non-hardware foundation/UI), fake-driver development and the two Windows packaging scripts against the fake driver.
 CONDITIONAL GO for manual hardware integration and profile engine until gradient units, safe stop policy, operator ownership behavior and chamber-in-the-loop test access are settled.
-NO-GO for desktop removal until the above release gates are verified on real hardware.
+NO-GO for desktop removal until the above release gates are verified on real hardware **and the self-contained offline Windows bundle passes the air-gapped target-machine acceptance test**.
