@@ -1,0 +1,1 @@
+"""Hardware-agnostic application domain."""
