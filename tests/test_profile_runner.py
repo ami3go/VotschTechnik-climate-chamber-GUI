@@ -142,6 +142,18 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.runner.snapshot, snapshot)
         self.assertEqual([e.sequence for e in self.sink.events],
                          list(range(1, len(self.sink.events) + 1)))
+        samples = [e for e in self.sink.events if e.kind == "SAMPLE"]
+        self.assertTrue(samples)
+        self.assertEqual([e.sample_index for e in samples],
+                         list(range(1, len(samples) + 1)))
+        for event in self.sink.events:
+            self.assertIsNotNone(datetime.fromisoformat(event.observed_at_utc).tzinfo)
+            if event.kind == "SAMPLE":
+                self.assertIsNotNone(
+                    datetime.fromisoformat(event.source_sampled_at_utc).tzinfo,
+                )
+            else:
+                self.assertIsNone(event.sample_index)
         self.assertFalse(self.backend._running)
         with self.assertRaises(ChamberSafetyError):
             self.manager.start("unit-chamber")
