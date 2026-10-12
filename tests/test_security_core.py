@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import closing
 import sqlite3
 import tempfile
 import threading
@@ -48,7 +49,7 @@ class SecurityCoreTests(unittest.TestCase):
         self.assertTrue(self.security.is_bootstrapped())
         with self.assertRaises(AuthorizationError):
             self.security.bootstrap_admin("another_admin", "StrongAdminPassword#1")
-        with sqlite3.connect(self.security.database) as db:
+        with closing(sqlite3.connect(self.security.database)) as db:
             self.assertEqual(db.execute("SELECT count(*) FROM users").fetchone()[0], 1)
             self.assertNotIn("StrongAdminPassword", str(
                 db.execute("SELECT password_hash FROM users").fetchone()[0]))
