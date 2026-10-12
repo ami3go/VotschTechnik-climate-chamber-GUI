@@ -346,59 +346,25 @@ def dashboard() -> None:
                         widget.on("update:model-value", lambda: update_chart())
 
                 with ui.element("div").classes("bottom-grid"):
+                    # G03-C owns editing; no competing browser-local editor.
+                    # G02-B owns later full Dashboard cleanup.
                     with ui.column().classes("panel editor-panel").props('id="profile-editor"'):
                         with ui.row().classes("panel-head"):
                             _panel_title("edit_note", "Profile Editor")
-                            with ui.row().classes("gap-1"):
-                                ui.button("New", icon="add", on_click=new_profile).props(
-                                    "outline no-caps").classes("toolbar-button")
-                                ui.button("Import CSV", icon="upload", on_click=import_dialog.open).props(
-                                    "outline no-caps").classes("toolbar-button")
-                                ui.button("Export CSV", icon="download", on_click=export_csv).props(
-                                    "outline no-caps").classes("toolbar-button")
-                        with ui.row().classes("items-center w-full"):
-                            ui.label("Profile Name").classes("text-xs")
-                            name_input = ui.input(value=state.profile_name,
-                                                  on_change=lambda e: setattr(
-                                                      state, "profile_name", e.value)).props(
-                                                          "outlined dense").classes("flex-grow")
-
-                        @ui.refreshable
-                        def editor_rows():
-                            with ui.column().classes("edit-scroll gap-0"):
-                                with ui.element("div").classes("edit-row header"):
-                                    for column in ("#", "Use", "Target °C", "Ramp", "Tolerance",
-                                                   "Dwell (s)", "Description", "Delete"):
-                                        ui.label(column)
-                                for index, step in enumerate(state.steps):
-                                    with ui.element("div").classes("edit-row"):
-                                        ui.label(str(index + 1))
-                                        ui.checkbox(value=step.enabled,
-                                                    on_change=lambda e, s=step: set_field(
-                                                        s, "enabled", e.value)).props("dense")
-                                        for field, amount in (("target", step.target),
-                                                              ("ramp", step.ramp),
-                                                              ("tolerance", step.tolerance),
-                                                              ("dwell", step.dwell)):
-                                            ui.number(value=amount,
-                                                      on_change=lambda e, s=step, f=field:
-                                                      set_field(s, f, e.value)).props(
-                                                          "dense borderless")
-                                        ui.input(value=step.description,
-                                                 on_change=lambda e, s=step:
-                                                 set_field(s, "description", e.value)).props(
-                                                     "dense borderless")
-                                        ui.button(icon="delete_outline",
-                                                  on_click=lambda s=step: delete_step(s)).props(
-                                                      "flat dense round color=grey-7")
-                        editor_rows()
-                        with ui.row().classes("gap-2 mt-3"):
-                            ui.button("Add Step", icon="add", on_click=add_step).props(
-                                "outline no-caps").classes("toolbar-button")
-                            ui.button("Duplicate Last", icon="content_copy", on_click=duplicate_step).props(
-                                "outline no-caps").classes("toolbar-button")
-                        ui.label("Local draft only: not persisted or executable. G03-C adds revision editing.").classes(
-                            "text-xs text-grey-7")
+                        ui.label(
+                            "Profiles are stored in server-owned SQLite revisions. "
+                            "Open Profiles to create, edit, import, export or review history."
+                        ).classes("text-sm text-grey-7")
+                        with ui.row().classes("gap-2 flex-wrap"):
+                            ui.button("Open Profiles", icon="description",
+                                      on_click=lambda: ui.navigate.to("/profiles")).props(
+                                          "no-caps")
+                            ui.button("Import CSV", icon="upload",
+                                      on_click=lambda: ui.navigate.to("/profiles")).props(
+                                          "outline no-caps")
+                            ui.button("Export CSV", icon="download",
+                                      on_click=lambda: ui.navigate.to("/profiles")).props(
+                                          "outline no-caps")
 
                     with ui.column().classes("panel"):
                         with ui.row().classes("panel-head"):
