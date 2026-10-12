@@ -17,6 +17,13 @@ python -m chamber_web.security.bootstrap
 python main.py
 ```
 
+In the frozen W01 Windows ZIP (no Python installed), provision via an
+interactive PowerShell console:
+
+```powershell
+.\\server\\ClimateChamberServer.exe --bootstrap-admin
+```
+
 The CLI prompts for a **chosen** administrator username, a password of at least
 12 UTF-8 bytes, and confirmation (hidden input). There is **no default password**,
 no initial bearer token in a file, no web/bootstrap endpoint and no automated
