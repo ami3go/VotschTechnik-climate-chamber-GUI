@@ -33,11 +33,12 @@ external driver remains the exclusive eventual hardware communication layer.
 ## Safety and I/O semantics
 
 1. **Mock-only hard gate:** controller connect rejects physical Vötsch configuration
-   with `Physical hardware I/O DISABLED` *before any adapter call*. Fake and
-   alternate-stub adapters are simulated; an explicitly constructed
-   Vötsch **test double** can be injected only with
-   `allow_mock_vendor_backend=True` and must report a simulated identity.
-   This is a software testing flag, **never** a production safety permission.
+   with `Physical hardware I/O DISABLED` *before any adapter call*. The
+   controller checks the adapter-owned `simulation_only is True` marker, not a
+   vendor name; Fake and alternate-stub report True, whereas Vötsch reports
+   True **only** when constructed with an injected mock driver factory.
+   A simulated identity is independently verified after connect.
+   This adapter marker is a trusted **test** contract, not a production safety permission.
    A site-approved physical gate and G08-min are not implemented.
 2. **One process owner:** an OS advisory file lock, plus a per-process registry,
    excludes a second controller for the same `chamber_id`. The OS lock is held
@@ -94,9 +95,10 @@ external driver remains the exclusive eventual hardware communication layer.
   arbitration and distributed-host lease consensus remain explicitly out of
   scope. OS locks require a reliable **local** filesystem and one deployment
   sharing the same ownership path.
-- The `allow_mock_vendor_backend` injection option is strictly test-only.
-  Adapter registry production factories still reject unapproved hardware
-  activation. Do not expose mock activation knobs on the NiceGUI web page.
+- The adapter `simulation_only` marker and injected driver factories are
+  strictly test-only. Production factories cannot activate physical hardware
+  via this controller, and neither marker nor injection knobs may be exposed
+  on the NiceGUI web page.
 - P00 signed safety envelope, gradient baseline, model/firmware identity,
   certified STOP behavior and G08-min are all pending and block G05/HIL.
 
