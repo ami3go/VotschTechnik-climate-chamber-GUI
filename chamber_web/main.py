@@ -10,7 +10,11 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from nicegui import app, ui
+from .security.paths import configure_nicegui_storage
+
+configure_nicegui_storage()
+
+from nicegui import app, ui  # noqa: E402
 
 from .bootstrap import create_demo_dashboard_service
 from .security.nicegui import (cookie_secret, current_actor, logout,
