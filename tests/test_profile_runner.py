@@ -37,6 +37,10 @@ def step(target="25", *, stabilize="0", dwell="0", reach="20", up=None, down=Non
 class CaptureSink:
     def __init__(self):
         self.events = []
+        self.prepared = []
+
+    def prepare(self, snapshot):
+        self.prepared.append(snapshot)
 
     def emit(self, event):
         self.events.append(event)
@@ -104,6 +108,8 @@ class RunnerTests(unittest.TestCase):
         self.terminal(RunState.COMPLETED)
         kinds = [e.kind for e in self.sink.events]
         self.assertEqual(kinds[0], "PREPARED")
+        self.assertEqual(self.sink.prepared, [snapshot])
+        self.assertLess(kinds.index("START_INTENT"), kinds.index("SETPOINT_INTENT"))
         self.assertLess(kinds.index("START_INTENT"), kinds.index("STOP_INTENT"))
         self.assertEqual(kinds[-1], "TERMINAL")
         self.assertEqual(self.runner.snapshot, snapshot)
@@ -264,16 +270,6 @@ class RunnerTests(unittest.TestCase):
         self.terminal(RunState.CANCELLED)
 
     def test_cancel_from_pause_and_repeated_cancel_one_stop(self):
-        class CountingFake(FakeBackend):
-            def __init__(self):
-                super().__init__("unit-chamber")
-                self.stops = 0
-
-            def stop(self):
-                self.stops += 1
-                super().stop()
-
-        # Use existing backend; verify fencing and logical result rather than count
         self.prepare(step(dwell="10"))
         self.runner.advance()
         self.runner.advance()
@@ -339,7 +335,6 @@ class RunnerTests(unittest.TestCase):
             return original()
 
         self.backend.read_status = blocking
-        errors = []
         worker = threading.Thread(target=lambda: self.runner.advance())
         worker.start()
         self.assertTrue(entered.wait(1))
@@ -351,7 +346,6 @@ class RunnerTests(unittest.TestCase):
         worker.join(timeout=3)
         self.assertFalse(worker.is_alive())
         self.terminal(RunState.CANCELLED)
-        self.assertFalse(errors)
         self.assertFalse(self.backend._running)
 
     def test_post_stop_requires_explicit_reconciliation(self):
