@@ -358,8 +358,6 @@ class SecurityStore:
                 row[2] != Role.ADMIN.value or row[3] or
                 now - row[4] >= self.absolute_timeout_s or
                 now - row[5] >= self.idle_timeout_s):
-            self._audit(db, actor, "user.admin", "DENIED",
-                        detail="stale administrator authority")
             raise AuthorizationError("Administrator session no longer authorized")
 
     def create_user(self, admin_session: str, csrf: str, username: str,
@@ -380,8 +378,12 @@ class SecurityStore:
                        (username, pw, role.value))
             self._audit(db, admin, "user.create", "SUCCESS", detail=username)
             db.commit()
-        except BaseException:
+        except BaseException as exc:
             db.rollback()
+            # The denied audit must survive rollback of the rejected mutation.
+            if isinstance(exc, AuthorizationError):
+                self.audit(admin, "user.admin", "DENIED",
+                           detail="stale or unauthorized administrator")
             raise
         finally:
             db.close()
@@ -408,8 +410,12 @@ class SecurityStore:
             db.execute("UPDATE sessions SET revoked=1 WHERE user_id=?", (row[0],))
             self._audit(db, admin, "user.role", "SUCCESS", detail=username)
             db.commit()
-        except BaseException:
+        except BaseException as exc:
             db.rollback()
+            # The denied audit must survive rollback of the rejected mutation.
+            if isinstance(exc, AuthorizationError):
+                self.audit(admin, "user.admin", "DENIED",
+                           detail="stale or unauthorized administrator")
             raise
         finally:
             db.close()
@@ -430,8 +436,12 @@ class SecurityStore:
             db.execute("UPDATE sessions SET revoked=1 WHERE user_id=?", (row[0],))
             self._audit(db, admin, "user.disable", "SUCCESS", detail=username)
             db.commit()
-        except BaseException:
+        except BaseException as exc:
             db.rollback()
+            # The denied audit must survive rollback of the rejected mutation.
+            if isinstance(exc, AuthorizationError):
+                self.audit(admin, "user.admin", "DENIED",
+                           detail="stale or unauthorized administrator")
             raise
         finally:
             db.close()
