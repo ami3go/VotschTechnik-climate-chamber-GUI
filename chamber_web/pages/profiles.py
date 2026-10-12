@@ -323,115 +323,104 @@ def profiles_page() -> None:
             ui.upload(on_upload=import_file, auto_upload=True,
                       max_file_size=2 * MAX_BYTES).props("accept=.csv,.zip").classes("w-full")
             ui.button("Close", on_click=import_dialog.close).props("flat")
-    with ui.row().classes("app-shell no-wrap"):
-        with ui.column().classes("sidebar gap-1"):
-            ui.label("Visteon").classes("brand")
-            ui.button("Dashboard", icon="dashboard",
-                      on_click=lambda: ui.navigate.to("/")).props("flat no-caps align=left")
-            ui.button("Profiles", icon="description").props(
-                "flat no-caps align=left").classes("nav-active")
-            ui.label("Climate Chamber | Profiles\nServer-side simulation only").classes(
-                "side-note whitespace-pre-line")
-        with ui.column().classes("main-area gap-0"):
-            with ui.row().classes("topbar w-full"):
-                with ui.column().classes("gap-0"):
-                    ui.label("Climate Chamber").classes("top-title")
-                    ui.label("Persistent Profiles / Revisions").classes("top-subtitle")
-                ui.label("SIMULATION · No execution controls").classes("demo-status")
-            with ui.column().classes("dashboard gap-3"):
-                ui.label("Profiles are saved on the server. Editing never starts or controls "
-                         "the physical chamber.").classes("demo-banner w-full")
-                with ui.column().classes("panel gap-3"):
-                    ui.label("Profile Library").classes("panel-heading")
-                    with ui.row().classes("items-center w-full gap-2"):
-                        profile_select = ui.select({}, label="Saved profiles", with_input=True).props(
-                            "outlined dense").classes("flex-grow")
-                        ui.button("Load", icon="folder_open", on_click=load_profile).props(
-                            "outline no-caps")
-                        ui.button("New", icon="add", on_click=new_profile).props(
-                            "outline no-caps")
-                        ui.button("Discard Edits", icon="undo", on_click=discard).props(
-                            "outline no-caps")
-                    with ui.row().classes("items-center gap-2"):
-                        ui.button("Previous 100", on_click=lambda: paginate(-1)).props(
-                            "flat no-caps")
-                        ui.button("Next 100", on_click=lambda: paginate(1)).props(
-                            "flat no-caps")
-                        count_label = ui.label("").classes("text-xs text-grey-7")
-                with ui.column().classes("panel gap-3"):
-                    with ui.row().classes("panel-head"):
-                        ui.label("Profile Editor").classes("panel-heading")
-                        with ui.row().classes("gap-2"):
-                            save_button = ui.button("Save Revision", icon="save",
-                                                    on_click=save).props("no-caps")
-                            ui.button("Duplicate Profile", icon="content_copy",
-                                      on_click=duplicate).props("outline no-caps")
-                    status_label = ui.label("").classes("text-xs text-grey-7")
-                    conflict_label = ui.label("").classes("text-sm text-negative")
-                    with ui.row().classes("items-center gap-3 w-full"):
-                        name_input = ui.input("Profile name",
-                                              on_change=lambda e: meta("name", e.value)).props(
-                                                  "outlined dense").classes("flex-grow")
-                        repeat_input = ui.number("Repeats", min=1, max=100, step=1,
-                                                 on_change=lambda e: meta(
-                                                     "repeat_count", e.value)).props(
-                                                         "outlined dense").style("width:135px")
-                    description_input = ui.textarea(
-                        "Profile description",
-                        on_change=lambda e: meta("description", e.value)
-                    ).props("outlined dense").classes("w-full")
-                    ui.label("Choose a row, then edit grid cells or reorder with the buttons. "
-                             "Gradients may be blank (null).").classes("text-xs text-grey-7")
-                    grid = ui.aggrid({
-                        "columnDefs": columns,
-                        "rowData": [],
-                        "defaultColDef": {"resizable": True, "sortable": False},
-                        "singleClickEdit": True,
-                        "stopEditingWhenCellsLoseFocus": True,
-                    }).classes("w-full").style("height:355px")
-                    grid.on("cellClicked", grid_select)
-                    grid.on("cellValueChanged", grid_edit)
-                    with ui.row().classes("gap-2 flex-wrap"):
-                        mutation_buttons = [
-                            ui.button("Add Step", on_click=lambda: change_step("add")),
-                            ui.button("Duplicate Step", on_click=lambda: change_step("duplicate")),
-                            ui.button("Move Up", on_click=lambda: change_step("up")),
-                            ui.button("Move Down", on_click=lambda: change_step("down")),
-                            ui.button("Delete Step", on_click=lambda: change_step("delete")),
-                            save_button,
-                        ]
-                        for button in mutation_buttons:
-                            button.props("outline no-caps")
-                    provenance_label = ui.label("").classes("text-xs text-orange-9")
-                    compatibility_label = ui.label("").classes("text-xs text-orange-9")
-                with ui.column().classes("panel gap-2"):
-                    ui.label("Immutable Revision History").classes("panel-heading")
-                    with ui.row().classes("items-center gap-2"):
-                        version_input = ui.number("Revision #", min=1, step=1,
-                                                  value=1).props("outlined dense").style(
-                                                      "width:135px")
-                        ui.button("View Revision", on_click=browse_revision).props(
-                            "outline no-caps")
-                        ui.button("Restore Historical as Draft", on_click=restore).props(
-                            "outline no-caps")
-                    ui.label("Historical revisions cannot be edited or replaced. Restoring "
-                             "creates a new head only after Save and optimistic revision check."
-                             ).classes("text-xs text-grey-7")
-                with ui.column().classes("panel gap-2"):
-                    ui.label("Import / Export").classes("panel-heading")
-                    with ui.row().classes("gap-2 flex-wrap"):
-                        ui.button("Import CSV / ZIP", icon="upload",
-                                  on_click=import_dialog.open).props("outline no-caps")
-                        ui.button("Download ZIP (lossless)", icon="archive",
-                                  on_click=lambda: export_file("zip")).props("outline no-caps")
-                        ui.button("Canonical CSV", icon="download",
-                                  on_click=lambda: export_file("csv")).props("outline no-caps")
-                        ui.button("Spreadsheet-safe CSV", icon="table_view",
-                                  on_click=lambda: export_file("spreadsheet_csv")).props(
-                                      "outline no-caps")
-                    ui.label("CSV loses legacy original and legacy ramp provenance. "
-                             "Spreadsheet-safe CSV escapes formula-like notes and is not "
-                             "byte-identical to machine CSV. ZIP is archival.").classes(
-                                 "text-xs text-grey-7")
+    from chamber_web.main import get_dashboard_service
+    from chamber_web.ui_pages import page_frame
+    with page_frame("/profiles", get_dashboard_service(), title="Profiles"):
+        ui.label("Persistent Profiles / Revisions").classes("panel-heading")
+        ui.label("SIMULATION · No execution controls").classes("text-xs text-orange-9")
+        ui.label("Profiles are saved on the server. Editing never starts or controls "
+                 "the physical chamber.").classes("demo-banner w-full")
+        with ui.column().classes("panel gap-3"):
+            ui.label("Profile Library").classes("panel-heading")
+            with ui.row().classes("items-center w-full gap-2"):
+                profile_select = ui.select({}, label="Saved profiles", with_input=True).props(
+                    "outlined dense").classes("flex-grow")
+                ui.button("Load", icon="folder_open", on_click=load_profile).props(
+                    "outline no-caps")
+                ui.button("New", icon="add", on_click=new_profile).props(
+                    "outline no-caps")
+                ui.button("Discard Edits", icon="undo", on_click=discard).props(
+                    "outline no-caps")
+            with ui.row().classes("items-center gap-2"):
+                ui.button("Previous 100", on_click=lambda: paginate(-1)).props(
+                    "flat no-caps")
+                ui.button("Next 100", on_click=lambda: paginate(1)).props(
+                    "flat no-caps")
+                count_label = ui.label("").classes("text-xs text-grey-7")
+        with ui.column().classes("panel gap-3"):
+            with ui.row().classes("panel-head"):
+                ui.label("Profile Editor").classes("panel-heading")
+                with ui.row().classes("gap-2"):
+                    save_button = ui.button("Save Revision", icon="save",
+                                            on_click=save).props("no-caps")
+                    ui.button("Duplicate Profile", icon="content_copy",
+                              on_click=duplicate).props("outline no-caps")
+            status_label = ui.label("").classes("text-xs text-grey-7")
+            conflict_label = ui.label("").classes("text-sm text-negative")
+            with ui.row().classes("items-center gap-3 w-full"):
+                name_input = ui.input("Profile name",
+                                      on_change=lambda e: meta("name", e.value)).props(
+                                          "outlined dense").classes("flex-grow")
+                repeat_input = ui.number("Repeats", min=1, max=100, step=1,
+                                         on_change=lambda e: meta(
+                                             "repeat_count", e.value)).props(
+                                                 "outlined dense").style("width:135px")
+            description_input = ui.textarea(
+                "Profile description",
+                on_change=lambda e: meta("description", e.value)
+            ).props("outlined dense").classes("w-full")
+            ui.label("Choose a row, then edit grid cells or reorder with the buttons. "
+                     "Gradients may be blank (null).").classes("text-xs text-grey-7")
+            grid = ui.aggrid({
+                "columnDefs": columns,
+                "rowData": [],
+                "defaultColDef": {"resizable": True, "sortable": False},
+                "singleClickEdit": True,
+                "stopEditingWhenCellsLoseFocus": True,
+            }).classes("w-full").style("height:355px")
+            grid.on("cellClicked", grid_select)
+            grid.on("cellValueChanged", grid_edit)
+            with ui.row().classes("gap-2 flex-wrap"):
+                mutation_buttons = [
+                    ui.button("Add Step", on_click=lambda: change_step("add")),
+                    ui.button("Duplicate Step", on_click=lambda: change_step("duplicate")),
+                    ui.button("Move Up", on_click=lambda: change_step("up")),
+                    ui.button("Move Down", on_click=lambda: change_step("down")),
+                    ui.button("Delete Step", on_click=lambda: change_step("delete")),
+                    save_button,
+                ]
+                for button in mutation_buttons:
+                    button.props("outline no-caps")
+            provenance_label = ui.label("").classes("text-xs text-orange-9")
+            compatibility_label = ui.label("").classes("text-xs text-orange-9")
+        with ui.column().classes("panel gap-2"):
+            ui.label("Immutable Revision History").classes("panel-heading")
+            with ui.row().classes("items-center gap-2"):
+                version_input = ui.number("Revision #", min=1, step=1,
+                                          value=1).props("outlined dense").style(
+                                              "width:135px")
+                ui.button("View Revision", on_click=browse_revision).props(
+                    "outline no-caps")
+                ui.button("Restore Historical as Draft", on_click=restore).props(
+                    "outline no-caps")
+            ui.label("Historical revisions cannot be edited or replaced. Restoring "
+                     "creates a new head only after Save and optimistic revision check."
+                     ).classes("text-xs text-grey-7")
+        with ui.column().classes("panel gap-2"):
+            ui.label("Import / Export").classes("panel-heading")
+            with ui.row().classes("gap-2 flex-wrap"):
+                ui.button("Import CSV / ZIP", icon="upload",
+                          on_click=import_dialog.open).props("outline no-caps")
+                ui.button("Download ZIP (lossless)", icon="archive",
+                          on_click=lambda: export_file("zip")).props("outline no-caps")
+                ui.button("Canonical CSV", icon="download",
+                          on_click=lambda: export_file("csv")).props("outline no-caps")
+                ui.button("Spreadsheet-safe CSV", icon="table_view",
+                          on_click=lambda: export_file("spreadsheet_csv")).props(
+                              "outline no-caps")
+            ui.label("CSV loses legacy original and legacy ramp provenance. "
+                     "Spreadsheet-safe CSV escapes formula-like notes and is not "
+                     "byte-identical to machine CSV. ZIP is archival.").classes(
+                         "text-xs text-grey-7")
     refresh_library()
     populate()
