@@ -83,6 +83,7 @@ class BackendContractTests(unittest.TestCase):
     def test_stop_latch_blocks_old_commands(self):
         manager = ChamberManager([ChamberConfig("ch1", "fake")], backend_factory=make_backend)
         manager.connect("ch1")
+        self.addCleanup(manager.disconnect, "ch1")
         manager.start("ch1")
         manager.stop("ch1")
         with self.assertRaises(ChamberSafetyError):
