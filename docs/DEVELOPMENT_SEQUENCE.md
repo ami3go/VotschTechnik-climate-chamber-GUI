@@ -55,6 +55,10 @@ P00 and D01 are the **critical path for physical operation**, but they must not 
 
 **Meaning of status:** FOUNDATION VERIFIED or SOFTWARE VERIFIED means only the stated merged code passed relevant automated tests. PARTIAL means the overall phase acceptance remains unmet. A simulator is not an operational controller. Neither the tests nor these docs certify the physical chamber. All real Vötsch I/O remains disabled.
 
+## G03-B persistence delivery
+
+- **G03-B persistence:** [GUI PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) adds versioned SQLite immutable profile revisions, strict DDL verification, per-`chamber_id` isolation and atomic canonical/legacy CSV/ZIP import. The PR and its CI run are the source of truth for merge and test status. It **does not** implement the NiceGUI editor, execution history, controller or any physical I/O; do not mark G03 complete before G03-C.
+
 ## Immediate development queue — proposed next PRs
 
 The following labels are **not existing GitHub PR numbers**. Each row must be a focused PR with its own independent review, test run and merge. Tasks sharing the same readiness prerequisites may run in parallel.
