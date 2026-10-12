@@ -167,6 +167,8 @@ class ProfileRunner:
         self._clock = clock or RealClock()
         self._mutex = threading.RLock()
         self._advance_lock = threading.Lock()
+        self._stop_guard = threading.Lock()
+        self._event_guard = threading.RLock()
         # STOP uses a separate caller from any potentially blocked poll/setpoint.
         self._stop_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="profile-stop")
         self._snapshot: ExecutionSnapshot | None = None
@@ -205,7 +207,7 @@ class ProfileRunner:
 
     @property
     def events(self) -> tuple[RunEvent, ...]:
-        with self._mutex:
+        with self._event_guard:
             return tuple(self._events)
 
     def _permission(self, action: str) -> str:
@@ -241,14 +243,15 @@ class ProfileRunner:
               temperature: float | None = None,
               quality: ReadingQuality | None = None) -> None:
         assert self._snapshot is not None and self._state is not None
-        event = RunEvent(
-            self._snapshot.run_id, self._id, len(self._events) + 1,
-            kind, self._state, max(0.0, self._now() - self._t0),
-            self._step_index, detail, temperature, quality,
-        )
-        if self._sink is not None:
-            self._sink.emit(event)  # fail closed; not best-effort logging
-        self._events.append(event)
+        with self._event_guard:
+            event = RunEvent(
+                self._snapshot.run_id, self._id, len(self._events) + 1,
+                kind, self._state, max(0.0, self._now() - self._t0),
+                self._step_index, detail, temperature, quality,
+            )
+            if self._sink is not None:
+                self._sink.emit(event)  # fail closed; not best-effort logging
+            self._events.append(event)
 
     def _transition(self, state: RunState, detail: str = "") -> None:
         self._state = state
@@ -287,7 +290,10 @@ class ProfileRunner:
                     caps.supports_setpoint_readback):
                 raise ChamberSafetyError("Missing mandatory verified control/readback capability")
             for step in enabled:
-                target = self._duration(step.target_temperature_c, "target")
+                try:
+                    target = float(step.target_temperature_c)
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise ValueError("Invalid target") from exc
                 finite_temperature(target, caps.temperature_min_c, caps.temperature_max_c)
                 self._duration(step.tolerance_c, "tolerance", positive=True)
                 self._step_budget(step, params)
@@ -319,7 +325,8 @@ class ProfileRunner:
                 self._step_started = self._t0
                 self._state = RunState.PREPARING
                 self._reason = ""
-                self._events = []
+                with self._event_guard:
+                    self._events = []
                 self._cancel_requested = False
                 self._stop_future = None
                 self._stable_from = self._last_good = None
@@ -379,18 +386,19 @@ class ProfileRunner:
         self._transition(RunState.REACHING)
 
     def _begin_stop(self, terminal: RunState, reason: str) -> None:
-        if self._stop_future is not None:
-            return
-        self._terminal_after_stop = terminal
-        self._reason = reason
-        self._state = RunState.STOP_REQUESTED
-        try:
-            self._emit("STOP_INTENT", reason)
-        except Exception:
-            # A recorder failure does not suppress simulated STOP.
-            self._terminal_after_stop = RunState.UNKNOWN
-            self._reason = "Event recorder failed before STOP"
-        self._stop_future = self._stop_executor.submit(self._manager.stop, self._id)
+        with self._stop_guard:
+            if self._stop_future is not None:
+                return
+            self._terminal_after_stop = terminal
+            self._reason = reason
+            self._state = RunState.STOP_REQUESTED
+            try:
+                self._emit("STOP_INTENT", reason)
+            except Exception:
+                # A recorder failure does not suppress simulated STOP.
+                self._terminal_after_stop = RunState.UNKNOWN
+                self._reason = "Event recorder failed before STOP"
+            self._stop_future = self._stop_executor.submit(self._manager.stop, self._id)
 
     def _finish_stop(self) -> None:
         future = self._stop_future
@@ -404,6 +412,9 @@ class ProfileRunner:
         self._state = self._terminal_after_stop
         try:
             self._emit("TERMINAL", self._reason)
+        except Exception:
+            self._state = RunState.UNKNOWN
+            self._reason = "Terminal event recording failed"
         finally:
             if self._owner_token is not None:
                 try:
@@ -418,6 +429,8 @@ class ProfileRunner:
         self._healthy(running=True)
         sample = self._manager.status(self._id)  # G04 owns serialized I/O
         now = self._now()
+        if now > self._step_deadline or now > self._run_deadline:
+            raise TimeoutError("Step/run deadline expired during poll")
         self._healthy(running=True)
         if (sample.identity != self._snapshot.identity or
                 sample.quality is not ReadingQuality.GOOD or
@@ -586,13 +599,16 @@ class ProfileRunner:
         self._permission(action)
 
     def cancel(self, chamber_id: str) -> None:
-        """Request STOP on separate thread immediately, fencing G04 writes."""
+        """Fence STOP even if advance() is blocked on G04 synchronous I/O.
+
+        Cancellation deliberately does not acquire the advance mutex. A device
+        call already in flight cannot be preempted; G04 invalidates queued writes.
+        """
         self._check_action(chamber_id, "profile.cancel")
-        with self._mutex:
-            if self._state is None or self._state in TERMINAL:
-                raise ChamberSafetyError("No active run")
-            self._cancel_requested = True
-            self._begin_stop(RunState.CANCELLED, "Operator cancellation")
+        if self._state is None or self._state in TERMINAL:
+            raise ChamberSafetyError("No active run")
+        self._cancel_requested = True
+        self._begin_stop(RunState.CANCELLED, "Operator cancellation")
 
     async def cancel_async(self, chamber_id: str) -> None:
         await asyncio.to_thread(self.cancel, chamber_id)
