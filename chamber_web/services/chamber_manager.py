@@ -18,7 +18,6 @@ class ChamberManager:
         self, configurations: list[ChamberConfig], *,
         backend_factory: Callable, allow_test_backend: bool = False,
         lease_directory: Path | None = None, io_timeout_s: float = 2.0,
-        allow_mock_vendor_backend: bool = False,
     ):
         if len(configurations) != 1:
             raise ChamberSafetyError(
@@ -33,7 +32,6 @@ class ChamberManager:
         self._controller = ChamberController(
             self._config, backend, lease_directory=lease_directory,
             io_timeout_s=io_timeout_s,
-            allow_mock_vendor_backend=allow_mock_vendor_backend,
         )
 
     def configured_ids(self) -> tuple[str, ...]:
