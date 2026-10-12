@@ -17,7 +17,7 @@ from .model import (
 )
 
 CSS = (Path(__file__).parent / "assets" / "style.css").read_text(encoding="utf-8")
-ui.add_css(CSS)
+ui.add_css(CSS, shared=True)
 
 
 def _columns(columns: list[tuple[str, str]]) -> list[dict]:
