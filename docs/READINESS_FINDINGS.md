@@ -1,6 +1,6 @@
 # Migration readiness findings — canonical closure ledger
 
-Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status rechecked against GUI `8235c44` (PR #15 merged after G03-B merge `252b0fb`) and driver `9323e37`. **Original review SHAs are historical, not the current implementation.** `B`/`H`/`M` are the only valid IDs for the 2026-10-12 readiness review. Older unidentified `BLOCKER-01`–`HIGH-10` tags in previous plans have been retired rather than guessed into equivalence. See [P00 contracts](P00_DECISION_CONTRACTS.md).
+Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status rechecked against GUI `8d22b8a` (PR #14 G02-A merge after PR #15/G03-B) and driver `9323e37`. **Original review SHAs are historical, not the current implementation.** `B`/`H`/`M` are the only valid IDs for the 2026-10-12 readiness review. Older unidentified `BLOCKER-01`–`HIGH-10` tags in previous plans have been retired rather than guessed into equivalence. See [P00 contracts](P00_DECISION_CONTRACTS.md).
 
 | ID | Severity | Finding | Work item / closure evidence | Status |
 |---|---|---|---|---|
@@ -16,7 +16,7 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 | H6 | HIGH | Legacy demo CSV migration ambiguous | GUI PR #8 `2ef81b6` adds strict parser and legacy-source-preserving ZIP; [GUI PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) adds transactional SQLite revisions with strict schema checks. G03-C UI/editor still pending | CORE + PROFILE STORAGE SOFTWARE VERIFIED; #15 validation remediation merged/CI green; EDITOR OPEN |
 | H7 | HIGH | SQLite/filesystem crash gap | G07 journal/recovery/fault tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
 | H8 | HIGH | CI/dependency/driver pin insufficient | [GUI #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10) `ef473e1` pins direct dependencies and driver revision; [Windows CI green](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38261039285). Hash-locked transitive freeze, typing and offline VM gates pending | PARTIAL — release gate OPEN |
-| M1 | MEDIUM | One-device multi-vendor architecture unproven | GUI PR #7 `c978ef9` and follow-up #9 `e8519ad`, Windows 3.10/3.12 CI | G01 FOUNDATION MERGED; G04 CONTROL OPEN |
+| M1 | MEDIUM | One-device multi-vendor architecture unproven | GUI PRs #7/#9 G01 plus PR #14 single-device Fake/alternate/Vötsch-mock Dashboard substitution, [Windows CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38280329089) green | G01/G02-A FOUNDATION MERGED; G02-B/G04 CONTROL OPEN |
 | M2 | MEDIUM | Windows freezing/offline unverified | W01 scripts/Windows CI, W02 offline VM | OPEN |
 
 **Definition of closure:** a merged PR and passing unit/static/integration checks alone close a code finding only to **software-verified** status. Safety-related findings require signed site documentation and physical HIL. Each future PR must update the row's status, exact merged commit/test run link, and owner/approver; never claim HIL from mocks. Hardware remains disabled in the current demo.
@@ -31,6 +31,8 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 - GUI [PR #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10): pins CI-tested direct dependencies and hardened driver revision, `ef473e1`.
 - GUI [PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12): G03-B SQLite revisions, `252b0fb`, [Windows CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38276777330) green. G03-C editor still open; AI-assisted second-pass review, no human/site approval claimed.
 - GUI [PR #15](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/15): independent audit follow-up bounded serialization, strict ZIP validation and concurrent revision regression; merged `8235c44`, [Windows CI 3.10/3.12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38279522018) green; [AI-assisted final review](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/15#pullrequestreview-5493697291).
+
+- GUI [PR #14](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/14): G02-A NiceGUI read-only server binding, merged [`8d22b8a`](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/8d22b8a21648c2bf4b22a9dd7a6b07ca0be1d822) with [final-head Windows 3.10/3.12 CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38280329089) green and [AI-assisted review](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/14#pullrequestreview-5493759062). G02-B remains open; no driver/hardware operation, HIL or human/site approval.
 
 ## Independent follow-up on merged PR #12
 
@@ -48,4 +50,4 @@ All release, HIL, Windows offline and operational security gates remain mandator
 
 ## Active status/next-PR source of truth
 
-See [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md) for per-delivery-unit progress, proposed G02-A/W01-A/G04-A/G08-min-A/G03-C PR order, acceptance and review/merge loops. **No site approval or HIL is recorded.** Hardware remains disabled. Status updates must distinguish phase-complete evidence from a merged foundation or demo.
+See [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md) for per-delivery-unit progress, G02-A merged and remaining W01-A/G04-A/G08-min-A/G02-B/G03-C PR order, acceptance and review/merge loops. **No site approval or HIL is recorded.** Hardware remains disabled. Status updates must distinguish phase-complete evidence from a merged foundation or demo.
