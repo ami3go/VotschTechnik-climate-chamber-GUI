@@ -125,9 +125,11 @@ class DashboardServiceTests(unittest.IsolatedAsyncioTestCase):
         manager = ChamberManager([ChamberConfig("test", "fake")],
                                  backend_factory=lambda cfg, **kw: FakeBackend(cfg.chamber_id))
         manager.connect("test")
-        service = DashboardService(manager, "test", stale_after_s=0.001)
-        await service.poll_once()
-        await asyncio.sleep(0.02)
+        # The source timestamp must pass ingestion before the cache ages out.
+        # A realistic deadline keeps Windows worker startup jitter out of this test.
+        service = DashboardService(manager, "test", stale_after_s=1.0)
+        self.assertEqual((await service.poll_once()).quality, ReadingQuality.GOOD)
+        await asyncio.sleep(1.1)
         stale = service.view()
         self.assertEqual(stale.quality, ReadingQuality.STALE)
         self.assertIsNone(stale.measured_temperature_c)
