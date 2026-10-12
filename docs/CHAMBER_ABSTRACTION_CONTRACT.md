@@ -1,6 +1,6 @@
 # Chamber abstraction contract — vendor-neutral GUI and profile engine
 
-Status: **normative implementation requirement** for the NiceGUI migration. Implementation is planned, not delivered by this documentation PR. Read alongside [WEB_GUI_MIGRATION_PLAN.md](WEB_GUI_MIGRATION_PLAN.md) and [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md).
+Status: **normative implementation requirement** for the NiceGUI migration. Implementation is planned, not delivered by this documentation PR. Read alongside [WEB_GUI_MIGRATION_PLAN.md](WEB_GUI_MIGRATION_PLAN.md), [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md) and the [far-future multi-chamber design](FUTURE_MULTI_CHAMBER_ARCHITECTURE.md).
 
 ## Objective and architectural boundary
 
@@ -28,7 +28,15 @@ The entire NiceGUI application must be independent of any specific manufacturer,
 
 **Hard rule:** no NiceGUI page, profile/CSV code, chamber controller or domain service imports `VotschTechnikClimateChamber`, sends chamber protocol commands, creates device sockets, or branches on manufacturer/model names. ONLY `chamber_web/adapters/votsch.py` may import the existing Vötsch driver. A future adapter may use a separately maintained driver for its manufacturer; device communications must still not be implemented in generic GUI code. Vendor-specific faults/capabilities are normalized at the boundary, without hiding critical information.
 
-The initial release includes **one real** supported backend (Vötsch) and an unmistakably labeled fake backend. Supporting additional real vendors is a later release, but the extension seam, types and integration tests are mandatory in the first foundation PR.
+The initial release includes **one real** supported backend (Vötsch), a labeled Fake backend and a substitute second-vendor test stub. **Only one physical chamber can be configured/active in a v1 deployment**; a second physical chamber must be rejected before connection. Vendor interchangeability is not simultaneous multi-device capability. Design for future multiple chambers, do not build the multi-device runtime now.
+
+## Release-boundary rule: design now, fleet implementation later
+
+First-release architecture MUST be extendable by stable `chamber_id`, explicit device-scoped service calls, a typed one-instance `ChamberManager` interface, storage keys and event/run metadata, typed backend factories, and per-device lock/lease semantics. The runtime cardinality guard is **physical_device_count <= 1**, verified before any hardware connection.
+
+Do **not** implement a chamber selector, multi-chamber browser overview, fleet management, concurrent chamber control, multi-device profile scheduling, shared hardware STOP or multi-chamber operational stress/HIL in the initial migration. Those are explicitly deferred work with new safety/authorization review. The same GUI/runner tested against several backends **one at a time** proves driver abstraction, not multi-chamber implementation.
+
+See [FUTURE_MULTI_CHAMBER_ARCHITECTURE.md](FUTURE_MULTI_CHAMBER_ARCHITECTURE.md) for v1 invariants, identity/data design and separate MC01–MC05 rollout.
 
 ## Required root-level module separation (no src/)
 
@@ -42,7 +50,7 @@ The initial release includes **one real** supported backend (Vötsch) and an unm
         fake.py             # deterministic simulator; prominent simulated status
       services/
         chamber_controller.py  # per-chamber queue/lock/STOP/ownership
-        chamber_manager.py     # configured chamber identities and controller lifecycle
+        chamber_manager.py     # chamber_id-scoped API; v1 validates max one physical device
       execution/            # profile runner imports ONLY domain/services
       pages/                # NiceGUI UI imports ONLY services/domain
       persistence/          # generic records, profiles, events, logs
@@ -124,7 +132,7 @@ These are *candidate signatures* for review before code is merged, not claims ab
 5. **State ownership:** adapter must not schedule autonomous profiles or own operator leases. ChamberController is the only device I/O scheduler, command-fencing/STOP priority owner and state publisher. Operator lease, hardware process lock, cancellation, audit and profile timing are vendor-independent.
 6. **Command ambiguity:** a timed-out write may have taken effect. Do not blindly retry potentially non-idempotent writes; controller must read back via adapter and enter UNKNOWN/FAULT when readback fails. Physical stop verification remains mandatory per signed site policy.
 7. **Configuration/registry:** stable `backend_id` selects a reviewed, explicitly allowlisted adapter factory with validated per-backend settings (IP/address, model restrictions, driver version). No unrestricted import strings from browser input and no arbitrary user-installed Python code in the runtime. Freeze backend ID/configuration/identity during an active run; moving a controller to another backend requires an idle verified disconnect and a new instance.
-8. **Multiple chambers later:** chamber_manager maps configured unique `chamber_id` to a distinct controller, physical lock, lease, queue, status stream and recorder namespace. v1 may allow only one configured physical chamber, but MUST not use hard-coded singleton UI names or global device settings. Identity and backend are recorded in each run; no cross-chamber write or shared STOP queue.
+8. **Multiple chambers in far future:** keep a stable `chamber_id` distinct from IP, backend, serial and display name; generic controller/manager interfaces, per-ID lease/STOP/audit and namespaced persistence MUST be future-compatible. **v1 manager provides exactly one physical controller per application deployment**, rejects configurations with two physical devices before connecting, and does not implement fleet orchestration, multiple live controllers or parallel device polling. Multi-device manager maps, multiple leases/controllers, independent simultaneous runs and UI selectors are deferred to MC01–MC05 in [the future architecture](FUTURE_MULTI_CHAMBER_ARCHITECTURE.md).
 9. **Persistent audit compatibility:** profiles remain hardware-neutral, with execution-time compatibility checks against current capabilities; immutable run snapshot records chamber_id/backend_id, manufacturer/model/serial (when available), backend/driver versions, verified capabilities/envelope fingerprint and units. Unknown fields are versioned; do not bake VT4011 command numbers or sockets into CSV/database schemas.
 10. **Simulation:** the fake adapter implements the **same contract**, publishes a visible SIMULATION identity/quality marker and never issues device commands. Real hardware cannot silently downgrade to fake upon a network failure. A simulated success cannot satisfy real-device HIL safety gates.
 11. **Deprecation policy:** contract/interface schema is versioned. Compatible extensions are additive, optional via capabilities; breaking changes require migration tests and explicit adapter version increase. Vendor-specific new features must not require editing generic NiceGUI screens for existing supported operations.
@@ -144,7 +152,7 @@ These are *candidate signatures* for review before code is merged, not claims ab
 | Contract conformance | Vötsch and Fake adapters plus a minimal **second manufacturer** stub pass the same backend conformance suite for identity/capabilities/status/errors/start/stop/cleanup without changes to generic GUI/services. |
 | Alternate backend substitution | With Vötsch adapter replaced by a stub adapter using different temperature limits, unsupported gradients, different vendor identity and status vocabulary, all existing Dashboard/Profile/Runner tests pass without production edits outside adapter registry/config/docs. |
 | Negative capabilities | A monitoring-only adapter has no Start/Profile action; unsupported gradients cannot be saved into a runnable snapshot, and NO low-level command is issued. |
-| Safety isolation | Two configured chamber IDs have separate controllers/locks/leases/recorders/STOP fencing; STOP and settings for chamber A never act on chamber B. |
+| Single-device cardinality and identity isolation | Configuring a second physical chamber fails before any connect/start. Mutating actions validate the configured `chamber_id`; wrong/stale ID is denied and cannot dispatch commands. Sequential, separate Fake/Vötsch/alternate-stub fixtures preserve separate storage identities without running two devices at once. |
 | Reconnect & migration | Changing backend while running or with uncertain physical STOP fails closed; persisted runs retain their original backend/driver metadata after upgrade. |
 | Offline bundle | Frozen Windows distribution contains explicitly registered adapters and their required vendor drivers; fake works offline and no runtime plugin install/download is needed. |
 | HIL | Vötsch driver remains sole protocol owner for Vötsch; actual VT4011 command/readback/stop/fault tests pass independent of alternate-backend stub tests. |
