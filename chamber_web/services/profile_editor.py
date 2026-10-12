@@ -292,26 +292,27 @@ class ProfileEditorService:
         self.validate(EditorDraft(profile))
         # Idempotent repeated imports: compare validated profile values, never ZIP
         # bytes (ZIP timestamps change for otherwise identical archives).
-        offset = 0
-        while offset < MAX_DUPLICATE_SCAN:
-            page = self.profiles(limit=200, offset=offset)
-            for header in page:
-                existing = self.store.get_revision(self.chamber_id, header.profile_id)
-                if existing.profile == profile:
-                    raise DuplicateProfileError(header)
-            if len(page) < 200:
-                break
-            offset += len(page)
-        else:
-            raise ValueError("Too many profiles for duplicate detection; import denied")
-        header = self.store.import_profile(
-            self.chamber_id, data, filename=filename,
-            legacy_reach_timeout_s=(
-                _decimal(legacy_reach_timeout_s, "legacy reach timeout", strictly_positive=True,
-                         maximum=MAX_DURATION_S)
-                if extension == ".csv" and legacy_reach_timeout_s is not None else None
-            ))
-        return self.open(header.profile_id)
+        with _IMPORT_LOCK:
+            offset = 0
+            while offset < MAX_DUPLICATE_SCAN:
+                page = self.profiles(limit=200, offset=offset)
+                for header in page:
+                    existing = self.store.get_revision(self.chamber_id, header.profile_id)
+                    if existing.profile == profile:
+                        raise DuplicateProfileError(header)
+                if len(page) < 200:
+                    break
+                offset += len(page)
+            else:
+                raise ValueError("Too many profiles for duplicate detection; import denied")
+            header = self.store.import_profile(
+                self.chamber_id, data, filename=filename,
+                legacy_reach_timeout_s=(
+                    _decimal(legacy_reach_timeout_s, "legacy reach timeout", strictly_positive=True,
+                             maximum=MAX_DURATION_S)
+                    if extension == ".csv" and legacy_reach_timeout_s is not None else None
+                ))
+            return self.open(header.profile_id)
 
     def export(self, draft: EditorDraft, *, format: str) -> tuple[bytes, str, str]:
         """Only persisted revisions are downloadable; never export unsaved edits."""
