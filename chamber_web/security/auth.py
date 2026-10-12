@@ -183,11 +183,11 @@ class SecurityStore:
                 self._audit(db, actor, action, outcome, chamber_id, detail)
 
     def is_bootstrapped(self) -> bool:
-        with self._db() as db:
-            try:
-                return db.execute("SELECT 1 FROM bootstrap WHERE id=1").fetchone() is not None
-            finally:
-                db.close()
+        db = self._db()
+        try:
+            return db.execute("SELECT 1 FROM bootstrap WHERE id=1").fetchone() is not None
+        finally:
+            db.close()
 
     def bootstrap_admin(self, username: str, password: str) -> None:
         """Trusted LOCAL CLI only; atomic one-time initialization, never an HTTP route."""
@@ -243,12 +243,14 @@ class SecurityStore:
                     "SELECT attempts,lock_until FROM login_failures WHERE username=?",
                     (username,),
                 ).fetchone()
-                locked = bool(fail and fail[1] > now)
+                locked = bool(fail and fail[0] >= 5 and fail[1] > now)
                 current = bool(candidate and row and candidate[2] == row[2]
                                and candidate[0] == row[0] and row[3])
                 if locked or not valid or not current:
-                    attempts = fail[0] + 1 if fail and fail[1] > now - 900 else 1
-                    until = now + 900 if attempts >= 5 else 0
+                    attempts = fail[0] + 1 if fail and fail[1] > now else 1
+                    # Track a sliding 15-minute failure window. Only the
+                    # fifth failed attempt activates account lockout.
+                    until = now + 900
                     db.execute(
                         "INSERT INTO login_failures(username,attempts,lock_until) VALUES(?,?,?)"
                         " ON CONFLICT(username) DO UPDATE SET attempts=excluded.attempts,"
