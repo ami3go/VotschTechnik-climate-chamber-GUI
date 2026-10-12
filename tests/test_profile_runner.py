@@ -382,6 +382,41 @@ class RunnerTests(unittest.TestCase):
         self.terminal(RunState.CANCELLED)
         self.assertEqual(self.backend._target, 25)
 
+    def test_cancel_cannot_overtake_durable_prepared_snapshot(self):
+        entered = threading.Event()
+        release = threading.Event()
+        self.addCleanup(release.set)
+
+        class PausedPrepare(CaptureSink):
+            def prepare(self, snapshot):
+                entered.set()
+                if not release.wait(3):
+                    raise TimeoutError("Injected journal stall")
+                super().prepare(snapshot)
+
+        self.runner._sink = PausedPrepare()
+        header = self.store.create_profile("unit-chamber", ParsedProfile((step(),)))
+        failures = []
+
+        def start():
+            try:
+                self.runner.start("unit-chamber", header.profile_id, revision=1)
+            except Exception as exc:
+                failures.append(exc)
+
+        worker = threading.Thread(target=start)
+        worker.start()
+        self.assertTrue(entered.wait(1))
+        with self.assertRaisesRegex(ChamberSafetyError, "fully prepared"):
+            self.runner.cancel("unit-chamber")
+        self.assertFalse(self.backend._running)
+        release.set()
+        worker.join(timeout=3)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(failures, [])
+        self.runner.cancel("unit-chamber")
+        self.terminal(RunState.CANCELLED)
+
     def test_prepared_sink_failure_prevents_all_commands(self):
         class FailingSink:
             def prepare(self, snapshot):
