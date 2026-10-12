@@ -83,6 +83,7 @@ class DashboardServiceTests(unittest.IsolatedAsyncioTestCase):
         manager = ChamberManager([ChamberConfig("test", "fake")],
                                  backend_factory=lambda cfg, **kw: backend)
         manager.connect("test")
+        self.addCleanup(manager.disconnect, "test")
         service = DashboardService(manager, "test")
         self.assertEqual((await service.poll_once()).quality, ReadingQuality.GOOD)
         manager.disconnect("test")
