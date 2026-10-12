@@ -22,7 +22,7 @@ Open http://127.0.0.1:8080. The server intentionally binds **localhost only** un
 - Start, Stop and Hold for the **simulation only** (no hardware controls).
 - Manual target display (demo only), simulated temperature measurement, ECharts live curve.
 - In-page editable profile steps, add/duplicate/delete and atomic CSV import/validated export.
-- Strict CSV columns: \`target,ramp,tolerance,dwell,description,enabled\`, with seconds for dwell, °C for target/tolerance and °C/min for **simulated** ramp. Import limit: 1 MB, 200 rows. The profile name and run history are **not** persisted in this phase.
+- Strict CSV columns: `target,ramp,tolerance,dwell,description,enabled`, with seconds for dwell, °C for target/tolerance and °C/min for **simulated** ramp. Import limit: 1 MB, 200 rows. The profile name and run history are **not** persisted in this phase.
 - Recent in-memory measurement/event tables; 1,500-point plot retention.
 
 ## Deliberately not implemented yet
@@ -39,4 +39,4 @@ To exercise profile CSV parsing without starting a UI:
 python -m unittest discover -s tests -p "test_web_*.py"
 ~~~
 
-Source: \`chamber_web/main.py\`, \`chamber_web/model.py\`, \`chamber_web/assets/style.css\`.
+Source: `chamber_web/main.py`, `chamber_web/model.py`, `chamber_web/assets/style.css`.
