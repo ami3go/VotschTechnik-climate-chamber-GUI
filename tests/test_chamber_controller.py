@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import unittest
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -70,6 +71,21 @@ class FailingReadback(CountingBackend):
                 ReadingQuality.GOOD, datetime.now(timezone.utc) - timedelta(minutes=2),
             )
         return snapshot
+
+
+class PausedReadBackend(CountingBackend):
+    def __init__(self, chamber_id):
+        super().__init__(chamber_id)
+        self.pause_reads = False
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def read_status(self):
+        if self.pause_reads:
+            self.entered.set()
+            if not self.release.wait(4):
+                raise TimeoutError("Injected blocked status read")
+        return super().read_status()
 
 
 class ControllerTests(unittest.TestCase):
@@ -276,6 +292,88 @@ class ControllerTests(unittest.TestCase):
             manager.start("device-1")
         self.assertTrue(manager.health("device-1").stop_latched)
         self.assertEqual(manager.status("device-1").quality, ReadingQuality.ERROR)
+
+    def test_operator_handover_fences_old_queued_write(self):
+        backend = PausedReadBackend("device-1")
+        manager = self.manager(backend, timeout=3.0)
+        owner_a = manager.claim_operator("device-1", "alice")
+        backend.pause_reads = True
+        self.addCleanup(backend.release.set)
+        poll = threading.Thread(target=lambda: manager.status("device-1"))
+        poll.start()
+        self.assertTrue(backend.entered.wait(1))
+        errors = []
+        def setpoint():
+            try:
+                manager.set_temperature("device-1", 40, operator_token=owner_a)
+            except ChamberError as exc:
+                errors.append(str(exc))
+        queued = threading.Thread(target=setpoint)
+        queued.start()
+        deadline = time.monotonic() + 2
+        while manager._controller._queue.qsize() < 1 and time.monotonic() < deadline:
+            time.sleep(0.005)
+        self.assertGreaterEqual(manager._controller._queue.qsize(), 1)
+        manager.release_operator("device-1", owner_a)
+        owner_b = manager.claim_operator("device-1", "bob")
+        backend.pause_reads = False
+        backend.release.set()
+        for thread in (poll, queued):
+            thread.join(timeout=4)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(backend.log, [])
+        self.assertTrue(errors, "Old queued owner may not write after handover")
+        manager.set_temperature("device-1", 41, operator_token=owner_b)
+        self.assertEqual(backend.log, [("set", 41.0)])
+
+    def test_disconnect_fences_queued_mutation_before_backend_io(self):
+        backend = PausedReadBackend("device-1")
+        manager = self.manager(backend, timeout=3.0)
+        backend.pause_reads = True
+        self.addCleanup(backend.release.set)
+        poll = threading.Thread(target=lambda: manager.status("device-1"))
+        poll.start()
+        self.assertTrue(backend.entered.wait(1))
+        errors = []
+        def setpoint():
+            try:
+                manager.set_temperature("device-1", 42)
+            except ChamberError as exc:
+                errors.append(str(exc))
+        queued = threading.Thread(target=setpoint)
+        queued.start()
+        deadline = time.monotonic() + 2
+        while manager._controller._queue.qsize() < 1 and time.monotonic() < deadline:
+            time.sleep(0.005)
+        self.assertGreaterEqual(manager._controller._queue.qsize(), 1)
+        shutdown = threading.Thread(target=lambda: manager.disconnect("device-1"))
+        shutdown.start()
+        deadline = time.monotonic() + 2
+        while not manager._controller._disconnecting and time.monotonic() < deadline:
+            time.sleep(0.005)
+        self.assertTrue(manager._controller._disconnecting)
+        backend.pause_reads = False
+        backend.release.set()
+        for thread in (poll, queued, shutdown):
+            thread.join(timeout=4)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(backend.log, [], "No setpoint allowed after disconnect intent")
+        self.assertTrue(errors)
+        self.assertEqual(manager.health("device-1").state, "DISCONNECTED")
+
+    def test_stale_pre_disconnect_readback_requires_reconciliation_after_restart(self):
+        manager = self.manager(CountingBackend("device-1"))
+        good = manager.status("device-1")
+        manager._controller._last_snapshot = replace(
+            good, sampled_at_utc=datetime.now(timezone.utc) - timedelta(minutes=2),
+        )
+        manager.disconnect("device-1")
+        recovered = self.manager(CountingBackend("device-1"))
+        self.assertTrue(recovered.health("device-1").stop_latched)
+        with self.assertRaises(ChamberSafetyError):
+            recovered.start("device-1")
+        recovered.reconcile_stop("device-1")
+        recovered.start("device-1")
 
     def test_operator_conflict_does_not_block_stop(self):
         backend = CountingBackend("device-1")
