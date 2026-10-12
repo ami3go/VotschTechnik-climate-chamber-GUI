@@ -2,3 +2,13 @@
 *.pyc
 /Archive
 .idea/vcs.xml
+
+# Python web application
+__pycache__/
+.venv/
+.pytest_cache/
+.coverage
+*.egg-info/
+
+# Locally generated Windows/offline artifacts
+*.zip
