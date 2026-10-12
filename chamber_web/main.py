@@ -203,7 +203,7 @@ def dashboard() -> None:
             ui.label("Visteon").classes("brand")
             for index, (icon, title, callback) in enumerate([
                 ("dashboard", "Dashboard", lambda: scroll_to("dashboard-content")),
-                ("description", "Profiles", lambda: scroll_to("profile-editor")),
+                ("description", "Profiles", lambda: ui.navigate.to("/profiles")),
                 ("history", "Run History", history_dialog.open),
                 ("list_alt", "Logs", lambda: scroll_to("event-log")),
                 ("settings", "Settings", settings_dialog.open),
@@ -483,3 +483,7 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
+
+
+# G03-C Profiles route, independently owned by the persistent editor workstream.
+from .pages import profiles as _profile_editor_page  # noqa: E402,F401
