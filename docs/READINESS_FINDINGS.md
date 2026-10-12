@@ -17,7 +17,7 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 | H7 | HIGH | SQLite/filesystem crash gap | G07 journal/recovery/fault tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
 | H8 | HIGH | CI/dependency/driver pin insufficient | [GUI #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10) `ef473e1` pins direct dependencies and driver revision; [Windows CI green](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38261039285). Hash-locked transitive freeze, typing and offline VM gates pending | PARTIAL — release gate OPEN |
 | M1 | MEDIUM | One-device multi-vendor architecture unproven | GUI PRs #7/#9 G01, PR #14 single-device Dashboard and G04-A PR #19 fake/alternate/Vötsch-mock substitution with mock-only serialized backend controller | G01/G02-A/G04-A MOCK SOFTWARE MERGED; G02-B/HIL OPEN |
-| M2 | MEDIUM | Windows freezing/offline unverified | W01 scripts/Windows CI, W02 offline VM | OPEN |
+| M2 | MEDIUM | Windows freezing/offline unverified | [GUI PR #18](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/18) Windows prototype + [packaging CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38283556276); W02 disconnected clean Win10/11 VM required | W01-A EARLY FEASIBILITY SOFTWARE VERIFIED; W02 AIR-GAP CERTIFICATION OPEN |
 
 **Definition of closure:** a merged PR and passing unit/static/integration checks alone close a code finding only to **software-verified** status. Safety-related findings require signed site documentation and physical HIL. Each future PR must update the row's status, exact merged commit/test run link, and owner/approver; never claim HIL from mocks. Hardware remains disabled in the current demo.
 
@@ -54,8 +54,14 @@ Reviewed original [G03-B PR #12](https://github.com/ami3go/VotschTechnik-climate
 
 These G03B-R findings are **supplemental** and do not rename or reinterpret the canonical B1–B4/H1–H8/M1–M2 readiness IDs. Closure evidence for #15 is source `d6df9c7c25ae0026d685de616f430b03b73a5330`, [passing Windows CI 38279522018](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38279522018) (3.10/3.12), [AI-assisted review #5493697291](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/15#pullrequestreview-5493697291) and [merged commit `8235c44`](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/8235c448d5a7e9f66d7c5cfb8b0af8ccdb9712f8). The original #12 CI and the final #15 CI are distinct verified runs. This software-only follow-up does not grant operator authorization or HIL approval. In particular, G03-C editor, G04 controller, G07 crash journal and G08-min authentication remain separate release gates.
 
+## W01-A Windows feasibility and second-pass review (PR #18)
+
+[PR #18](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/18) implements a **simulator-only** Windows browser launcher + frozen NiceGUI archive. A HIGH package-presence-only Vötsch check is closed by performing a safe import **inside the Vötsch adapter** (no physical chamber instance); medium findings addressed a missing unprivileged shortcut creator, HTTP-proxy-bypassing/size-limited loopback readiness, and broad CI freeze triggers. The [AI-assisted review](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/18#pullrequestreview-5494009819) is not an external human/site or HIL approval.
+
+Windows extracted simulator [run 38283556276](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38283556276) and Python 3.10/3.12 regression [run 38283556290](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38283556290) passed on an earlier code head. Review/CI for the final head is recorded in PR #18. A separate G03 ZIP timestamp flake is tracked as [issue #22](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/22). W02 offline VM, signed supply chain, browser egress, security, data migration and site HIL remain OPEN.
+
 All release, HIL, Windows offline and operational security gates remain mandatory.
 
 ## Active status/next-PR source of truth
 
-See [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md) for per-delivery-unit progress, G02-A merged and remaining W01-A/G04-A/G08-min-A/G02-B/G03-C PR order, acceptance and review/merge loops. **No site approval or HIL is recorded.** Hardware remains disabled. Status updates must distinguish phase-complete evidence from a merged foundation or demo.
+See [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md) for per-delivery-unit progress, G02-A merged and remaining G08-min-A/G02-B/G03-C PR order (W01-A feasibility delivered; G04-A merged, W02 pending), acceptance and review/merge loops. **No site approval or HIL is recorded.** Hardware remains disabled. Status updates must distinguish phase-complete evidence from a merged foundation or demo.

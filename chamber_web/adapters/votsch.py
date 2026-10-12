@@ -82,3 +82,13 @@ class VotschBackend:
 
     def set_ramp_down(self, rate_c_per_min: float) -> None:
         raise UnsupportedCapability("Ramp units and support are not HIL certified")
+
+
+def verify_bundled_driver_import() -> str:
+    """Packaging-only check: import the external driver without connecting hardware."""
+    from VotschTechnikClimateChamber import ClimateChamber
+    from VotschTechnikClimateChamber import __version__ as driver_version
+
+    if not callable(ClimateChamber):
+        raise RuntimeError("Frozen Vötsch driver entry point is not callable")
+    return str(driver_version)

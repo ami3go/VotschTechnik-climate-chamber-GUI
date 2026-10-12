@@ -41,3 +41,13 @@ Sequential Fake, alternative-vendor test stub and injected Vötsch-mock
 tests cover the same read-only service. They run in separate single-chamber
 instances and do not certify any physical hardware. Production Vötsch
 connections remain blocked by the G01 adapter.
+
+## Early Windows packaging feasibility (W01-A)
+
+The separate [W01-A Windows guide](README_OFFLINE_WINDOWS.md) documents an early
+Windows launcher and simulated NiceGUI offline ZIP build. The bundle has a
+pinned external Vötsch dependency (unless explicitly built in simulation-only
+mode), but the service selects **FakeBackend only** and real hardware I/O stays
+disabled. W01 records frozen assets and dependency versions/integrity hashes;
+a clean air-gapped Windows certification and full transitive hash lock remain
+release-blocking W02 tasks.
