@@ -52,13 +52,15 @@ class DashboardService:
     """
 
     def __init__(self, manager: ChamberManager, chamber_id: str, *,
-                 poll_interval_s: float = 1.0, stale_after_s: float = 5.0):
+                 poll_interval_s: float = 1.0, stale_after_s: float = 5.0,
+                 disconnect_on_close: bool = False):
         self.chamber_id = validate_chamber_id(chamber_id)
         # Validate the route before a backend call can occur.
         manager.get(chamber_id)
         if poll_interval_s <= 0 or stale_after_s <= 0:
             raise ValueError("Polling and stale deadlines must be positive")
         self._manager = manager
+        self._disconnect_on_close = disconnect_on_close
         self._interval = poll_interval_s
         self._stale_after = stale_after_s
         self._view = DashboardView(chamber_id)
@@ -150,3 +152,6 @@ class DashboardService:
             except asyncio.CancelledError:
                 pass
             self._task = None
+        if self._disconnect_on_close:
+            await asyncio.to_thread(self._manager.disconnect, self.chamber_id)
+            self._disconnect_on_close = False

@@ -10,6 +10,8 @@ from chamber_web.domain.chamber import (
 
 
 class FakeBackend:
+    # Safe pre-connect marker: never opens a physical connection.
+    simulation_only = True
     def __init__(self, chamber_id: str, *, minimum: float = -40, maximum: float = 130):
         self._identity = ChamberIdentity(chamber_id, "fake", "SIMULATION", "Fake", None, True)
         self._caps = ChamberCapabilities(minimum, maximum, True, True, True)

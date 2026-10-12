@@ -5,9 +5,9 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 | ID | Severity | Finding | Work item / closure evidence | Status |
 |---|---|---|---|---|
 | B1 | BLOCKER (hardware) | Unbounded/ambiguous TCP exchange | Driver PR #2 merged as `9323e37` with 3.9/3.12 CI; H01 framing certification | SOFTWARE FIX MERGED; HIL OPEN |
-| B2 | BLOCKER (hardware) | STOP verification and uncertainty | Driver PR #2 `9323e37` implements attempted STOP + readback; G04 fencing/HIL still outstanding | DRIVER FIX MERGED; G04/HIL OPEN |
+| B2 | BLOCKER (hardware) | STOP verification and uncertainty | Driver PR #2 `9323e37` plus mock-only G04-A [PR #19](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/19): STOP-generation fencing and fresh readback, [Windows mock CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38282962585). Hardware STOP/HIL and site authority remain outstanding | DRIVER/G04-A SOFTWARE TESTED; HIL/SITE OPEN |
 | B3 | BLOCKER (hardware) | Unsigned model envelope and failure response | P00 signed site limits/policy and H01 | OPEN: SITE |
-| B4 | BLOCKER (release) | Controller, run persistence, authentication and HIL incomplete | G01–G08, H01, W01/W02, R01 | OPEN |
+| B4 | BLOCKER (release) | Controller, run persistence, authentication and HIL incomplete | G04-A mock-only controller PR #19; G08-min, G06/G07, H01, W01/W02, R01 pending | OPEN — NO HARDWARE ACTIVATION |
 | H1 | HIGH | Non-finite driver numeric inputs | Driver PR #2 `9323e37` and unit tests | SOFTWARE FIX MERGED |
 | H2 | HIGH | Null gradient inherits prior hardware state | P00 explicit baseline semantics + G06 tests/HIL | ENGINEERING CONTRACT DRAFTED; HIL PENDING |
 | H3 | HIGH | Zero-stability, gaps, deadline ambiguity | P00 virtual-clock semantics + G06 tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
@@ -16,7 +16,7 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 | H6 | HIGH | Legacy demo CSV migration ambiguous | GUI PR #8 `2ef81b6` adds strict parser and legacy-source-preserving ZIP; [GUI PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) adds transactional SQLite revisions with strict schema checks. G03-C UI/editor still pending | CORE + PROFILE STORAGE SOFTWARE VERIFIED; #15 validation remediation merged/CI green; EDITOR OPEN |
 | H7 | HIGH | SQLite/filesystem crash gap | G07 journal/recovery/fault tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
 | H8 | HIGH | CI/dependency/driver pin insufficient | [GUI #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10) `ef473e1` pins direct dependencies and driver revision; [Windows CI green](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38261039285). Hash-locked transitive freeze, typing and offline VM gates pending | PARTIAL — release gate OPEN |
-| M1 | MEDIUM | One-device multi-vendor architecture unproven | GUI PRs #7/#9 G01 plus PR #14 single-device Fake/alternate/Vötsch-mock Dashboard substitution, [Windows CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38280329089) green | G01/G02-A FOUNDATION MERGED; G02-B/G04 CONTROL OPEN |
+| M1 | MEDIUM | One-device multi-vendor architecture unproven | GUI PRs #7/#9 G01, PR #14 single-device Dashboard and G04-A PR #19 fake/alternate/Vötsch-mock substitution with mock-only serialized backend controller | G01/G02-A FOUNDATION MERGED; G04-A MOCK TESTED; G02-B/HIL OPEN |
 | M2 | MEDIUM | Windows freezing/offline unverified | W01 scripts/Windows CI, W02 offline VM | OPEN |
 
 **Definition of closure:** a merged PR and passing unit/static/integration checks alone close a code finding only to **software-verified** status. Safety-related findings require signed site documentation and physical HIL. Each future PR must update the row's status, exact merged commit/test run link, and owner/approver; never claim HIL from mocks. Hardware remains disabled in the current demo.
@@ -33,6 +33,12 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 - GUI [PR #15](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/15): independent audit follow-up bounded serialization, strict ZIP validation and concurrent revision regression; merged `8235c44`, [Windows CI 3.10/3.12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38279522018) green; [AI-assisted final review](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/15#pullrequestreview-5493697291).
 
 - GUI [PR #14](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/14): G02-A NiceGUI read-only server binding, merged [`8d22b8a`](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/8d22b8a21648c2bf4b22a9dd7a6b07ca0be1d822) with [final-head Windows 3.10/3.12 CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38280329089) green and [AI-assisted review](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/14#pullrequestreview-5493759062). G02-B remains open; no driver/hardware operation, HIL or human/site approval.
+
+## G04-A mock-only safety review (PR #19)
+
+- [G04-A PR #19](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/19) adds one exclusive controller, per-ID persisted STOP generations, mock-only I/O, priority STOP, readback and conservative UNKNOWN/FAULT. [Windows CI 38282962585](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38282962585) passed 3.10/3.12 on earlier code head `c1df1a2`. The **final documentation/code head** still requires checks before merge.
+- Reviewed safety-sensitive HIGH failures: old operator's queued write after handover, un-fenced queued write during disconnect, stale STOPPED snapshot accepted at shutdown, and a START completing in-flight after disconnect intent. All have mock regression tests and corrective code on PR #19; see [controller review evidence](G04_A_CONTROLLER_CONTRACT.md).
+- Remaining blockers are explicitly not closed: authenticated/authorized/audited mutations under G08-min; site-signed envelope and physical STOP/fault policy; bounded transport and physical HIL. Review is AI-assisted, **not human/site signoff**, and no physical device operation is enabled.
 
 ## Independent follow-up on merged PR #12
 

@@ -64,6 +64,7 @@ class BackendContractTests(unittest.TestCase):
     def test_wrong_device_never_dispatches(self):
         manager = ChamberManager([ChamberConfig("ch1", "fake")], backend_factory=make_backend)
         manager.connect("ch1")
+        self.addCleanup(manager.disconnect, "ch1")
         for command in (
             lambda: manager.start("other"),
             lambda: manager.set_temperature("other", 30),
@@ -82,6 +83,7 @@ class BackendContractTests(unittest.TestCase):
     def test_stop_latch_blocks_old_commands(self):
         manager = ChamberManager([ChamberConfig("ch1", "fake")], backend_factory=make_backend)
         manager.connect("ch1")
+        self.addCleanup(manager.disconnect, "ch1")
         manager.start("ch1")
         manager.stop("ch1")
         with self.assertRaises(ChamberSafetyError):
@@ -108,6 +110,7 @@ class BackendContractTests(unittest.TestCase):
         manager = ChamberManager([ChamberConfig("st1", "alternate_stub")],
                                  backend_factory=make_backend, allow_test_backend=True)
         manager.connect("st1")
+        self.addCleanup(manager.disconnect, "st1")
         with self.assertRaises(ChamberSafetyError):
             manager.set_temperature("st1", 100)
 

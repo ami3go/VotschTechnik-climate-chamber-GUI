@@ -1,113 +1,101 @@
-"""v1 one-instance manager. No fleet runtime, no production hardware activation.
+"""Single-device application facade. Browser code never receives a raw backend.
 
-G01 routing is intentionally limited to a single serialized mock instance.
-A production ChamberController with leases/fencing must replace this seam at G04.
+G04-A executes only explicitly simulated adapters; real hardware remains OFF.
+No multi-chamber runtime, scheduler or unauthorized UI mutation is introduced.
 """
 from __future__ import annotations
 
-from threading import RLock
+from pathlib import Path
 from typing import Callable
 
-from chamber_web.domain.chamber import (
-    ChamberBackend, ChamberSafetyError, OperationState, ReadingQuality,
-    validate_chamber_id,
-)
+from chamber_web.domain.chamber import ChamberBackend, ChamberSafetyError, validate_chamber_id
 from chamber_web.domain.config import ChamberConfig
+from chamber_web.services.chamber_controller import ChamberController, ControllerHealth
 
 
 class ChamberManager:
-    def __init__(self, configurations: list[ChamberConfig], *,
-                 backend_factory: Callable, allow_test_backend=False):
+    def __init__(
+        self, configurations: list[ChamberConfig], *,
+        backend_factory: Callable, allow_test_backend: bool = False,
+        lease_directory: Path | None = None, io_timeout_s: float = 2.0,
+    ):
         if len(configurations) != 1:
-            raise ChamberSafetyError("v1 requires exactly one configured chamber; "
-                                     "multiple physical devices are not supported")
+            raise ChamberSafetyError(
+                "v1 requires exactly one configured chamber; "
+                "multiple physical devices are not supported"
+            )
         self._config = configurations[0]
-        self._lock = RLock()
-        self._backend: ChamberBackend = backend_factory(
-            self._config, allow_test_backend=allow_test_backend
+        # Validate cardinality BEFORE creating any backend or connecting.
+        backend: ChamberBackend = backend_factory(
+            self._config, allow_test_backend=allow_test_backend,
         )
-        self._connected = False
-        self._stop_latched = False
+        self._controller = ChamberController(
+            self._config, backend, lease_directory=lease_directory,
+            io_timeout_s=io_timeout_s,
+        )
 
     def configured_ids(self) -> tuple[str, ...]:
         return (self._config.chamber_id,)
 
-    def _backend_for_id(self, chamber_id: str) -> ChamberBackend:
+    def _check_id(self, chamber_id: str) -> None:
         validate_chamber_id(chamber_id)
         if chamber_id != self._config.chamber_id:
             raise ChamberSafetyError("Wrong/stale chamber_id: operation refused")
-        return self._backend
 
     def get(self, chamber_id: str) -> "ChamberManager":
-        """Return the guarded controller facade, never a raw backend."""
-        self._backend_for_id(chamber_id)
+        """Expose only the guarded service facade (not a raw backend)."""
+        self._check_id(chamber_id)
         return self
 
     def connect(self, chamber_id: str) -> None:
-        with self._lock:
-            backend = self._backend_for_id(chamber_id)
-            if self._connected:
-                return
-            backend.connect()
-            if backend.identify().chamber_id != chamber_id:
-                backend.disconnect()
-                raise ChamberSafetyError("Backend identity mismatch")
-            self._connected = True
+        self._check_id(chamber_id)
+        self._controller.connect(chamber_id)
 
     def disconnect(self, chamber_id: str) -> None:
-        with self._lock:
-            backend = self._backend_for_id(chamber_id)
-            try:
-                backend.disconnect()
-            finally:
-                self._connected = False
-                self._stop_latched = True
+        self._check_id(chamber_id)
+        self._controller.disconnect(chamber_id)
 
     def status(self, chamber_id: str):
-        with self._lock:
-            return self._backend_for_id(chamber_id).read_status()
+        self._check_id(chamber_id)
+        return self._controller.status(chamber_id)
+
+    def health(self, chamber_id: str) -> ControllerHealth:
+        self._check_id(chamber_id)
+        return self._controller.health
 
     def capabilities(self, chamber_id: str):
-        """Read backend capabilities through the ID-guarded manager facade."""
-        with self._lock:
-            return self._backend_for_id(chamber_id).capabilities()
+        """G02-A compatibility: cached capabilities, never direct backend I/O."""
+        self._check_id(chamber_id)
+        caps = self._controller.capabilities
+        if caps is None:
+            raise ChamberSafetyError("Capabilities unavailable before verified identity")
+        return caps
 
-    def set_temperature(self, chamber_id: str, target_c: float) -> None:
-        with self._lock:
-            backend = self._guard_mutation(chamber_id)
-            caps = backend.capabilities()
-            if not caps.supports_setpoint_readback:
-                raise ChamberSafetyError("Cannot control without setpoint readback")
-            backend.set_temperature(target_c)
+    def set_temperature(self, chamber_id: str, target_c: float,
+                        *, operator_token: str | None = None) -> None:
+        self._check_id(chamber_id)
+        self._controller.set_temperature(chamber_id, target_c, operator_token=operator_token)
 
-    def start(self, chamber_id: str) -> None:
-        with self._lock:
-            backend = self._guard_mutation(chamber_id)
-            caps = backend.capabilities()
-            if not caps.supports_start_stop or not caps.supports_running_readback:
-                raise ChamberSafetyError("Backend not certified for run control")
-            backend.start()
+    def start(self, chamber_id: str, *, operator_token: str | None = None) -> None:
+        self._check_id(chamber_id)
+        self._controller.start(chamber_id, operator_token=operator_token)
 
     def stop(self, chamber_id: str) -> None:
-        with self._lock:
-            backend = self._backend_for_id(chamber_id)
-            self._stop_latched = True
-            if not self._connected:
-                raise ChamberSafetyError("STOP cannot be verified: not connected")
-            backend.stop()
-
-    def _guard_mutation(self, chamber_id: str) -> ChamberBackend:
-        backend = self._backend_for_id(chamber_id)
-        if not self._connected or self._stop_latched:
-            raise ChamberSafetyError("Operation blocked: disconnected or STOP-latched")
-        return backend
+        self._check_id(chamber_id)
+        self._controller.stop(chamber_id)
 
     def reconcile_stop(self, chamber_id: str) -> None:
-        with self._lock:
-            backend = self._backend_for_id(chamber_id)
-            snapshot = backend.read_status()
-            if not self._connected or snapshot.quality is not ReadingQuality.GOOD or (
-                snapshot.operation_state is not OperationState.STOPPED
-            ):
-                raise ChamberSafetyError("STOP not verified; manual reconciliation required")
-            self._stop_latched = False
+        self._check_id(chamber_id)
+        self._controller.reconcile_stop(chamber_id)
+
+    def claim_operator(self, chamber_id: str, owner: str) -> str:
+        self._check_id(chamber_id)
+        return self._controller.claim_operator(chamber_id, owner)
+
+    def release_operator(self, chamber_id: str, token: str) -> None:
+        self._check_id(chamber_id)
+        self._controller.release_operator(chamber_id, token)
+
+    def start_polling(self, chamber_id: str, *, interval_s: float = 2.0) -> None:
+        self._check_id(chamber_id)
+        self._controller.start_polling(chamber_id, interval_s=interval_s)

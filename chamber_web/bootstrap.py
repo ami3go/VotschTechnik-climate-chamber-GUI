@@ -13,4 +13,4 @@ def create_demo_dashboard_service() -> DashboardService:
     config = ChamberConfig("demo-chamber", "fake")
     manager = ChamberManager([config], backend_factory=make_backend)
     manager.connect(config.chamber_id)  # connects in-memory FakeBackend only
-    return DashboardService(manager, config.chamber_id)
+    return DashboardService(manager, config.chamber_id, disconnect_on_close=True)

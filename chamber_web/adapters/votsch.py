@@ -21,6 +21,11 @@ class VotschBackend:
         self._factory = mock_driver_factory
         self._driver = None
 
+    @property
+    def simulation_only(self) -> bool:
+        # Only an explicitly injected mock factory may execute in G04-A.
+        return self._factory is not None
+
     def connect(self) -> None:
         if self._factory is None:
             # Hardware enablement MUST wait for G04, G08-min, P00 site approval and HIL.
