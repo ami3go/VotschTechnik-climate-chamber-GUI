@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from threading import RLock
 from zipfile import BadZipFile
 
 from chamber_web.domain.chamber import ChamberCapabilities, validate_chamber_id
@@ -17,6 +18,7 @@ MAX_DURATION_S = Decimal("2592000")  # UI/import guard: 30 days per stage.
 MAX_ABS_TEMPERATURE_C = Decimal("1000")  # Not a certified chamber envelope.
 MAX_POSITIVE_C = Decimal("1000")
 MAX_DUPLICATE_SCAN = 5000
+_IMPORT_LOCK = RLock()
 STEP_FIELDS = frozenset({
     "enabled", "target_temperature_c", "ramp_up_c_per_min",
     "ramp_down_c_per_min", "tolerance_c", "stabilize_s",
@@ -192,7 +194,11 @@ class ProfileEditorService:
             if isinstance(value, bool):
                 raise ValueError("Invalid repeat count")
             try:
-                value = int(str(value))
+                number = _decimal(value, "repeat_count", minimum=Decimal("1"),
+                                  maximum=Decimal("100"))
+                if number != number.to_integral_value():
+                    raise ValueError("Repeat count must be a whole number")
+                value = int(number)
             except (ValueError, TypeError) as exc:
                 raise ValueError("Invalid repeat count") from exc
             if not 1 <= value <= 100:
