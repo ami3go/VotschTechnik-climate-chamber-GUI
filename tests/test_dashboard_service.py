@@ -103,6 +103,7 @@ class DashboardServiceTests(unittest.IsolatedAsyncioTestCase):
         manager = ChamberManager([ChamberConfig("test", "fake")],
                                  backend_factory=lambda cfg, **kw: OldBackend(cfg.chamber_id))
         manager.connect("test")
+        self.addCleanup(manager.disconnect, "test")
         service = DashboardService(manager, "test")
         bad = await service.poll_once()
         self.assertEqual(bad.operation_state, OperationState.UNKNOWN)
@@ -119,6 +120,7 @@ class DashboardServiceTests(unittest.IsolatedAsyncioTestCase):
         manager = ChamberManager([ChamberConfig("test", "fake")],
                                  backend_factory=lambda cfg, **kw: FutureBackend(cfg.chamber_id))
         manager.connect("test")
+        self.addCleanup(manager.disconnect, "test")
         service = DashboardService(manager, "test")
         self.assertEqual((await service.poll_once()).quality, ReadingQuality.ERROR)
 
@@ -126,6 +128,7 @@ class DashboardServiceTests(unittest.IsolatedAsyncioTestCase):
         manager = ChamberManager([ChamberConfig("test", "fake")],
                                  backend_factory=lambda cfg, **kw: FakeBackend(cfg.chamber_id))
         manager.connect("test")
+        self.addCleanup(manager.disconnect, "test")
         # The source timestamp must pass ingestion before the cache ages out.
         # A realistic deadline keeps Windows worker startup jitter out of this test.
         service = DashboardService(manager, "test", stale_after_s=1.0)
@@ -145,6 +148,7 @@ class DashboardServiceTests(unittest.IsolatedAsyncioTestCase):
         manager = ChamberManager([ChamberConfig("test", "fake")],
                                  backend_factory=lambda cfg, **kw: SlowBackend(cfg.chamber_id))
         manager.connect("test")
+        self.addCleanup(manager.disconnect, "test")
         service = DashboardService(manager, "test")
         task = asyncio.create_task(service.poll_once())
         await asyncio.sleep(0.005)
