@@ -236,6 +236,8 @@ def serve(*, port: int) -> int:
         temporary.write_text(json.dumps(identity), encoding="utf-8")
         temporary.replace(path)
         try:
+            from chamber_web.security.paths import configure_nicegui_storage
+            configure_nicegui_storage()
             from nicegui import app, ui
             os.environ["CHAMBER_PORT"] = str(port)
             import chamber_web.main  # noqa: F401 - register demo page/assets
