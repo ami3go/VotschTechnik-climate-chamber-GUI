@@ -159,7 +159,11 @@ def export_profile_csv(profile: ParsedProfile, *, spreadsheet_safe=False) -> byt
     for expected, step in enumerate(profile.steps, 1):
         if step.step != expected:
             raise ValueError("Invalid step sequence")
+        if type(step.enabled) is not bool:
+            raise ValueError("Invalid enabled flag")
         notes = step.notes
+        if not isinstance(notes, str) or len(notes) > 4096:
+            raise ValueError("Invalid step notes")
         if spreadsheet_safe and notes.lstrip().startswith(("=", "+", "-", "@", "\t", "\r")):
             notes = "'" + notes
         writer.writerow((
@@ -170,7 +174,10 @@ def export_profile_csv(profile: ParsedProfile, *, spreadsheet_safe=False) -> byt
             str(step.tolerance_c), str(step.stabilize_s), str(step.dwell_s),
             str(step.reach_timeout_s), notes,
         ))
-    return buffer.getvalue().encode("utf-8")
+    data = buffer.getvalue().encode("utf-8")
+    if len(data) > MAX_BYTES:
+        raise ValueError("Profile CSV exceeds maximum permitted size")
+    return data
 
 
 def _checksum(content: bytes) -> str:
@@ -179,6 +186,18 @@ def _checksum(content: bytes) -> str:
 
 def export_profile_zip(profile: ParsedProfile) -> bytes:
     """Lossless canonical profile with retained legacy original, if present."""
+    if not isinstance(profile, ParsedProfile):
+        raise ValueError("Invalid profile object")
+    if profile.migration_warning is not None and (
+        not isinstance(profile.migration_warning, str)
+        or len(profile.migration_warning) > MAX_BYTES
+    ):
+        raise ValueError("Invalid migration warning")
+    if profile.legacy_original is not None and (
+        not isinstance(profile.legacy_original, bytes)
+        or len(profile.legacy_original) > MAX_BYTES
+    ):
+        raise ValueError("Invalid legacy profile bytes")
     if not isinstance(profile.name, str) or not 1 <= len(profile.name) <= 160:
         raise ValueError("Invalid profile name")
     if not isinstance(profile.description, str) or len(profile.description) > 4096:
@@ -201,13 +220,21 @@ def export_profile_zip(profile: ParsedProfile) -> bytes:
         ),
         "migration_warning": profile.migration_warning,
     }
+    manifest_data = json.dumps(metadata, ensure_ascii=False).encode("utf-8")
+    legacy_size = len(profile.legacy_original) if profile.legacy_original is not None else 0
+    if (len(manifest_data) > MAX_BYTES
+            or len(csv_data) + len(manifest_data) + legacy_size > MAX_BYTES * 2):
+        raise ValueError("Profile ZIP expansion exceeds input limit")
     out = io.BytesIO()
     with ZipFile(out, "w", compression=ZIP_DEFLATED) as archive:
         archive.writestr("profile.csv", csv_data)
-        archive.writestr("profile.json", json.dumps(metadata, ensure_ascii=False))
+        archive.writestr("profile.json", manifest_data)
         if profile.legacy_original is not None:
             archive.writestr("legacy_import.csv", profile.legacy_original)
-    return out.getvalue()
+    data = out.getvalue()
+    if len(data) > MAX_BYTES * 2:
+        raise ValueError("Profile ZIP exceeds input limit")
+    return data
 
 
 def import_profile_zip(content: bytes) -> ParsedProfile:
@@ -228,7 +255,9 @@ def import_profile_zip(content: bytes) -> ParsedProfile:
         if sum(item.file_size for item in info) > MAX_BYTES * 2:
             raise ValueError("ZIP expansion limit exceeded")
         manifest = json.loads(archive.read("profile.json"))
-        if manifest.get("schema_version") != 1:
+        if not isinstance(manifest, dict):
+            raise ValueError("Profile manifest must be a JSON object")
+        if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 1:
             raise ValueError("Unsupported profile version")
         data = archive.read("profile.csv")
         if _checksum(data) != manifest.get("profile_csv_sha256"):

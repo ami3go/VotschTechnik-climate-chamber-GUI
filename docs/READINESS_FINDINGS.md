@@ -1,6 +1,6 @@
 # Migration readiness findings — canonical closure ledger
 
-Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status rechecked against GUI `252b0fb` and driver `9323e37`. **Original review SHAs are historical, not the current implementation.** `B`/`H`/`M` are the only valid IDs for the 2026-10-12 readiness review. Older unidentified `BLOCKER-01`–`HIGH-10` tags in previous plans have been retired rather than guessed into equivalence. See [P00 contracts](P00_DECISION_CONTRACTS.md).
+Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status rechecked against GUI `138d1b4` (PR #15 baseline, after G03-B merge `252b0fb`) and driver `9323e37`. **Original review SHAs are historical, not the current implementation.** `B`/`H`/`M` are the only valid IDs for the 2026-10-12 readiness review. Older unidentified `BLOCKER-01`–`HIGH-10` tags in previous plans have been retired rather than guessed into equivalence. See [P00 contracts](P00_DECISION_CONTRACTS.md).
 
 | ID | Severity | Finding | Work item / closure evidence | Status |
 |---|---|---|---|---|
@@ -13,7 +13,7 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 | H3 | HIGH | Zero-stability, gaps, deadline ambiguity | P00 virtual-clock semantics + G06 tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
 | H4 | HIGH | Loopback hardware authentication gate too late | G08-min prerequisite to G05 and live HIL | SEQUENCE CORRECTED; CODE OPEN |
 | H5 | HIGH | Previous finding IDs undefined | This ledger and sequence linkage, P00 PR #6 | CLOSED (documentation) |
-| H6 | HIGH | Legacy demo CSV migration ambiguous | GUI PR #8 `2ef81b6` adds strict parser and legacy-source-preserving ZIP; [GUI PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) adds transactional SQLite revisions with strict schema checks. G03-C UI/editor still pending | CORE + PROFILE STORAGE SOFTWARE VERIFIED; EDITOR OPEN |
+| H6 | HIGH | Legacy demo CSV migration ambiguous | GUI PR #8 `2ef81b6` adds strict parser and legacy-source-preserving ZIP; [GUI PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) adds transactional SQLite revisions with strict schema checks. G03-C UI/editor still pending | CORE + PROFILE STORAGE SOFTWARE VERIFIED; #15 bounded-export review remediation under validation; EDITOR OPEN |
 | H7 | HIGH | SQLite/filesystem crash gap | G07 journal/recovery/fault tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
 | H8 | HIGH | CI/dependency/driver pin insufficient | [GUI #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10) `ef473e1` pins direct dependencies and driver revision; [Windows CI green](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38261039285). Hash-locked transitive freeze, typing and offline VM gates pending | PARTIAL — release gate OPEN |
 | M1 | MEDIUM | One-device multi-vendor architecture unproven | GUI PR #7 `c978ef9` and follow-up #9 `e8519ad`, Windows 3.10/3.12 CI | G01 FOUNDATION MERGED; G04 CONTROL OPEN |
@@ -30,6 +30,18 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 - GUI [PR #8](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/8): G03 profile migration core, `2ef81b6`.
 - GUI [PR #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10): pins CI-tested direct dependencies and hardened driver revision, `ef473e1`.
 - GUI [PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12): G03-B SQLite revisions, `252b0fb`, [Windows CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38276777330) green. G03-C editor still open; AI-assisted second-pass review, no human/site approval claimed.
+
+## Independent follow-up on merged PR #12
+
+Reviewed original [G03-B PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12): source head `a06874c`, merge `252b0fb`, [Windows Actions success 38276777330](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38276777330) (Python 3.10/3.12). A previous HIGH issue with weakened schema verification was corrected before #12 merged, and the [PR review](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12#pullrequestreview-5493489781) records that narrow approval.
+
+| Independent review ID | Severity | Verified issue / scope | Remediation and verification gate |
+|---|---|---|---|
+| G03B-R1 | **HIGH** | Direct `ParsedProfile` save could attempt large ZIP compression before input bounds were enforced; oversized notes, legacy source and migration metadata were not all preflighted | [Follow-up PR #15](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/15) implements bounded pre-serialization and regression tests; do not mark closed until its final-head Windows 3.10/3.12 CI and review pass |
+| G03B-R2 | MEDIUM | A well-formed ZIP whose JSON manifest is an array could raise unexpected `AttributeError` instead of an input-validation error | PR #15 validates object manifest and exact integer version with a negative test |
+| G03B-R3 | TEST COVERAGE | Sequential stale-editor tests did not simulate truly concurrent revisions to the same profile | PR #15 adds an eight-writer concurrent CAS/row-count test |
+
+These G03B-R findings are **supplemental** and do not rename or reinterpret the canonical B1–B4/H1–H8/M1–M2 readiness IDs. Closure evidence for #15 is tracked by the [PR checks page](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/15/checks), including its final source SHA and Windows CI results; #12's successful run cannot establish #15 passed. This software-only follow-up does not grant operator authorization or HIL approval. In particular, G03-C editor, G04 controller, G07 crash journal and G08-min authentication remain separate release gates.
 
 All release, HIL, Windows offline and operational security gates remain mandatory.
 
