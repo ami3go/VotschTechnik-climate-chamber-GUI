@@ -72,16 +72,16 @@ def active_tokens():
     return app.storage.user.get("session"), app.storage.user.get("csrf")
 
 
-def current_actor():
+def current_actor(*, touch: bool = False):
     token, _ = active_tokens()
     try:
-        return get_security().authenticate(token)
+        return get_security().authenticate(token, touch=touch)
     except AuthenticationError:
         return None
 
 
-def require_authenticated_page() -> bool:
-    if current_actor() is None:
+def require_authenticated_page(*, touch: bool = True) -> bool:
+    if current_actor(touch=touch) is None:
         ui.navigate.to("/login")
         return False
     return True
