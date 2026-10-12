@@ -13,6 +13,8 @@ from pathlib import Path
 from nicegui import app, ui
 
 from .bootstrap import create_demo_dashboard_service
+from .security.nicegui import (cookie_secret, current_actor, logout,
+                               require_authenticated_page)
 
 from .model import (
     MAX_TEMP, MIN_TEMP, Step, default_steps,
@@ -70,6 +72,8 @@ def _panel_title(icon: str, title: str) -> None:
 
 @ui.page("/")
 def dashboard() -> None:
+    if not require_authenticated_page():
+        return
     service = get_dashboard_service()
     # Local drafts are not executable runs or chamber state.
     state = ProfileDraft()
@@ -219,11 +223,13 @@ def dashboard() -> None:
             with ui.row().classes("topbar"):
                 with ui.column().classes("gap-0"):
                     ui.label("Climate Chamber").classes("top-title")
+                    ui.label(f"Signed in: {current_actor().username} ({current_actor().role.value})")
                     ui.label("Test Control Platform").classes("top-subtitle")
                 with ui.column().classes("items-end gap-0"):
                     backend_label = ui.label("● SIMULATION · UNKNOWN").classes("demo-status")
                     backend_id_label = ui.label("Backend: fake · demo-chamber").classes("text-xs text-grey-4")
                     clock_label = ui.label("").classes("text-xs text-grey-4")
+                    ui.button("Sign out", icon="logout", on_click=logout).props("flat")
 
             with ui.column().classes("dashboard gap-0").props('id="dashboard-content"'):
                 ui.label(
@@ -478,7 +484,8 @@ def dashboard() -> None:
 def run() -> None:
     # Fail safe: localhost-only until authentication / network controls exist.
     ui.run(title="Climate Chamber — server simulation", host="127.0.0.1",
-           port=8080, reload=False, show=False)
+           port=8080, reload=False, show=False,
+           storage_secret=cookie_secret())
 
 
 if __name__ == "__main__":
