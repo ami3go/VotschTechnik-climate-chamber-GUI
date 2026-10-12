@@ -9,18 +9,12 @@ from __future__ import annotations
 import os
 import secrets
 import threading
-from pathlib import Path
 
 from nicegui import app, ui
 
 from .auth import AuthenticationError, SecurityStore
 from .http import OriginMiddleware
-
-
-def security_directory() -> Path:
-    return Path(os.environ.get("CHAMBER_SECURITY_DIR", str(
-        Path.home() / ".chamber_web" / "security"
-    ))).expanduser()
+from .paths import security_directory
 
 
 _store: SecurityStore | None = None
