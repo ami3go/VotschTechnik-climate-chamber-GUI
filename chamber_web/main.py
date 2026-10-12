@@ -103,6 +103,8 @@ def dashboard() -> None:
     state = ProfileDraft()
 
     def warn_while_running() -> bool:
+        if not require_authenticated_page():
+            return True
         # No runnable profile engine exists in G02-A.
         return False
 
@@ -114,6 +116,8 @@ def dashboard() -> None:
         )
 
     def export_csv() -> None:
+        if not require_authenticated_page():
+            return
         try:
             content = export_profile_csv(state.steps)
             ui.download.content(content, "temperature_profile.csv", "text/csv")
@@ -122,6 +126,8 @@ def dashboard() -> None:
             ui.notify(str(exc), color="negative")
 
     async def import_csv(event) -> None:
+        if not require_authenticated_page():
+            return
         if warn_while_running():
             return
         try:
@@ -435,6 +441,8 @@ def dashboard() -> None:
                                     "small-table w-full")
 
     def refresh() -> None:
+        if not require_authenticated_page():
+            return
         view = safe_view(service)
         display = project_telemetry(view)
         capability = project_capabilities(view)
