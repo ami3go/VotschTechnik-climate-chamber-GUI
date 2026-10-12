@@ -160,6 +160,7 @@ class RunnerTests(unittest.TestCase):
         self.clock.advance(4)
         self.runner.advance()
         self.assertEqual(self.runner.state, RunState.DWELLING)
+        self.backend.read_status = original  # Restore truthful STOP readback.
         self.runner.cancel("unit-chamber")
         self.terminal(RunState.CANCELLED)
 
