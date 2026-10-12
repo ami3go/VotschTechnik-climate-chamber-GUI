@@ -258,6 +258,9 @@ class ChamberController:
             raise ChamberSafetyError("Readback outside freshness window")
         if snapshot.operation_state in (OperationState.UNKNOWN, OperationState.FAULT):
             raise ChamberSafetyError("Readback reports unknown/fault")
+        measured = snapshot.measured_temperature_c
+        if measured is None or not math.isfinite(measured):
+            raise ChamberSafetyError("Readback measurement must be finite")
         return snapshot
 
     def _verified_write(self, operation: Callable, *,
@@ -291,6 +294,9 @@ class ChamberController:
                      lambda: self._verified_write(
                          lambda: self._backend.set_temperature(target), target=target),
                      mutation=True)
+        with self._state_lock:
+            if self._stop_latched:
+                raise ChamberSafetyError("Setpoint result superseded by STOP/FAULT")
 
     def start(self, chamber_id: str, *, operator_token: str | None = None) -> None:
         self._check_id(chamber_id)
@@ -304,8 +310,9 @@ class ChamberController:
                          self._backend.start, running=OperationState.RUNNING),
                      mutation=True)
         with self._state_lock:
-            if not self._stop_latched:
-                self._state = "RUNNING"
+            if self._stop_latched:
+                raise ChamberSafetyError("START result superseded by STOP/FAULT")
+            self._state = "RUNNING"
 
     def stop(self, chamber_id: str) -> None:
         """STOP bypasses operator ownership; intent is synchronous and fenced."""
@@ -314,6 +321,9 @@ class ChamberController:
             self._stop_latched = True
             self._state = "STOP_REQUESTED"
             self._reason = "STOP requested; awaiting authoritative readback"
+            if not self._connected and self._thread is None:
+                self._state = "UNKNOWN"
+                raise ChamberSafetyError("STOP cannot be verified: not connected")
             try:
                 self._generation = self._lease.fence()
             except Exception as exc:
@@ -332,7 +342,7 @@ class ChamberController:
                 raise ChamberSafetyError("STOP readback still indicates RUNNING")
         except Exception:
             with self._state_lock:
-                if self._state != "FAULT":
+                if intent_generation == self._generation and self._state != "FAULT":
                     self._trip("STOP effect unverified")
             raise
         with self._state_lock:
@@ -370,6 +380,9 @@ class ChamberController:
             )
             with self._state_lock:
                 self._last_snapshot = snapshot
+                if (self._state == "VERIFIED_STOPPED" and
+                        snapshot.operation_state is OperationState.RUNNING):
+                    self._trip("Unexpected RUNNING after verified STOP")
             return snapshot
         except Exception:
             with self._state_lock:
