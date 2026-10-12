@@ -120,6 +120,8 @@ def page_frame(active: str, service, *, title: str):
                     "demo-banner w-full")
                 yield
     def update_shell():
+        if not require_authenticated_page():
+            return
         refresh_header()
         display = project_telemetry(safe_view(service))
         banner.set_text(f"{display.mode} / READ-ONLY — {display.quality} · "
@@ -184,6 +186,8 @@ def register_pages(
                     "w-full small-table")
 
                 def reload():
+                    if not require_authenticated_page():
+                        return
                     try:
                         page = history.list_runs(
                             service.chamber_id, search=bounded_search(search.value), limit=50)
@@ -234,6 +238,8 @@ def register_pages(
                     "flat bordered wrap-cells").classes("w-full small-table")
 
                 def reload():
+                    if not require_authenticated_page():
+                        return
                     try:
                         page = events.list_events(
                             service.chamber_id, severity=severity.value,
@@ -272,6 +278,8 @@ def register_pages(
                     pass
 
                 def update_details():
+                    if not require_authenticated_page():
+                        return
                     view = safe_view(service)
                     cap = project_capabilities(view)
                     display = project_telemetry(view)
