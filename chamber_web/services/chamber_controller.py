@@ -47,6 +47,7 @@ class _Work:
     future: Future
     generation: int
     mutation: bool = False
+    owner_generation: int = 0
 
 
 class ChamberController:
@@ -79,6 +80,7 @@ class ChamberController:
         self._generation = 0
         self._connected = False
         self._closed = False
+        self._disconnecting = False
         self._stop_latched = True
         self._state = "DISCONNECTED"
         self._reason: str | None = None
@@ -87,6 +89,7 @@ class ChamberController:
         self._last_snapshot: ChamberSnapshot | None = None
         self._operator_token: str | None = None
         self._operator_name: str | None = None
+        self._operator_generation = 0
 
     def _check_id(self, chamber_id: str) -> None:
         validate_chamber_id(chamber_id)
@@ -114,6 +117,7 @@ class ChamberController:
             if self._operator_token is not None:
                 raise ChamberSafetyError("Another operator owns device commands")
             self._operator_token = uuid.uuid4().hex
+            self._operator_generation += 1
             self._operator_name = owner.strip()
             return self._operator_token
 
@@ -123,6 +127,7 @@ class ChamberController:
             if not self._operator_token or token != self._operator_token:
                 raise ChamberSafetyError("Operator lease token mismatch")
             self._operator_token = None
+            self._operator_generation += 1
             self._operator_name = None
 
     def _check_operator(self, token: str | None) -> None:
@@ -188,15 +193,22 @@ class ChamberController:
             if work is None:
                 return
             with self._state_lock:
-                if (work.name != "stop" and work.generation != self._generation) or (
-                    work.mutation and self._stop_latched
+                if (work.name not in ("stop", "disconnect") and
+                    work.generation != self._generation) or (
+                    work.mutation and (
+                        self._stop_latched or
+                        work.owner_generation != self._operator_generation
+                    )
                 ):
                     work.future.set_exception(
-                        ChamberSafetyError("Queued command fenced by STOP/FAULT")
+                        ChamberSafetyError("Queued command fenced by STOP/FAULT/ownership")
                     )
                     continue
                 try:
-                    self._lease.verify(self._generation if work.name == "stop" else work.generation)
+                    self._lease.verify(
+                        self._generation if work.name in ("stop", "disconnect")
+                        else work.generation
+                    )
                 except Exception as exc:
                     work.future.set_exception(exc)
                     self._trip("Lease/generation verification failed", fault=True)
@@ -225,16 +237,22 @@ class ChamberController:
                 work.future.set_result(result)
 
     def _submit(self, name: str, action: Callable[[], T], *, priority: int = 10,
-                mutation: bool = False, timeout: float | None = None) -> T:
+                mutation: bool = False, timeout: float | None = None,
+                operator_token: str | None = None) -> T:
         with self._state_lock:
             if self._closed or self._thread is None:
                 raise ChamberSafetyError("Controller not active")
             generation = self._generation
-            if mutation and (not self._connected or self._stop_latched):
-                raise ChamberSafetyError("Operation blocked: disconnected or STOP-latched")
-            if name != "stop" and self._queue.qsize() >= 32:
+            if mutation:
+                self._check_operator(operator_token)
+                if not self._connected or self._stop_latched:
+                    raise ChamberSafetyError("Operation blocked: disconnected or STOP-latched")
+            if name not in ("stop", "disconnect") and self._queue.qsize() >= 32:
                 raise ChamberSafetyError("Device I/O queue full")
-            request = _Work(name, action, Future(), generation, mutation)
+            request = _Work(
+                name, action, Future(), generation, mutation,
+                owner_generation=self._operator_generation,
+            )
             self._queue.put((priority, next(self._sequence), request))
         try:
             return request.future.result(timeout=self._timeout if timeout is None else timeout)
@@ -308,7 +326,7 @@ class ChamberController:
         self._submit("set_temperature",
                      lambda: self._verified_write(
                          lambda: self._backend.set_temperature(target), target=target),
-                     mutation=True)
+                     mutation=True, operator_token=operator_token)
         with self._state_lock:
             if self._stop_latched:
                 raise ChamberSafetyError("Setpoint result superseded by STOP/FAULT")
@@ -323,7 +341,7 @@ class ChamberController:
         self._submit("start",
                      lambda: self._verified_write(
                          self._backend.start, running=OperationState.RUNNING),
-                     mutation=True)
+                     mutation=True, operator_token=operator_token)
         with self._state_lock:
             if self._stop_latched:
                 raise ChamberSafetyError("START result superseded by STOP/FAULT")
@@ -433,6 +451,7 @@ class ChamberController:
             self._poll_thread.start()
 
     def disconnect(self, chamber_id: str) -> None:
+        """Fence queued control before any backend disconnect; no implicit STOP."""
         self._check_id(chamber_id)
         self._poll_stop.set()
         with self._state_lock:
@@ -441,18 +460,39 @@ class ChamberController:
             if self._thread is None:
                 self._closed = True
                 return
-        # Do not unlock the device if a timed-out adapter thread still runs.
-        self._submit("disconnect", self._backend.disconnect, priority=0)
+            if self._disconnecting:
+                raise ChamberSafetyError("Disconnect already in progress")
+            self._disconnecting = True
+            # Existing VERIFIED_STOPPED is not a durable fact unless the
+            # authoritative GOOD snapshot is still fresh at shutdown.
+            snapshot = self._last_snapshot
+            fresh_stop = False
+            if (self._connected and not self._stop_latched
+                    and self._state == "VERIFIED_STOPPED"
+                    and snapshot is not None
+                    and snapshot.operation_state is OperationState.STOPPED
+                    and snapshot.quality is ReadingQuality.GOOD
+                    and snapshot.sampled_at_utc is not None
+                    and snapshot.sampled_at_utc.tzinfo is not None):
+                age = (datetime.now(timezone.utc) - snapshot.sampled_at_utc).total_seconds()
+                fresh_stop = -1 <= age <= self._max_age
+            # Quiesce all queued mutations BEFORE enqueueing disconnect.
+            # Never mark physical STOP as verified just because disconnect ran.
+            self._stop_latched = True
+            self._state = "UNKNOWN"
+            self._reason = "Disconnect requested; STOP not reverified"
+            try:
+                self._generation = self._lease.fence()
+            except Exception as exc:
+                self._state = "FAULT"
+                raise ChamberSafetyError("Unable to persist disconnect fence") from exc
+            disconnect_generation = self._generation
+        # If a synchronous backend call hangs, keep the OS owner lock.
+        self._submit("disconnect", self._backend.disconnect, priority=-50)
         with self._state_lock:
-            verified = (
-                not self._stop_latched
-                and self._last_snapshot is not None
-                and self._last_snapshot.operation_state is OperationState.STOPPED
-                and self._state == "VERIFIED_STOPPED"
-            )
+            verified = fresh_stop and disconnect_generation == self._generation
             self._closed = True
             self._connected = False
-            self._stop_latched = True
             self._state = "DISCONNECTED"
             self._queue.put((100, next(self._sequence), None))
         self._thread.join(timeout=self._timeout)
