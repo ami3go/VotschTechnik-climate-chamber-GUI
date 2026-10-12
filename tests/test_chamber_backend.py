@@ -94,6 +94,14 @@ class BackendContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ChamberSafetyError, "DISABLED"):
             manager.connect("vt4011")
 
+    def test_generic_core_never_branches_on_vendor_name(self):
+        import pathlib
+        root = pathlib.Path(__file__).resolve().parents[1] / "chamber_web"
+        for relative in ("domain/config.py", "services/chamber_manager.py"):
+            source = (root / relative).read_text(encoding="utf-8")
+            self.assertNotIn("== \"votsch\"", source)
+            self.assertNotIn("== 'votsch'", source)
+
     def test_test_backend_not_available_in_production(self):
         with self.assertRaises(ChamberSafetyError):
             ChamberManager([ChamberConfig("st1", "alternate_stub")], backend_factory=make_backend)
