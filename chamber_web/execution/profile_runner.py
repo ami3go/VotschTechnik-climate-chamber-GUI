@@ -176,6 +176,7 @@ class ProfileRunner:
         self._event_guard = threading.RLock()
         # STOP uses a separate caller from any potentially blocked poll/setpoint.
         self._stop_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="profile-stop")
+        self._closed = False
         self._snapshot: ExecutionSnapshot | None = None
         self._scheduled_steps: tuple[ProfileStep, ...] = ()
         self._state: RunState | None = None
@@ -285,6 +286,8 @@ class ProfileRunner:
         if not isinstance(params, RunParameters):
             raise ValueError("Invalid run parameters")
         with self._mutex:
+            if self._closed:
+                raise ChamberSafetyError("Runner is closed; cannot start again")
             if self._state is not None and self._state not in TERMINAL:
                 raise ChamberSafetyError("An execution is already active")
             record: ProfileRevision = self._store.get_revision(
@@ -687,4 +690,5 @@ class ProfileRunner:
         with self._mutex:
             if self._state is not None and self._state not in TERMINAL:
                 raise ChamberSafetyError("Cannot close a running execution")
+            self._closed = True
         self._stop_executor.shutdown(wait=True)
