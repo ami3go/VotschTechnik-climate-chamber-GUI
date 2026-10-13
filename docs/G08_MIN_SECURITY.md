@@ -118,9 +118,10 @@ Stable API: `SecurityStore.bootstrap_admin` (CLI only), `login`,
 **Integration for G02-B:** obtain opaque tokens from `active_tokens()` only in
 server-side callbacks; use guarded facade for permitted control buttons;
 use `current_actor()` only for presentation, not as authorization.
-**G03-C:** guard every profile create/modify/delete/import/save/export that
-exposes sensitive data using READ/PROFILE_EDIT as appropriate, with audit
-intent on mutations. **G06-A:** guard run start/abort and all runner-control
+**G03-C (PR #26 merged):** the persistent Profiles page guards every browser
+profile read/create/modify/delete/import/save/export via G08 READ/PROFILE_EDIT
+and rechecks after asynchronous uploads; core SQLite service remains server-owned.
+The browser cannot access G04 or the vendor driver. **G06-A:** guard run start/abort and all runner-control
 commands with PROFILE_RUN; use separate STOP permission for direct STOP.
 Other future sensitive services must be enumerated here before deployment.
 Controller mutations are all dispatched through `AuthorizedChamber`;
@@ -145,7 +146,7 @@ lockout DoS defense, hardened account administration UI, audit retention /
 integrity protection and archive signing, log rotation/monitoring, operating
 system ACLs and Windows packaged-data migration, supply-chain hash lock
 and vulnerability review, session/socket forced disconnect on revocation,
-complete integration across future G02-B/G03-C/G06-A/G07 endpoints, CSRF
+complete integration across future G05/G06-A/G07 operational control endpoints, CSRF
 regression against actual deployed browser/network topologies, external
 penetration testing and site-approved operational lifecycle/shutdown.
 NiceGUI per-browser storage may retain revoked opaque IDs until cleared;

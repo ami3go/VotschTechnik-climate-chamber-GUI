@@ -2,11 +2,11 @@
 
 ## Delivered (mock-only; never physical control)
 
-- Dashboard retains G02-A service telemetry/chart and the pre-existing unpersisted CSV draft. The future persisted editor belongs solely to G03-C.
+- Dashboard retains G02-A service telemetry/chart and a non-executable profile preview; G03-C owns all persistent editing on /profiles.
 - /history is searchable and bounded to 50 server records through the HistoryReader interface; the absent G07 provider returns unavailable, not fabricated runs.
 - /logs uses the EventReader contract for severity, search and bounded rows, independently of browser draft events. With no G07 provider, it clearly reports unavailable.
 - /settings displays one chamber's read-only identity, GOOD/STALE/ERROR timestamp, supported/unsupported capabilities and active safety/authorization lock.
-- /profiles is a G03-C integration placeholder; its editor is not implemented by G02-B. The existing G02-A draft remains on Dashboard until migration.
+- G02-B initially exposed a /profiles integration placeholder; G03-C now replaces it with its own persistent editor, while sharing this navigation/layout. Dashboard retains only a non-executable profile preview.
 - Shared sidebar, title, branded colors, accessibility focus, reduced motion and narrow-screen responsiveness work on each route.
 - Pure projections in chamber_web/ui_state.py fail closed on UNKNOWN/FAULT/stale/error, sanitize provider exceptions and show UTC timestamps. Per-browser refresh does not own polling.
 - Server-only NavigationContext hook defaults to unauthenticated read-only; it never grants permissions or accepts browser-supplied roles.
@@ -14,7 +14,7 @@
 
 ## Future provider seams
 
-G07 must provide HistoryReader.list_runs(chamber_id, search, limit) and EventReader.list_events(chamber_id, severity, search, limit), respecting server authorization, per-chamber filtering, retention and bounded pagination. G08-min must bind a server-derived authenticated principal and enforce all mutations at controller/API boundaries. Neither capability exists as a completed gate in this PR.
+G07 must provide HistoryReader.list_runs(chamber_id, search, limit) and EventReader.list_events(chamber_id, severity, search, limit), respecting server authorization, per-chamber filtering, retention and bounded pagination. G08-min [PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25) provides a server-derived authenticated principal, enforced for the persistent Profiles page after [PR #26](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/26). G07 history/event readers and real G05 controller commands remain absent; no physical HIL approval.
 
 ## Review / verification checklist
 
@@ -28,7 +28,7 @@ G07 must provide HistoryReader.list_runs(chamber_id, search, limit) and EventRea
 
 ## Unresolved dependencies
 
-G03-C persisted Profiles editor; G07 durable run/event read endpoints; G08-min session/role/audit enforcement; G05 manual controls; G06 runner; signed P00 safety limits and HIL. All remain open outside this PR.
+G03-C persistence/editing is integrated by PR #26; G07 durable run/event read endpoints; G08-min session/role/audit enforcement; G05 manual controls; G06 runner; signed P00 safety limits and HIL. All remain open outside this PR.
 
 ## Second-pass implementation review
 

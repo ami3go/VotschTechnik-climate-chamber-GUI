@@ -149,18 +149,7 @@ def register_pages(
     history = history_reader or UnavailableHistoryReader()
     events = event_reader or UnavailableEventReader()
 
-    @ui.page("/profiles")
-    def profiles_placeholder():
-        if not require_authenticated_page():
-            return
-        service = get_dashboard_service()
-        with page_frame("/profiles", service, title="Profiles"):
-            with ui.column().classes("panel gap-2"):
-                ui.label("Profiles editor — G03-C").classes("panel-heading")
-                ui.label("The persisted Profiles editor is owned by G03-C and is not part of G02-B.")
-                ui.label("The pre-existing local-only CSV draft remains on the Dashboard until migration.")
-                ui.button("Open Dashboard draft", icon="arrow_back",
-                          on_click=lambda: ui.navigate.to("/")).props("outline no-caps")
+    # /profiles is registered by G03-C with G08 guards in pages/profiles.py.
 
     @ui.page("/history")
     def history_page():
