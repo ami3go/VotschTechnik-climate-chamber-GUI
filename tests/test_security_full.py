@@ -10,7 +10,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from chamber_web.security.account_ops import AccountOperations
 from chamber_web.security.auth import AuthenticationError, AuthorizationError, Role, SecurityStore
 from chamber_web.security.backup import (
     BackupError, backup_security_database, stage_security_restore,
