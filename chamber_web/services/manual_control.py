@@ -191,6 +191,13 @@ class ManualControlService:
             # It must never overwrite the newer STOP outcome.
             if serial == self._serial:
                 self._last = result
+            elif state is ManualState.CONFIRMED:
+                # A completed older callback cannot claim success after a newer
+                # STOP or ownership-changing request has begun.
+                return CommandOutcome(
+                    action, ManualState.UNKNOWN,
+                    "Superseded by a newer command; result is not authoritative",
+                    result.generation, result.timestamp_utc)
         return result
 
     def _error_state(self, error: Exception) -> ManualState:
@@ -225,9 +232,11 @@ class ManualControlService:
             session, csrf, permissions[action], chamber_id=chamber_id)
         self._check_id(chamber_id)
         serial = self._begin(action)
+        command_may_have_dispatched = False
         try:
             if action == "stop":
                 # No pre-read, no ownership checks, no service-level lock.
+                command_may_have_dispatched = True
                 self._authorized.stop(session, csrf, chamber_id)
                 sample = self._manager.status(chamber_id)
                 self._require_mock(sample.identity)
@@ -237,12 +246,16 @@ class ManualControlService:
                     raise ChamberSafetyError("STOP not confirmed by fresh readback")
             elif action == "claim":
                 sample, _ = self._fresh(chamber_id)
+                command_may_have_dispatched = True
                 self._authorized.execute(session, csrf, chamber_id, "claim_operator")
             elif action == "release":
+                command_may_have_dispatched = True
                 self._authorized.execute_owned(session, csrf, chamber_id, "release_operator")
             elif action == "handover":
+                command_may_have_dispatched = True
                 self._authorized.handover_to_admin(session, csrf, chamber_id)
             elif action == "reconcile":
+                command_may_have_dispatched = True
                 self._authorized.execute(session, csrf, chamber_id, "reconcile_stop")
             else:
                 sample, caps = self._fresh(chamber_id)
@@ -255,6 +268,7 @@ class ManualControlService:
                         raise ChamberSafetyError("No verified target temperature")
                     finite_temperature(sample.setpoint_temperature_c,
                                        caps.temperature_min_c, caps.temperature_max_c)
+                    command_may_have_dispatched = True
                     self._authorized.execute_owned(session, csrf, chamber_id, "start")
                 elif action == "set_temperature":
                     if not caps.supports_setpoint_readback:
@@ -262,6 +276,7 @@ class ManualControlService:
                     # Explicit finite validation; never coerce browser text/boolean.
                     target = finite_temperature(
                         target_c, caps.temperature_min_c, caps.temperature_max_c)
+                    command_may_have_dispatched = True
                     self._authorized.execute_owned(
                         session, csrf, chamber_id, "set_temperature", target)
                 verified, _ = self._fresh(chamber_id)  # independent authoritative readback
@@ -285,6 +300,12 @@ class ManualControlService:
                                 else "Server operator-lease transition confirmed")
         except Exception as exc:
             state = self._error_state(exc)
+            from chamber_web.security.auth import AuthenticationError, AuthorizationError
+            if (command_may_have_dispatched and state is ManualState.REJECTED and
+                    not isinstance(exc, (AuthenticationError, AuthorizationError))):
+                # An accepted write or lease transition can have occurred before
+                # a later status/readback/audit failure. Never call it refused.
+                state = ManualState.UNKNOWN
             self._security.audit(actor, "manual." + action, state.value,
                                  chamber_id, type(exc).__name__)
             return self._finish(
