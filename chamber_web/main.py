@@ -616,7 +616,11 @@ def dashboard() -> None:
         quality_label.set_text(f"Quality: {display.quality} · {display.message} · "
                                f"sample: {display.sampled_utc}")
         limits_label.set_text(capability.temperature_range)
-        capability_detail_label.set_text(capability.controls_locked_reason)
+        capability_detail_label.set_text(
+            "SIMULATED manual control — requires operator lease and fresh readback; "
+            "physical device writes disabled"
+            if identity and identity.is_simulation and view.capabilities
+            else capability.controls_locked_reason)
         ramp_detail_label.set_text(f"Ramp up: {capability.ramp_up} · "
                                    f"ramp down: {capability.ramp_down}")
         if view.capabilities:
