@@ -95,8 +95,8 @@ def login_page() -> None:
 
     def sign_in():
         try:
-            peer = getattr(getattr(ui.context.client.request, "client", None),
-                           "host", None)
+            request = getattr(ui.context.client, "request", None)
+            peer = getattr(getattr(request, "client", None), "host", None)
             session = get_security().login(username.value, password.value,
                                            client_id=peer)
         except AuthenticationError:
