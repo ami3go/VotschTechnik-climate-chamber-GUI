@@ -58,7 +58,13 @@ class AuditLedger:
                     os.fsync(output.fileno())
         if os.name != "nt" and self.key_path.stat().st_mode & 0o077:
             raise AuditIntegrityError("Audit key permissions unsafe")
-        self.key = self.key_path.read_bytes()
+        # An overlapping first-admin process may have won O_EXCL but not
+        # finished fsync. Permit bounded initialization, never a new key.
+        for _ in range(20):
+            self.key = self.key_path.read_bytes()
+            if len(self.key) == 32:
+                break
+            __import__("time").sleep(0.05)
         if len(self.key) != 32:
             raise AuditIntegrityError("Invalid audit key")
         db.execute("BEGIN IMMEDIATE")
