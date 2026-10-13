@@ -11,7 +11,7 @@ from pathlib import Path
 
 from nicegui import ui
 
-from chamber_web.security.auth import Role
+from chamber_web.security.auth import AuthenticationError, AuthorizationError, Role
 from chamber_web.security.guards import Permission
 from chamber_web.security.nicegui import (current_actor, require_authenticated_page,
                                           require_browser_permission)
@@ -202,8 +202,16 @@ def profiles_page() -> None:
             notice_error(exc)
 
     def meta(field: str, value: object) -> None:
-        require_edit()
         nonlocal draft
+        # NiceGUI emits on_change during server-side display synchronization;
+        # identical values are not mutation requests.
+        if value == getattr(draft.profile, field, object()):
+            return
+        try:
+            require_edit()
+        except (AuthenticationError, AuthorizationError):
+            # Permission denial is already durably audited by G08.
+            return
         try:
             draft = service.set_metadata(draft, field, value)
             status_label.set_text("UNSAVED CHANGES · Save to create an immutable revision")
