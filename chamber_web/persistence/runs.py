@@ -383,8 +383,11 @@ class RunStore:
         value = self._event(event)
         with self._write() as db:
             inserted = self._append(db, value)
-        if inserted and value["kind"] == "TERMINAL":
-            self._finalize(value["chamber_id"], value["run_id"])
+        if value["kind"] == "TERMINAL":
+            # Duplicate terminal delivery after ENOSPC must retry a committed
+            # FINALIZING journal, without altering immutable event evidence.
+            if inserted or self.get_run(value["chamber_id"], value["run_id"])["lifecycle"] == "FINALIZING":
+                self._finalize(value["chamber_id"], value["run_id"])
 
     def emit_batch(self, events: Iterable[Any]) -> int:
         """Bounded bulk test/import API; G06 uses synchronous emit() for intents.
