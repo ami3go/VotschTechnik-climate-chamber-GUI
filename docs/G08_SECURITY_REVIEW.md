@@ -58,3 +58,11 @@ and has been reconciled against main for CI. Do not merge until a reviewed
 final diff, clean final-source CI and all code-level BLOCKER/HIGH fixes are
 independently verified. Final operational LAN/physical release is independently
 NO-GO even after software CI.
+
+## 2026-10-13 final-head re-review checkpoint
+
+- Head before CI correction: `e8b54c0f3d0f1b8cfd132750615bbd8852cedb61`. On GitHub Actions run [38452378497](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38452378497), the Python 3.10 job failed and Python 3.12 job ended cancelled; **both** job logs show two failed G03-C NiceGUI UI tests at `User.open('/profiles')` or `User.open('/login')` with HTTP 403. The previous security tests and profile service tests passed.
+- Root cause: G08 full Host validation permits loopback `127.0.0.1:8080` / `localhost:8080`, whereas NiceGUI's in-process `User` fixture defaults to the `testserver` authority. The middleware correctly rejects that untrusted hostname. Tests now configure the fixture's HTTP client to use the loopback authority rather than weakening Host validation. A negative ASGI test explicitly requires `testserver` to remain rejected in production middleware.
+- Corrective commits: `bac2bde65c7bc78260440426a944eaad44a05217`, `286ef01ba32c7396b0b04f1bf3b8995d5d018ffd`, `d8968d6dd07ec60aef69ac8937749fed4cb7f055`. Final-head CI must be rerun and **completed**; in-flight or older-head workflows are not passing evidence.
+- **Still OPEN HIGH:** audit tail-truncation not anchored outside SQLite; historical G08-min audit authenticity cannot be established retroactively; signed backup replay/rollback policy missing; Windows DACL/owner enforcement not implemented. These are material security issues, not documentation-only closure. Review independently before merge.
+- Independent human/security approval is still absent. `main` merge and LAN/physical deployment are NOT authorized.
