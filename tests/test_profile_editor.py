@@ -158,8 +158,14 @@ def test_duplicate_import_skips_new_profile_identity(editor):
     (LEGACY, "x.txt", 300),
     (b"X" * (2 * MAX_BYTES + 1), "x.zip", None),
     (b"step,enabled,target_temperature_c\n1,true,25\n", "bad.csv", None),
+], ids=[
+    "malformed-csv", "malformed-zip", "legacy-timeout-required",
+    "unrecognized-extension", "oversized-zip", "invalid-canonical-header",
 ])
-def test_invalid_imports_do_not_write(editor, payload, name, timeout):
+def test_invalid_imports_do_not_write(editor, payload, name, timeout, request):
+    # Regression: pytest must never expand megabyte-scale binary cases in
+    # test node IDs; Windows Actions logging became unresponsive on 2 MB lines.
+    assert len(request.node.nodeid) < 256
     with pytest.raises(ValueError):
         editor.import_file(payload, filename=name, legacy_reach_timeout_s=timeout)
     assert editor.profiles() == ()
