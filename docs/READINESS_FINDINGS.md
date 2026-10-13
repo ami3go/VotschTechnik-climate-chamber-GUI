@@ -13,7 +13,7 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 | H3 | HIGH | Zero-stability, gaps, deadline ambiguity | P00 virtual-clock semantics + G06-A PR #24 simulation-only tests; Windows Python 3.10/3.12 [run 38289290272](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38289290272) green | SOFTWARE VERIFIED IN SIMULATION; HIL/SITE OPEN |
 | H4 | HIGH | Loopback hardware authentication gate too late | G08-min [PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25) merged `61d8aefaadcdb6f5035b6683410bee0abf76e9d1`; [3.10/3.12 CI 38438666305](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38438666305) passed; dependent endpoints must integrate its guards before writes | AUTH CORE SOFTWARE VERIFIED; LIVE INTEGRATION/HIL OPEN |
 | H5 | HIGH | Previous finding IDs undefined | This ledger and sequence linkage, P00 PR #6 | CLOSED (documentation) |
-| H6 | HIGH | Legacy demo CSV migration ambiguous | GUI PR #8 `2ef81b6` adds strict parser and legacy-source-preserving ZIP; [GUI PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) adds transactional SQLite revisions with strict schema checks. G03-C UI/editor still pending | CORE + PROFILE STORAGE SOFTWARE VERIFIED; #15 validation remediation merged/CI green; EDITOR OPEN |
+| H6 | HIGH | Legacy demo CSV migration ambiguous | GUI PR #8 `2ef81b6` adds strict parser and legacy-source-preserving ZIP; [GUI PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) adds transactional SQLite revisions with strict schema checks. G03-C authenticated editor PR #26 merged `fee88ab7929b414e02ac11d81881450e8c9ac365` | CORE + AUTHENTICATED EDITOR SOFTWARE VERIFIED; final-head Windows 3.10/3.12 NiceGUI [38441138681](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38441138681) green; HIL/G07 OPEN |
 | H7 | HIGH | SQLite/filesystem crash gap | G07 journal/recovery/fault tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
 | H8 | HIGH | CI/dependency/driver pin insufficient | [GUI #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10) `ef473e1` pins direct dependencies and driver revision; [Windows CI green](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38261039285). Hash-locked transitive freeze, typing and offline VM gates pending | PARTIAL — release gate OPEN |
 | M1 | MEDIUM | One-device multi-vendor architecture unproven | GUI PRs #7/#9 G01, PR #14 single-device Dashboard and G04-A PR #19 fake/alternate/Vötsch-mock substitution with mock-only serialized backend controller | G01/G02-A/G04-A MOCK SOFTWARE MERGED; G02-B/HIL OPEN |
@@ -22,6 +22,8 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 **Definition of closure:** a merged PR and passing unit/static/integration checks alone close a code finding only to **software-verified** status. Safety-related findings require signed site documentation and physical HIL. Each future PR must update the row's status, exact merged commit/test run link, and owner/approver; never claim HIL from mocks. Hardware remains disabled in the current demo.
 
 ## Implemented PR audit trail
+
+- GUI [PR #26](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/26): G03-C persistent NiceGUI editor plus G08 permission guards and integrated G06 simulated execution regression merged `fee88ab7929b414e02ac11d81881450e8c9ac365` (head `e82aba60e30a330c20944d98f9f28040ef1c93d0`), Windows 3.10/3.12 [NiceGUI 38441138681](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38441138681), [G06 38441138685](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38441138685), and W01 [38441138664](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38441138664) all passed. Addressed cancelled Windows test IDs and deterministic ZIP timestamp flake [#22](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/22). External human approval and HIL not performed.
 
 - GUI [PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25): G08-min offline identity, server-side roles, session/CSRF/Origin controls and audited G04 facade merged `61d8aefaadcdb6f5035b6683410bee0abf76e9d1`, final head `8a4164b6098187e57f026718410bf2be7ae96bac`, Windows NiceGUI/security [38438666305](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38438666305) and Windows offline freeze [38438666518](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38438666518) pass. AI-assisted review; G03-C/G06 endpoint wiring, full G08, site signoff and hardware HIL remain OPEN.
 
@@ -80,20 +82,13 @@ work is **not** an approved G08 gate. Even after software verification, G04
 remains mock-only, the site STOP/limits/HIL approvals and complete G08 LAN
 security remain NO-GO.
 
-## G05 simulated manual control checkpoint (2026-10-13)
+## 2026-10-13 post-merge residual risk register
 
-G05 implementation candidate on `feat/g05-manual-chamber-control` is stacked over
-merged [G08-min PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25).
-See [G05 manual-control contract](G05_MANUAL_CONTROL_CONTRACT.md) for reviewed
-service boundaries, G04 ownership/fencing, G08 authorization, explicit ADMIN
-handover and STOP reconciliation, capability-driven NiceGUI controls and the
-mock-only test matrix. The G05 branch remains unmerged; Windows 3.10/3.12, NiceGUI
-browser/packaging checks and review remain acceptance gates. No simulator
-bounds, presets or state readbacks qualify physical VT4011 safety.
+- **BLOCKER (hardware/release)** B1–B4 are not physically certified. STOP remains an attempted/mock-only command; never infer stopped state on disconnect. No site-signed machine limits or physical/HIL approval.
+- **HIGH / pending for operational readiness:** H2 signed gradient baseline / HIL; H4 G08-min authority only for integrated simulated interfaces, not standalone physical G05/G07/G06 command surfaces; H7 G07 durable recording/crash recovery; H8 W02 air-gapped Windows dependency and supply-chain verification. Full G08 LAN account recovery/audit tamper controls are absent.
+- **SOFTWARE FIXED:** G03-C import/ZIP test identifiers previously overwhelmed Windows logs; [issue #22](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/22) canonical ZIP wall-clock timestamps removed with a regression. No physical chamber has been started or certified.
 
-**Unresolved NO-GO:** G08-min integration and security review; site-signed
-VT4011 model/serial/firmware and temperature/slope limits; pinned manufacturer
-driver capability checks; independently verified manufacturer/local hardware
-STOP and unsafe/fault responses; single-device controlled HIL; G06 interlock,
-G07 durable evidence, full G08 LAN hardening, W02 offline Windows approval and
-R01 formal release. G05 never enables physical chamber operations.
+
+### G05 PR #28 integration checkpoint (2026-10-13)
+
+G05 is a **mock-only software candidate**, pending integrated-head Windows CI, independent review and merge. G03-C profile editing is retained. No real device activation is authorized. Site-approved chamber identity/limits, physical STOP procedures and HIL, driver capability/readback qualification, G07 recording integration, G08-full, W02 offline release and final site certification remain **OPEN**.

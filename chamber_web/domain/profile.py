@@ -7,7 +7,7 @@ import io
 import json
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 CANONICAL = (
     "step", "enabled", "target_temperature_c", "ramp_up_c_per_min",
@@ -227,10 +227,20 @@ def export_profile_zip(profile: ParsedProfile) -> bytes:
         raise ValueError("Profile ZIP expansion exceeds input limit")
     out = io.BytesIO()
     with ZipFile(out, "w", compression=ZIP_DEFLATED) as archive:
-        archive.writestr("profile.csv", csv_data)
-        archive.writestr("profile.json", manifest_data)
+        # ZIP's string-name writestr overload inserts local wall-clock mtimes.
+        # This made identical exported revisions differ across even-second
+        # boundaries, intermittently failing Windows tests and audit checks.
+        # Fixed DOS epoch metadata makes each archive content-deterministic.
+        def add_entry(name: str, content: bytes) -> None:
+            entry = ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            entry.compress_type = ZIP_DEFLATED
+            entry.external_attr = 0o600 << 16
+            archive.writestr(entry, content)
+
+        add_entry("profile.csv", csv_data)
+        add_entry("profile.json", manifest_data)
         if profile.legacy_original is not None:
-            archive.writestr("legacy_import.csv", profile.legacy_original)
+            add_entry("legacy_import.csv", profile.legacy_original)
     data = out.getvalue()
     if len(data) > MAX_BYTES * 2:
         raise ValueError("Profile ZIP exceeds input limit")

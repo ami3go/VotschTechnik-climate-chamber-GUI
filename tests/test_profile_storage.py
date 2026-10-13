@@ -132,6 +132,31 @@ class ProfileStoreTests(unittest.TestCase):
         self.assertEqual(ProfileStore(self.db_path).get_revision(
             "alpha", saved.profile_id).profile.legacy_original, LEGACY)
 
+    def test_zip_exports_have_fixed_metadata_and_identical_bytes(self):
+        # Regression for issue #22: writestr(name, data) used local wall-clock
+        # timestamps so identical profiles exported around a 2-second tick
+        # produced different archive bytes on Windows 3.10/3.12.
+        first = export_profile_zip(self.profile)
+        self.assertEqual(first, export_profile_zip(self.profile))
+        with ZipFile(BytesIO(first)) as archive:
+            self.assertEqual(
+                {item.date_time for item in archive.infolist()},
+                {(1980, 1, 1, 0, 0, 0)},
+            )
+        legacy = self.store.import_profile(
+            "alpha", LEGACY, filename="old.csv",
+            legacy_reach_timeout_s=Decimal("600"),
+        )
+        legacy_profile = self.store.get_revision("alpha", legacy.profile_id).profile
+        legacy_data = export_profile_zip(legacy_profile)
+        self.assertEqual(legacy_data, export_profile_zip(legacy_profile))
+        with ZipFile(BytesIO(legacy_data)) as archive:
+            self.assertEqual(archive.read("legacy_import.csv"), LEGACY)
+            self.assertEqual(
+                {item.date_time for item in archive.infolist()},
+                {(1980, 1, 1, 0, 0, 0)},
+            )
+
     def test_zip_import_roundtrip(self):
         archive = export_profile_zip(self.profile)
         saved = self.store.import_profile("alpha", archive, filename="test.zip")
