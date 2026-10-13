@@ -127,6 +127,19 @@ class SecurityStore(AccountOperations):
         if __import__("os").name != "nt":
             self.directory.chmod(0o700)
         self.database = self.directory / "security.sqlite3"
+        # Create a new SQLite file private from its FIRST byte; chmod after
+        # schema initialization alone leaves a credential disclosure window.
+        if not self.database.exists():
+            try:
+                descriptor = __import__("os").open(
+                    self.database, __import__("os").O_CREAT |
+                    __import__("os").O_EXCL | __import__("os").O_WRONLY, 0o600)
+            except FileExistsError:
+                pass
+            else:
+                __import__("os").close(descriptor)
+        if self.database.is_symlink():
+            raise PermissionError("Security database cannot be a symlink")
         self.clock = clock
         self.idle_timeout_s = idle_timeout_s
         self.absolute_timeout_s = absolute_timeout_s
@@ -186,7 +199,12 @@ class SecurityStore(AccountOperations):
                     detail TEXT NOT NULL
                 );
             """)
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version not in (0, 1):
+                raise RuntimeError("Unsupported security schema; restore an approved backup")
             self._audit_ledger.initialize(db)
+            if version == 0:
+                db.execute("PRAGMA user_version=1")
         finally:
             db.close()
         if __import__("os").name != "nt":
