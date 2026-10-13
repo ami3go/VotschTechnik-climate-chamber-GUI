@@ -37,7 +37,11 @@ def live_app():
             admin.session, admin.csrf, "browser_viewer",
             "StrongViewerPassword#2", Role.VIEWER,
         )
-        env = os.environ.copy()
+        # pytest/nicegui.testing may set SCREEN_TEST without the paired port.
+        # A separately launched production-like server must not inherit that
+        # in-process test harness flag (NiceGUI ui.run would exit at startup).
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith("NICEGUI_SCREEN_TEST")}
         env.update({
             "CHAMBER_SECURITY_DIR": str(security_root),
             "CHAMBER_PORT": "8080",
