@@ -11,8 +11,9 @@ from pathlib import Path
 
 from nicegui import ui
 
+from chamber_web.security.auth import Role
 from chamber_web.security.guards import Permission
-from chamber_web.security.nicegui import (require_authenticated_page,
+from chamber_web.security.nicegui import (current_actor, require_authenticated_page,
                                           require_browser_permission)
 from chamber_web.domain.profile import MAX_BYTES
 from chamber_web.persistence.profiles import (
@@ -84,6 +85,7 @@ def profiles_page() -> None:
     if not require_authenticated_page():
         return
     service = get_profile_editor_service()
+    can_mutate = current_actor().role in (Role.ADMIN, Role.OPERATOR)
 
     def require_read() -> None:
         # Session, role, CSRF and revocation are rechecked at event dispatch.
@@ -118,18 +120,18 @@ def profiles_page() -> None:
         grid.options["rowData"] = _rows(draft)
         for col in columns:
             if col["field"] != "step":
-                col["editable"] = not draft.read_only
+                col["editable"] = not draft.read_only and can_mutate
         grid.update()
         name_input.value = draft.profile.name
         description_input.value = draft.profile.description
         repeat_input.value = draft.profile.repeat_count
         for widget in (name_input, description_input, repeat_input):
-            if draft.read_only:
+            if draft.read_only or not can_mutate:
                 widget.disable()
             else:
                 widget.enable()
         for button in mutation_buttons:
-            if draft.read_only:
+            if draft.read_only or not can_mutate:
                 button.disable()
             else:
                 button.enable()
@@ -365,9 +367,9 @@ def profiles_page() -> None:
                     "outlined dense").classes("flex-grow")
                 ui.button("Load", icon="folder_open", on_click=load_profile).props(
                     "outline no-caps")
-                ui.button("New", icon="add", on_click=new_profile).props(
+                new_button = ui.button("New", icon="add", on_click=new_profile).props(
                     "outline no-caps")
-                ui.button("Discard Edits", icon="undo", on_click=discard).props(
+                discard_button = ui.button("Discard Edits", icon="undo", on_click=discard).props(
                     "outline no-caps")
             with ui.row().classes("items-center gap-2"):
                 ui.button("Previous 100", on_click=lambda: paginate(-1)).props(
@@ -381,7 +383,7 @@ def profiles_page() -> None:
                 with ui.row().classes("gap-2"):
                     save_button = ui.button("Save Revision", icon="save",
                                             on_click=save).props("no-caps")
-                    ui.button("Duplicate Profile", icon="content_copy",
+                    duplicate_button = ui.button("Duplicate Profile", icon="content_copy",
                               on_click=duplicate).props("outline no-caps")
             status_label = ui.label("").classes("text-xs text-grey-7")
             conflict_label = ui.label("").classes("text-sm text-negative")
@@ -437,7 +439,7 @@ def profiles_page() -> None:
         with ui.column().classes("panel gap-2"):
             ui.label("Import / Export").classes("panel-heading")
             with ui.row().classes("gap-2 flex-wrap"):
-                ui.button("Import CSV / ZIP", icon="upload",
+                import_button = ui.button("Import CSV / ZIP", icon="upload",
                           on_click=import_dialog.open).props("outline no-caps")
                 ui.button("Download ZIP (lossless)", icon="archive",
                           on_click=lambda: export_file("zip")).props("outline no-caps")
@@ -450,5 +452,8 @@ def profiles_page() -> None:
                      "Spreadsheet-safe CSV escapes formula-like notes and is not "
                      "byte-identical to machine CSV. ZIP is archival.").classes(
                          "text-xs text-grey-7")
+    if not can_mutate:
+        for button in (new_button, discard_button, duplicate_button, import_button):
+            button.disable()
     refresh_library()
     populate()
