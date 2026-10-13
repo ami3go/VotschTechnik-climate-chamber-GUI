@@ -57,7 +57,7 @@ def live_app():
         logfile = Path(temp) / "server.log"
         with logfile.open("w+", encoding="utf-8") as log:
             proc = subprocess.Popen(
-                [sys.executable, "-m", "chamber_web.main"],
+                [sys.executable, "-m", "main"],  # canonical project launcher
                 cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
             )
             try:
