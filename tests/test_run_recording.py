@@ -7,6 +7,7 @@ G07_STRESS=1, including on the dedicated Windows CI job.
 from __future__ import annotations
 
 import errno
+import io
 import json
 import os
 import sqlite3
@@ -17,6 +18,7 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
+from zipfile import ZipFile
 
 from chamber_web.domain.chamber import ChamberSafetyError
 from chamber_web.persistence.runs import RunIntegrityError, RunNotFoundError, RunRecorder, RunStore
@@ -159,7 +161,13 @@ class RecorderTests(unittest.TestCase):
         self.assertEqual(self.store.plot_samples(self.chamber, self.run)[0]["intended_setpoint_c"], 25.0)
         text = self.store.read_csv(self.chamber, self.run, name="events.csv").decode()
         self.assertIn("'=HYPERLINK", text)
-        self.assertTrue(self.store.read_zip(self.chamber, self.run).startswith(b"PK"))
+        archive_bytes = self.store.read_zip(self.chamber, self.run)
+        self.assertTrue(archive_bytes.startswith(b"PK"))
+        with ZipFile(io.BytesIO(archive_bytes)) as archive:
+            self.assertEqual(set(archive.namelist()),
+                             {"manifest.json", "snapshot.json", "events.csv", "samples.csv"})
+            frozen = json.loads(archive.read("snapshot.json"))
+            self.assertEqual(frozen["controller_generation"], 11)
         self.assertEqual(len(self.store.list_events(self.chamber, self.run, limit=5)), 5)
         self.assertEqual(self.store.list_runs(self.chamber)[0]["run_id"], self.run)
 
@@ -271,6 +279,15 @@ class RecorderTests(unittest.TestCase):
         with self.assertRaises(RunIntegrityError):
             self.store.verify_artifacts(self.chamber, self.run)
         (directory / "manifest.json").write_text("{bad json", encoding="utf-8")
+        with self.assertRaises(RunIntegrityError):
+            self.store.verify_artifacts(self.chamber, self.run)
+
+    def test_corrupt_snapshot_export_detected(self):
+        self.start()
+        self.terminal(5)
+        path = (Path(self.temp.name) / "data" / "chambers" /
+                self.chamber / "runs" / self.run / "snapshot.json")
+        path.write_text('{"altered": true}', encoding="utf-8")
         with self.assertRaises(RunIntegrityError):
             self.store.verify_artifacts(self.chamber, self.run)
 
