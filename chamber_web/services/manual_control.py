@@ -246,7 +246,6 @@ class ManualControlService:
                     raise ChamberSafetyError("STOP not confirmed by fresh readback")
             elif action == "claim":
                 sample, _ = self._fresh(chamber_id)
-                command_may_have_dispatched = True
                 self._authorized.execute(session, csrf, chamber_id, "claim_operator")
             elif action == "release":
                 command_may_have_dispatched = True
