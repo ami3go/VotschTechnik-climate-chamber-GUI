@@ -204,8 +204,8 @@ class SecurityStore(AccountOperations):
         # Avoid persisting bearer tokens and passwords accidentally supplied
         # by an integration caller as free-form diagnostic details.
         redacted = re.sub(
-            r"(?i)(password|token|csrf|secret|authorization)\\s*[:=]\\s*[^\\s,;]+",
-            r"\\1=[REDACTED]", str(detail),
+            r"(?i)(password|token|csrf|secret|authorization)\s*[:=]\s*[^\s,;]+",
+            r"\1=[REDACTED]", str(detail),
         )
         cursor = db.execute(
             "INSERT INTO audit(at_utc,user_id,username,role,action,outcome,chamber_id,detail)"
