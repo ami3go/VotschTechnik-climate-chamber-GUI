@@ -32,6 +32,7 @@ async def test_manual_dashboard_two_browsers_and_authorized_stop(
     first.find("Sign in").click()
     await first.should_see("SIMULATION ONLY")
     await first.should_see("Claim")
+    await first.should_see("Controller: VERIFIED_STOPPED")
     await first.should_see("Web STOP is a best-effort control command")
 
     first.find("Claim").click()
