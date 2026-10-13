@@ -537,6 +537,12 @@ class RunStore:
                 for row in db.execute("SELECT " + ",".join(columns) +
                                       " FROM events WHERE run_id=? ORDER BY sequence", (run_id,)):
                     yield tuple(row)
+            snapshot_sha = self._atomic_file(
+                path / "snapshot.json",
+                lambda stream: stream.write(run["snapshot_json"].encode("utf-8")),
+            )
+            if snapshot_sha != run["snapshot_sha256"]:
+                raise RunIntegrityError("Exported immutable snapshot digest mismatch")
             ev_sha = self._atomic_file(path / "events.csv", lambda f: self._csv(f, columns, event_rows()))
             sample_cols = ("sample_index", "sequence", "observed_at_utc",
                            "source_sampled_at_utc", "elapsed_s", "step_index",
@@ -556,7 +562,7 @@ class RunStore:
                 "terminal_state": run["terminal_state"], "event_count": run["event_count"],
                 "sample_count": run["sample_count"], "controller_generation":
                 json.loads(run["snapshot_json"])["controller_generation"],
-                "artifacts": {"events.csv": ev_sha, "samples.csv": sample_sha},
+                "artifacts": {"snapshot.json": snapshot_sha, "events.csv": ev_sha, "samples.csv": sample_sha},
             }
             manifest_bytes = (_json(manifest) + "\n").encode("utf-8")
             manifest_sha = self._atomic_file(
@@ -592,7 +598,8 @@ class RunStore:
             manifest["event_count"] != run["event_count"] or
             manifest["sample_count"] != run["sample_count"] or
             manifest["controller_generation"] != json.loads(run["snapshot_json"])["controller_generation"] or
-            set(manifest["artifacts"]) != {"events.csv", "samples.csv"}):
+            set(manifest["artifacts"]) != {"snapshot.json", "events.csv", "samples.csv"} or
+            manifest["artifacts"].get("snapshot.json") != run["snapshot_sha256"]):
             raise RunIntegrityError("Manifest journal mismatch")
         for name, expected in manifest["artifacts"].items():
             artifact = path / name
@@ -616,7 +623,7 @@ class RunStore:
         _positive_limit(max_bytes, 128 * 1024 * 1024)
         self.verify_artifacts(chamber_id, run_id)
         path = self._directory(chamber_id, run_id)
-        names = ("manifest.json", "events.csv", "samples.csv")
+        names = ("manifest.json", "snapshot.json", "events.csv", "samples.csv")
         if sum((path / name).stat().st_size for name in names) > max_bytes:
             raise ValueError("Evidence exceeds bounded ZIP size")
         output = io.BytesIO()
