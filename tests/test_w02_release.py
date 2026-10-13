@@ -73,6 +73,10 @@ class W02ReleaseTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 release.validate_entries({name: "a" * 64})
 
+    def test_case_insensitive_collision_rejected(self):
+        with self.assertRaisesRegex(ValueError, "collision"):
+            release.validate_entries({"ONE.dll": "a" * 64, "one.DLL": "b" * 64})
+
     def test_downgrade_refused_before_backup(self):
         new = self.bundle.parent / "candidate"
         import shutil
