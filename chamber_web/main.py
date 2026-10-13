@@ -246,6 +246,14 @@ def dashboard() -> None:
             ui.notify(result.message, color="warning")
         refresh_manual()
 
+    async def confirm_handover() -> None:
+        takeover_dialog.close()
+        await execute_manual("handover")
+
+    async def confirm_reconciliation() -> None:
+        reconcile_dialog.close()
+        await execute_manual("reconcile")
+
     def use_suggestion() -> None:
         # Cosmetic text-field helper: never dispatch a preset automatically.
         if preset_select.value is not None:
@@ -268,7 +276,9 @@ def dashboard() -> None:
             f"Owner: {data.owner or 'unclaimed'} · "
             f"{'you hold control' if data.owned_by_actor else 'read only'}")
         control_health_label.set_text(
-            f"Controller: {data.controller_state} · generation {data.controller_generation} · "
+            f"Controller: {data.controller_state} · "
+            f"{'connected' if data.connected else 'disconnected'} · "
+            f"generation {data.controller_generation} · "
             f"{'STOP/reconciliation required' if data.stop_latched else 'fence clear'}")
         for button, available in (
             (start_button, data.can_start),
@@ -362,6 +372,27 @@ def dashboard() -> None:
                                     ui.button("Fill target", icon="edit",
                                               on_click=use_suggestion).props("outline no-caps")
                                 ui.separator()
+                                with ui.dialog() as takeover_dialog:
+                                    with ui.card():
+                                        ui.label("Transfer operator ownership to this administrator?").classes(
+                                            "font-bold")
+                                        ui.label("This fences queued commands from the prior operator. "
+                                                 "It does not STOP the chamber or make it safe.")
+                                        with ui.row():
+                                            ui.button("Cancel", on_click=takeover_dialog.close)
+                                            ui.button("Confirm takeover",
+                                                      on_click=confirm_handover).props(
+                                                          "color=deep-orange")
+                                with ui.dialog() as reconcile_dialog:
+                                    with ui.card():
+                                        ui.label("Confirm STOP reconciliation").classes("font-bold")
+                                        ui.label("Only reconcile after independently checking the "
+                                                 "simulated device is stopped. This is not hardware certification.")
+                                        with ui.row():
+                                            ui.button("Cancel", on_click=reconcile_dialog.close)
+                                            ui.button("Confirm reconcile",
+                                                      on_click=confirm_reconciliation).props(
+                                                          "color=deep-orange")
                                 with ui.row().classes("items-center gap-2 flex-wrap"):
                                     claim_button = ui.button(
                                         "Claim", icon="lock",
@@ -373,11 +404,11 @@ def dashboard() -> None:
                                             "outline no-caps disable")
                                     handover_button = ui.button(
                                         "Admin takeover", icon="swap_horiz",
-                                        on_click=lambda: execute_manual("handover")).props(
+                                        on_click=takeover_dialog.open).props(
                                             "outline no-caps disable")
                                     reconcile_button = ui.button(
                                         "Admin reconcile STOP", icon="verified_user",
-                                        on_click=lambda: execute_manual("reconcile")).props(
+                                        on_click=reconcile_dialog.open).props(
                                             "outline no-caps disable")
                                 lease_label = ui.label("Operator lease: unverified").classes("text-xs")
                                 control_health_label = ui.label("Controller: UNKNOWN").classes("text-xs")
