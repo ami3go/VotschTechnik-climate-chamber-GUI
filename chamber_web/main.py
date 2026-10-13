@@ -235,10 +235,18 @@ def dashboard() -> None:
                 _manual_service.command, session, csrf, service.chamber_id,
                 action, **kw)
         except Exception as exc:
-            # G08 security checks also run at mutation time inside G05; a
-            # revoked, expired or viewer session cannot dispatch via the UI.
-            outcome_label.set_text("REJECTED — authentication or authorization failed")
-            ui.notify("Control denied: " + type(exc).__name__, color="negative")
+            # Mutation-time G08 checks deny forged/revoked sessions. Other
+            # unexpected service failures must NOT be classified as verified
+            # rejections or successful physical/device outcomes.
+            from .security.auth import AuthenticationError, AuthorizationError
+            denied = isinstance(exc, (AuthenticationError, AuthorizationError))
+            state = "REJECTED" if denied else "UNKNOWN"
+            outcome_label.set_text(
+                f"{state} — {'permission denied' if denied else 'server result unverified'} "
+                f"({type(exc).__name__})")
+            ui.notify(
+                "Control denied" if denied else "Control effect unverified",
+                color="negative")
             return
         outcome_label.set_text(
             f"{result.state.value} · {result.action} · {result.message}")
