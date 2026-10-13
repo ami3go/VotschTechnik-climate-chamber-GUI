@@ -487,11 +487,20 @@ def dashboard() -> None:
 
 
 def run() -> None:
-    # Fail safe: localhost-only until authentication / network controls exist.
-    ui.run(title="Climate Chamber — server simulation", host="127.0.0.1",
-           port=8080, reload=False, show=False,
-           storage_secret=cookie_secret(),
-           session_middleware_kwargs={"same_site": "strict", "max_age": 28800})
+    # TLS, peer ACL and exact Origin are mandatory for explicit LAN mode.
+    # Physical Vötsch communication remains disabled in either mode.
+    from .security.nicegui import deployment_policy
+    options = {}
+    if deployment_policy.is_lan:
+        options = {"ssl_certfile": str(deployment_policy.certfile),
+                   "ssl_keyfile": str(deployment_policy.keyfile)}
+    ui.run(title="Climate Chamber — server simulation",
+           host=deployment_policy.bind_host, port=deployment_policy.port,
+           reload=False, show=False, storage_secret=cookie_secret(),
+           session_middleware_kwargs={
+               "same_site": "strict", "max_age": 28800,
+               "https_only": deployment_policy.is_lan,
+           }, **options)
 
 
 if __name__ == "__main__":
