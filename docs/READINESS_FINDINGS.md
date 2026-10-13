@@ -75,3 +75,22 @@ Until the security CI, review and package/browser evidence is confirmed, this
 work is **not** an approved G08 gate. Even after software verification, G04
 remains mock-only, the site STOP/limits/HIL approvals and complete G08 LAN
 security remain NO-GO.
+
+
+## G05 simulated manual control checkpoint (2026-10-13)
+
+G05 implementation candidate on `feat/g05-manual-chamber-control` is stacked over
+unmerged [G08-min PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25).
+See [G05 manual-control contract](G05_MANUAL_CONTROL_CONTRACT.md) for reviewed
+service boundaries, G04 ownership/fencing, G08 authorization, explicit ADMIN
+handover and STOP reconciliation, capability-driven NiceGUI controls and the
+mock-only test matrix. The branch is not merged; Windows 3.10/3.12, NiceGUI
+browser/packaging checks and review remain acceptance gates. No simulator
+bounds, presets or state readbacks qualify physical VT4011 safety.
+
+**Unresolved NO-GO:** G08-min integration and security review; site-signed
+VT4011 model/serial/firmware and temperature/slope limits; pinned manufacturer
+driver capability checks; independently verified manufacturer/local hardware
+STOP and unsafe/fault responses; single-device controlled HIL; G06 interlock,
+G07 durable evidence, full G08 LAN hardening, W02 offline Windows approval and
+R01 formal release. G05 never enables physical chamber operations.
