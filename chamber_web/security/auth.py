@@ -212,6 +212,33 @@ class SecurityStore(AccountOperations):
         if __import__("os").name != "nt":
             self.database.chmod(0o600)
 
+    @classmethod
+    def from_environment(cls, directory: Path | None = None) -> "SecurityStore":
+        """Single validated offline policy for interactive CLI and NiceGUI.
+
+        Never apply arbitrary browser-supplied security-policy values.
+        Invalid values are startup errors, not silently ignored defaults.
+        """
+        import os
+
+        def number(name: str, default: int) -> int:
+            raw = os.environ.get(name, str(default))
+            try:
+                return int(raw)
+            except ValueError as exc:
+                raise ValueError("Invalid security configuration: " + name) from exc
+
+        return cls(
+            directory,
+            idle_timeout_s=number("CHAMBER_SESSION_IDLE_SECONDS", 1800),
+            absolute_timeout_s=number("CHAMBER_SESSION_ABSOLUTE_SECONDS", 28800),
+            password_min_bytes=number("CHAMBER_PASSWORD_MIN_BYTES", 12),
+            lockout_attempts=number("CHAMBER_LOGIN_LOCKOUT_ATTEMPTS", 5),
+            lockout_seconds=number("CHAMBER_LOGIN_LOCKOUT_SECONDS", 900),
+            client_attempts=number("CHAMBER_LOGIN_PEER_ATTEMPTS", 30),
+            audit_max_rows=number("CHAMBER_AUDIT_MAX_ROWS", 10000),
+        )
+
     def _db(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.database, timeout=10, isolation_level=None)
         db.execute("PRAGMA busy_timeout=10000")
