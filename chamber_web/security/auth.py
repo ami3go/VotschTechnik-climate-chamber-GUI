@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Callable
 
 from .account_ops import AccountOperations
+from .audit_integrity import AuditLedger
 
 
 class AuthenticationError(Exception):
@@ -111,7 +112,8 @@ class SecurityStore(AccountOperations):
                  password_min_bytes: int = 12,
                  lockout_attempts: int = 5,
                  lockout_seconds: int = 900,
-                 client_attempts: int = 30):
+                 client_attempts: int = 30,
+                 audit_max_rows: int = 10000):
         if idle_timeout_s <= 0 or absolute_timeout_s <= 0:
             raise ValueError("Session lifetimes must be positive")
         if not 12 <= password_min_bytes <= 128:
@@ -132,6 +134,7 @@ class SecurityStore(AccountOperations):
         self.lockout_attempts = lockout_attempts
         self.lockout_seconds = lockout_seconds
         self.client_attempts = client_attempts
+        self._audit_ledger = AuditLedger(self.directory, max_rows=audit_max_rows)
         self._lock = threading.RLock()
         db = self._db()
         try:
@@ -183,6 +186,7 @@ class SecurityStore(AccountOperations):
                     detail TEXT NOT NULL
                 );
             """)
+            self._audit_ledger.initialize(db)
         finally:
             db.close()
         if __import__("os").name != "nt":
@@ -197,13 +201,20 @@ class SecurityStore(AccountOperations):
 
     def _audit(self, db: sqlite3.Connection, actor: Actor | None, action: str,
                outcome: str, chamber_id: str | None = None, detail: str = "") -> None:
-        db.execute(
+        # Avoid persisting bearer tokens and passwords accidentally supplied
+        # by an integration caller as free-form diagnostic details.
+        redacted = re.sub(
+            r"(?i)(password|token|csrf|secret|authorization)\\s*[:=]\\s*[^\\s,;]+",
+            r"\\1=[REDACTED]", str(detail),
+        )
+        cursor = db.execute(
             "INSERT INTO audit(at_utc,user_id,username,role,action,outcome,chamber_id,detail)"
             " VALUES(?,?,?,?,?,?,?,?)",
             (self.clock(), actor.user_id if actor else None,
              actor.username if actor else None, actor.role.value if actor else None,
-             action[:80], outcome[:40], chamber_id, detail[:300]),
+             action[:80], outcome[:40], chamber_id, redacted[:300]),
         )
+        self._audit_ledger.append(db, cursor.lastrowid)
 
     def audit(self, actor: Actor | None, action: str, outcome: str,
               chamber_id: str | None = None, detail: str = "") -> None:
@@ -500,6 +511,20 @@ class SecurityStore(AccountOperations):
             if isinstance(exc, AuthorizationError):
                 self.audit(admin, "user.admin", "DENIED",
                            detail="stale or unauthorized administrator")
+            raise
+        finally:
+            db.close()
+
+    def verify_audit_integrity(self) -> int:
+        """Verify local HMAC chain; fail closed on missing or modified rows."""
+        db = self._db()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            result = self._audit_ledger.verify(db)
+            db.commit()
+            return result
+        except BaseException:
+            db.rollback()
             raise
         finally:
             db.close()
