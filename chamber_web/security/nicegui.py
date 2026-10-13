@@ -14,6 +14,7 @@ from nicegui import app, ui
 
 from .auth import AuthenticationError, SecurityStore
 from .http import OriginMiddleware
+from .deployment import DeploymentPolicy
 from .paths import security_directory
 
 
@@ -53,18 +54,10 @@ def cookie_secret() -> str:
     return secret
 
 
-def _configured_origins() -> frozenset[str]:
-    raw = os.environ.get("CHAMBER_ALLOWED_ORIGINS")
-    if raw:
-        return frozenset(item.strip() for item in raw.split(",") if item.strip())
-    # Bound to actual loopback only. Override explicitly if using a tested
-    # reverse proxy or different port. LAN is NOT certified by G08-min.
-    port = int(os.environ.get("CHAMBER_PORT", "8080"))
-    return frozenset({f"http://127.0.0.1:{port}", f"http://localhost:{port}"})
-
-
-# Registered before app startup. Existing G02 dashboard has no hardware writes.
-app.add_middleware(OriginMiddleware, allowed_origins=_configured_origins())
+# Reject ambiguous or accidental LAN exposure as soon as app initializes.
+deployment_policy = DeploymentPolicy.from_env()
+app.add_middleware(OriginMiddleware, allowed_origins=deployment_policy.allowed_origins,
+                   deployment=deployment_policy)
 
 
 def active_tokens():
@@ -102,11 +95,16 @@ def login_page() -> None:
 
     def sign_in():
         try:
-            session = get_security().login(username.value, password.value)
+            peer = getattr(getattr(ui.context.client.request, "client", None),
+                           "host", None)
+            session = get_security().login(username.value, password.value,
+                                           client_id=peer)
         except AuthenticationError:
             password.value = ""
             ui.notify("Invalid credentials or account temporarily locked", color="negative")
             return
+        # New server-side credential is generated on every successful login.
+        app.storage.user.clear()
         app.storage.user["session"] = session.session
         app.storage.user["csrf"] = session.csrf
         password.value = ""
