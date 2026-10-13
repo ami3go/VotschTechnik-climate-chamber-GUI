@@ -228,6 +228,22 @@ class RecorderTests(unittest.TestCase):
         self.assertEqual(recovered.reconcile_startup()[0][2], "ABORTED")
         self.assertEqual(recovered.get_run(self.chamber, self.run)["lifecycle"], "ABORTED")
 
+    def test_idempotent_terminal_retries_failed_finalization(self):
+        self.start()
+        self.sink.emit(self.evt(5, "STOP_INTENT", state="STOP_REQUESTED"))
+        terminal = self.evt(6, "TERMINAL", state="COMPLETED")
+        with patch.object(RunStore, "_atomic_file",
+                          side_effect=OSError(errno.ENOSPC, "disk full")):
+            with self.assertRaises(OSError):
+                self.sink.emit(terminal)
+        self.assertEqual(self.store.get_run(self.chamber, self.run)["lifecycle"],
+                         "FINALIZING")
+        self.sink.emit(terminal)  # Replay must not append or rewrite evidence.
+        row = self.store.get_run(self.chamber, self.run)
+        self.assertEqual(row["lifecycle"], "COMPLETED")
+        self.assertEqual(row["event_count"], 6)
+        self.store.verify_artifacts(self.chamber, self.run)
+
     def test_interrupted_sql_transaction_rolls_back(self):
         self.sink.emit(self.evt(1, "PREPARED"))
         original = RunStore._append
