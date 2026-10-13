@@ -162,7 +162,10 @@ def stage_security_restore(source_dir: Path, backup: Path, target_dir: Path) -> 
             source.backup(dest)
             # Sessions from backup must NOT be resurrected as authenticated.
             dest.execute("UPDATE sessions SET revoked=1")
-            dest.execute("DELETE FROM recovery_tokens")
+            tables = {row[0] for row in dest.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            if "recovery_tokens" in tables:
+                dest.execute("DELETE FROM recovery_tokens")
             dest.commit()
         _integrity(temporary)
         if os.name != "nt":
