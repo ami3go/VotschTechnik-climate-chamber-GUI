@@ -77,6 +77,42 @@ class HardenedIdentityTests(unittest.TestCase):
         self.store.recover_admin_offline(token2, "admin_1",
                                          "AnotherLongStrongPassword#2")
 
+    def test_session_fixation_replay_and_csrf_token_separation(self):
+        """Storage-level fixation boundary; browser cookie rotation is a W02 gate."""
+        attacker_chosen = "A" * 44
+        with self.assertRaises(AuthenticationError):
+            self.store.authenticate(attacker_chosen)
+        second = self.store.login("admin_1", "VeryLongStrongPassword#123")
+        self.assertNotEqual(second.session, self.tokens.session)
+        self.assertNotEqual(second.csrf, self.tokens.csrf)
+        with self.assertRaises(AuthorizationError):
+            self.store.authenticate(second.session, csrf=self.tokens.csrf,
+                                    mutation=True)
+        self.store.logout(second.session)
+        with self.assertRaises(AuthenticationError):
+            self.store.authenticate(second.session, csrf=second.csrf,
+                                    mutation=True)
+        self.assertEqual(self.store.authenticate(
+            self.tokens.session, csrf=self.tokens.csrf, mutation=True).role,
+            Role.ADMIN)
+
+    def test_invalid_migration_version_fails_closed(self):
+        with closing(sqlite3.connect(self.store.database)) as db:
+            db.execute("PRAGMA user_version = 9999")
+            db.commit()
+        with self.assertRaises(RuntimeError):
+            SecurityStore(self.store.directory, clock=lambda: self.time[0])
+
+    def test_invalid_environment_policy_fails_closed(self):
+        from unittest.mock import patch
+        with patch.dict("os.environ", {"CHAMBER_PASSWORD_MIN_BYTES": "4",
+                                      "CHAMBER_AUDIT_MAX_ROWS": "0"}):
+            with self.assertRaises(ValueError):
+                SecurityStore.from_environment(self.root / "bad-config")
+        with patch.dict("os.environ", {"CHAMBER_LOGIN_PEER_ATTEMPTS": "nan"}):
+            with self.assertRaises(ValueError):
+                SecurityStore.from_environment(self.root / "bad-config-2")
+
     def test_password_change_revokes_all_concurrent_sessions(self):
         other = self.store.login("admin_1", "VeryLongStrongPassword#123")
         with self.assertRaises(AuthenticationError):
