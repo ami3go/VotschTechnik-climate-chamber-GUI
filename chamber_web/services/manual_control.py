@@ -82,6 +82,7 @@ class ManualControlService:
         self._max_age = max_sample_age_s
         self._lock = threading.Lock()
         self._serial = 0
+        self._pending_stop_serial: int | None = None
         self._last: CommandOutcome | None = None
 
     def _check_id(self, chamber_id: str) -> None:
@@ -172,13 +173,22 @@ class ManualControlService:
         return status, caps
 
     def _begin(self, action: str) -> int:
+        generation = self._manager.health(self.chamber_id).generation
         with self._lock:
             self._serial += 1
             serial = self._serial
-            state = ManualState.STOP_REQUESTED if action == "stop" else ManualState.PENDING
-            self._last = CommandOutcome(
-                action, state, "Awaiting verified device response",
-                self._manager.health(self.chamber_id).generation, datetime.now(timezone.utc))
+            if action == "stop":
+                self._pending_stop_serial = serial
+                self._last = CommandOutcome(
+                    action, ManualState.STOP_REQUESTED,
+                    "Awaiting verified device response",
+                    generation, datetime.now(timezone.utc))
+            elif self._pending_stop_serial is None:
+                # A later rejected attempt must not hide an in-flight STOP.
+                self._last = CommandOutcome(
+                    action, ManualState.PENDING,
+                    "Awaiting verified device response",
+                    generation, datetime.now(timezone.utc))
             return serial
 
     def _finish(self, serial: int, action: str, state: ManualState,
@@ -187,13 +197,17 @@ class ManualControlService:
                                 self._manager.health(self.chamber_id).generation,
                                 datetime.now(timezone.utc))
         with self._lock:
-            # An older setpoint/START may finish after a high-priority STOP.
-            # It must never overwrite the newer STOP outcome.
-            if serial == self._serial:
+            # STOP stays visible until the newest STOP has actually concluded,
+            # even if another denied START/setpoint was attempted meanwhile.
+            if action == "stop" and serial == self._pending_stop_serial:
+                self._pending_stop_serial = None
                 self._last = result
-            elif state is ManualState.CONFIRMED:
-                # A completed older callback cannot claim success after a newer
-                # STOP or ownership-changing request has begun.
+                return result
+            if self._pending_stop_serial is None and serial == self._serial:
+                self._last = result
+                return result
+            if state is ManualState.CONFIRMED:
+                # A superseded callback may never announce success to its page.
                 return CommandOutcome(
                     action, ManualState.UNKNOWN,
                     "Superseded by a newer command; result is not authoritative",
