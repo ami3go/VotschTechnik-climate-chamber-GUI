@@ -246,6 +246,7 @@ class ManualControlService:
                 self._authorized.execute(session, csrf, chamber_id, "reconcile_stop")
             else:
                 sample, caps = self._fresh(chamber_id)
+                admitted_generation = self._manager.health(chamber_id).generation
                 if action == "start":
                     if not (caps.supports_start_stop and caps.supports_running_readback and
                             caps.supports_setpoint_readback):
@@ -264,6 +265,12 @@ class ManualControlService:
                     self._authorized.execute_owned(
                         session, csrf, chamber_id, "set_temperature", target)
                 self._fresh(chamber_id)  # independent second authoritative readback
+                completion = self._manager.health(chamber_id)
+                if (completion.generation != admitted_generation or
+                        completion.stop_latched or completion.state not in (
+                            "VERIFIED_STOPPED", "RUNNING")):
+                    raise ChamberSafetyError(
+                        "Command superseded by a newer STOP/FAULT generation")
             return self._finish(serial, action, ManualState.CONFIRMED,
                                 "Confirmed by simulated authoritative device readback"
                                 if action in ("start", "set_temperature", "stop", "reconcile")
