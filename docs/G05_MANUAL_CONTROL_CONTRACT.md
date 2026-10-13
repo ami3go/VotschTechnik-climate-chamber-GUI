@@ -1,6 +1,6 @@
 # G05 — manual chamber control (simulated-only)
 
-Status: **implementation candidate, dependent on G08-min PR #25; PR/CI/review pending**.
+Status: **G08-min PR #25 merged; G05 simulated software candidate, final-head CI and review gating merge**.
 This document is a server-side interface contract, **not a VT4011
 qualification or physical-use authorization**. References:
 [architecture](CHAMBER_ABSTRACTION_CONTRACT.md),
@@ -101,8 +101,8 @@ must explicitly apply any target. No signed site-approved limits exist.
 
 ## Hard NO-GO gates for physical VT4011
 
-1. G08-min PR #25 reviewed, Windows CI green, merged and G05 rebased/retargeted
-   onto main without duplicated auth code; subsequent full G08 protection for
+1. G08-min PR #25 merged and G05 PR #28 retargeted to main without duplicated
+   auth code; the final G05 software CI/review is still a merge gate. Subsequent full G08 protection for
    any LAN/general-use control, including TLS, OS ACL, audit recovery/retention,
    backup, revoke/connection handling and security assessment.
 2. Exact equipment model/serial/firmware verified and signed at the site;

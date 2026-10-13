@@ -1,6 +1,6 @@
 # G08-min — offline authentication and authorization (mock-only)
 
-Status: **G08-min implementation candidate / security CI and review required**.
+Status: **G08-min simulation-only software merged via PR #25** (`61d8aefaadcdb6f5035b6683410bee0abf76e9d1`; exact-head Windows NiceGUI/security run [38438666305](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38438666305), W01 [38438666518](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38438666518)); full G08 and live physical certification remain OPEN.
 No hardware I/O release is authorized by this document. References:
 [P00](P00_DECISION_CONTRACTS.md), [G04-A](G04_A_CONTROLLER_CONTRACT.md),
 [abstraction contract](CHAMBER_ABSTRACTION_CONTRACT.md) and
