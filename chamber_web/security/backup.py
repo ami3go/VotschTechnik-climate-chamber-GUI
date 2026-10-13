@@ -167,6 +167,19 @@ def stage_security_restore(source_dir: Path, backup: Path, target_dir: Path) -> 
         _integrity(temporary)
         if os.name != "nt":
             temporary.chmod(0o600)
+        # The audit verification key must survive a restore; it is escrowed
+        # independently of the database backup and NEVER embedded in the ZIP.
+        source_key = Path(source_dir) / "audit_hmac_key"
+        target_key = target_dir / "audit_hmac_key"
+        if (not source_key.is_file() or source_key.is_symlink()
+                or len(source_key.read_bytes()) != 32
+                or target_key.exists()):
+            raise BackupError("Audit verification key unavailable for restore")
+        fd = os.open(target_key, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        with os.fdopen(fd, "wb") as output:
+            output.write(source_key.read_bytes())
+            output.flush()
+            os.fsync(output.fileno())
         os.replace(temporary, destination)
         return destination
     finally:
