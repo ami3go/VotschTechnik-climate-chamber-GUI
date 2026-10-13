@@ -291,6 +291,34 @@ class ManualControlTests(unittest.TestCase):
         self.assertEqual(self.send(service, self.admin, "reconcile").state,
                          ManualState.CONFIRMED)
 
+    def test_followup_readback_drift_is_unknown_not_success(self):
+        class DriftFake(FakeBackend):
+            def __init__(self, chamber_id):
+                super().__init__(chamber_id)
+                self.after_write = None
+                self.reads_after_write = 0
+
+            def set_temperature(self, target_c):
+                super().set_temperature(target_c)
+                self.after_write = target_c
+                self.reads_after_write = 0
+
+            def read_status(self):
+                sample = super().read_status()
+                if self.after_write is not None:
+                    self.reads_after_write += 1
+                    if self.reads_after_write >= 2:
+                        return replace(sample, setpoint_temperature_c=25.0)
+                return sample
+
+        service, _, _ = self.make_service(
+            lambda cfg, allow_test_backend=False: DriftFake(cfg.chamber_id))
+        self.assertEqual(self.send(service, self.op, "claim").state,
+                         ManualState.CONFIRMED)
+        outcome = self.send(service, self.op, "set_temperature", target_c=40.0)
+        self.assertEqual(outcome.state, ManualState.UNKNOWN)
+        self.assertIn("unverified", outcome.message.lower())
+
     def test_stale_disconnected_telemetry_denies_nonstop_commands(self):
         class StaleFake(FakeBackend):
             stale = False
