@@ -13,7 +13,7 @@ from chamber_web.adapters.fake import FakeBackend
 from chamber_web.adapters.alternate_stub import AlternateStubBackend
 from chamber_web.adapters.votsch import VotschBackend
 from chamber_web.domain.chamber import (
-    ChamberSafetyError, ReadingQuality,
+    ChamberCapabilities, ChamberSafetyError, ReadingQuality,
 )
 from chamber_web.domain.config import ChamberConfig
 from chamber_web.security.auth import (
@@ -212,6 +212,71 @@ class ManualControlTests(unittest.TestCase):
                 self.op.session, self.op.csrf, service.chamber_id, "ramp_up")
         self.assertFalse(mgr.capabilities(service.chamber_id).supports_ramp_up)
         self.assertFalse(mgr.capabilities(service.chamber_id).supports_ramp_down)
+
+    def test_missing_capabilities_disable_start_setpoint_and_presets(self):
+        def factory(cfg, allow_test_backend=False):
+            backend = FakeBackend(cfg.chamber_id)
+            backend._caps = ChamberCapabilities(-10, 40, False, False, False)
+            return backend
+
+        service, mgr, dashboard = self.make_service(factory)
+        asyncio.run(dashboard.poll_once())
+        view = service.view(self.op.session, service.chamber_id)
+        self.assertFalse(view.can_start)
+        self.assertFalse(view.can_set_target)
+        self.assertEqual(view.presets_c, (0.0, 23.0, 40.0))
+        self.assertEqual(self.send(service, self.op, "claim").state,
+                         ManualState.CONFIRMED)
+        self.assertEqual(self.send(service, self.op, "set_temperature",
+                                   target_c=24).state, ManualState.REJECTED)
+        self.assertEqual(self.send(service, self.op, "start").state,
+                         ManualState.REJECTED)
+        self.assertEqual(mgr.health(service.chamber_id).state, "VERIFIED_STOPPED")
+
+    def test_non_simulated_backend_is_rejected_before_connect(self):
+        class NotSimulation(FakeBackend):
+            simulation_only = False
+
+        config = ChamberConfig("nonphysical", "fake")
+        manager = ChamberManager(
+            [config], backend_factory=lambda cfg, allow_test_backend=False:
+            NotSimulation(cfg.chamber_id),
+            lease_directory=self.root / "rejected-physical")
+        with self.assertRaises(ChamberSafetyError):
+            manager.connect(config.chamber_id)
+
+    def test_revoked_or_expired_session_and_disconnected_backend(self):
+        instances = []
+        def factory(cfg, allow_test_backend=False):
+            backend = FakeBackend(cfg.chamber_id)
+            instances.append(backend)
+            return backend
+
+        service, manager, _ = self.make_service(factory)
+        self.assertEqual(self.send(service, self.op, "claim").state,
+                         ManualState.CONFIRMED)
+        instances[0].disconnect()
+        self.assertIn(self.send(service, self.op, "start").state,
+                      (ManualState.UNKNOWN, ManualState.FAULT))
+        self.assertTrue(manager.health(service.chamber_id).stop_latched)
+        self.clock[0] += 61
+        with self.assertRaises(AuthenticationError):
+            self.send(service, self.op, "stop")
+
+    def test_changed_device_identity_blocks_writes(self):
+        instances = []
+        def factory(cfg, allow_test_backend=False):
+            backend = FakeBackend(cfg.chamber_id)
+            instances.append(backend)
+            return backend
+
+        service, manager, _ = self.make_service(factory)
+        self.assertEqual(self.send(service, self.op, "claim").state,
+                         ManualState.CONFIRMED)
+        instances[0]._identity = replace(instances[0]._identity, chamber_id="other")
+        self.assertIn(self.send(service, self.op, "set_temperature",
+                                target_c=24).state, (ManualState.UNKNOWN, ManualState.FAULT))
+        self.assertTrue(manager.health(service.chamber_id).stop_latched)
 
     def test_readback_mismatch_transitions_unknown_and_stop_still_possible(self):
         service, mgr, _ = self.make_service(
