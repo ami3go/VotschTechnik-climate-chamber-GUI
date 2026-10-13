@@ -17,6 +17,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable
 
+from .account_ops import AccountOperations
+
 
 class AuthenticationError(Exception):
     """Anonymous, expired, revoked, or invalid credentials."""
@@ -55,12 +57,12 @@ _DUMMY_HASH = hashlib.scrypt(b"no-such-user-password", salt=_DUMMY_SALT,
                              n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32, maxmem=64 * 1024 * 1024)
 
 
-def _password_bytes(password: str) -> bytes:
+def _password_bytes(password: str, *, min_bytes: int = 12) -> bytes:
     if not isinstance(password, str):
         raise ValueError("Invalid password type")
     raw = password.encode("utf-8")
-    if not 12 <= len(raw) <= 1024:
-        raise ValueError("Password must be 12–1024 UTF-8 bytes")
+    if not min_bytes <= len(raw) <= 1024:
+        raise ValueError(f"Password must be {min_bytes}–1024 UTF-8 bytes")
     return raw
 
 
@@ -94,7 +96,7 @@ def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-class SecurityStore:
+class SecurityStore(AccountOperations):
     """Process- and thread-safe SQLite identity authority.
 
     Uses a fresh connection per transaction so concurrent browser clients, and
@@ -105,9 +107,19 @@ class SecurityStore:
     def __init__(self, directory: Path | None = None, *,
                  clock: Callable[[], float] = time.time,
                  idle_timeout_s: int = 1800,
-                 absolute_timeout_s: int = 28800):
+                 absolute_timeout_s: int = 28800,
+                 password_min_bytes: int = 12,
+                 lockout_attempts: int = 5,
+                 lockout_seconds: int = 900,
+                 client_attempts: int = 30):
         if idle_timeout_s <= 0 or absolute_timeout_s <= 0:
             raise ValueError("Session lifetimes must be positive")
+        if not 12 <= password_min_bytes <= 128:
+            raise ValueError("Password minimum must be 12–128 UTF-8 bytes")
+        if not 3 <= lockout_attempts <= 20 or not 30 <= lockout_seconds <= 86400:
+            raise ValueError("Invalid account lockout policy")
+        if not 5 <= client_attempts <= 100:
+            raise ValueError("Invalid client throttling policy")
         self.directory = Path(directory or (Path.home() / ".chamber_web" / "security"))
         self.directory.mkdir(parents=True, exist_ok=True)
         if __import__("os").name != "nt":
@@ -116,6 +128,10 @@ class SecurityStore:
         self.clock = clock
         self.idle_timeout_s = idle_timeout_s
         self.absolute_timeout_s = absolute_timeout_s
+        self.password_min_bytes = password_min_bytes
+        self.lockout_attempts = lockout_attempts
+        self.lockout_seconds = lockout_seconds
+        self.client_attempts = client_attempts
         self._lock = threading.RLock()
         db = self._db()
         try:
@@ -143,6 +159,17 @@ class SecurityStore:
                     username TEXT PRIMARY KEY COLLATE NOCASE,
                     attempts INTEGER NOT NULL,
                     lock_until REAL NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS recovery_tokens (
+                    token_hash TEXT PRIMARY KEY,
+                    created_at REAL NOT NULL,
+                    expires_at REAL NOT NULL,
+                    issued_by INTEGER NOT NULL REFERENCES users(id)
+                );
+                CREATE TABLE IF NOT EXISTS login_clients (
+                    client_hash TEXT PRIMARY KEY,
+                    attempts INTEGER NOT NULL,
+                    window_end REAL NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS audit (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -198,7 +225,7 @@ class SecurityStore:
     def bootstrap_admin(self, username: str, password: str) -> None:
         """Trusted LOCAL CLI only; atomic one-time initialization, never an HTTP route."""
         self._validate_username(username)
-        encoded = _password_bytes(password)
+        encoded = _password_bytes(password, min_bytes=self.password_min_bytes)
         password_hash = _hash_password(encoded)
         db = self._db()
         try:
@@ -224,14 +251,27 @@ class SecurityStore:
         if not isinstance(username, str) or not _USERNAME.fullmatch(username):
             raise ValueError("Username must be 3–64 ASCII letters, digits, _ . or -")
 
-    def login(self, username: str, password: str) -> SessionTokens:
+    def login(self, username: str, password: str, *,
+              client_id: str | None = None) -> SessionTokens:
         now = self.clock()
         if not isinstance(username, str) or len(username) > 64:
             raise AuthenticationError("Invalid username or password")
+        # Client addresses are trusted only when supplied by the ASGI peer,
+        # never X-Forwarded-For or a value supplied by a browser.
+        client_hash = (_digest(client_id) if isinstance(client_id, str)
+                       and 1 <= len(client_id) <= 128 else None)
+
         # Expensive scrypt occurs outside the SQLite write transaction. Login
         # traffic must not hold the audit/STOP intent database lock.
         db = self._db()
         try:
+            if client_hash is not None:
+                attempts = db.execute(
+                    "SELECT attempts,window_end FROM login_clients"
+                    " WHERE client_hash=?", (client_hash,),
+                ).fetchone()
+                if attempts and attempts[0] >= self.client_attempts and attempts[1] > now:
+                    raise AuthenticationError("Invalid username or password")
             candidate = db.execute(
                 "SELECT id,username,password_hash,enabled FROM users WHERE username=?",
                 (username,),
@@ -249,25 +289,42 @@ class SecurityStore:
                     "SELECT attempts,lock_until FROM login_failures WHERE username=?",
                     (username,),
                 ).fetchone()
-                locked = bool(fail and fail[0] >= 5 and fail[1] > now)
+                locked = bool(fail and fail[0] >= self.lockout_attempts and fail[1] > now)
                 current = bool(candidate and row and candidate[2] == row[2]
                                and candidate[0] == row[0] and row[3])
                 if locked or not valid or not current:
-                    attempts = fail[0] + 1 if fail and fail[1] > now else 1
-                    # Track a sliding 15-minute failure window. Only the
-                    # fifth failed attempt activates account lockout.
-                    until = now + 900
+                    attempts = fail[0] if locked else (
+                        fail[0] + 1 if fail and fail[1] > now else 1)
+                    # Attempts during lockout may not prolong the lockout.
+                    until = fail[1] if locked else now + self.lockout_seconds
                     db.execute(
                         "INSERT INTO login_failures(username,attempts,lock_until) VALUES(?,?,?)"
                         " ON CONFLICT(username) DO UPDATE SET attempts=excluded.attempts,"
                         " lock_until=excluded.lock_until",
                         (username, attempts, until),
                     )
+                    if client_hash is not None:
+                        row_client = db.execute(
+                            "SELECT attempts,window_end FROM login_clients"
+                            " WHERE client_hash=?", (client_hash,),
+                        ).fetchone()
+                        count = (row_client[0] + 1 if row_client and
+                                 row_client[1] > now else 1)
+                        db.execute(
+                            "INSERT INTO login_clients(client_hash,attempts,window_end)"
+                            " VALUES(?,?,?) ON CONFLICT(client_hash)"
+                            " DO UPDATE SET attempts=excluded.attempts,"
+                            " window_end=excluded.window_end",
+                            (client_hash, count, now + self.lockout_seconds),
+                        )
                     self._audit(db, None, "login", "DENIED",
                                 detail="invalid credentials or lockout")
                     db.commit()
                     raise AuthenticationError("Invalid username or password")
                 db.execute("DELETE FROM login_failures WHERE username=?", (username,))
+                if client_hash is not None:
+                    db.execute("DELETE FROM login_clients WHERE client_hash=?",
+                               (client_hash,))
                 tokens = SessionTokens(secrets.token_urlsafe(32), secrets.token_urlsafe(32))
                 db.execute(
                     "INSERT INTO sessions(token_hash,user_id,csrf_hash,created_at,last_seen)"
@@ -368,7 +425,7 @@ class SecurityStore:
             self.audit(admin, "user.create", "DENIED")
             raise AuthorizationError("Administrator required")
         self._validate_username(username)
-        pw = _hash_password(_password_bytes(password))
+        pw = _hash_password(_password_bytes(password, min_bytes=self.password_min_bytes))
         if not isinstance(role, Role):
             raise ValueError("Invalid role")
         db = self._db()
