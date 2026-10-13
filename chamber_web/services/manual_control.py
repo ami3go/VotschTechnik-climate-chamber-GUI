@@ -49,7 +49,8 @@ class ManualView:
     stop_latched: bool
     owner: str | None
     owned_by_actor: bool
-    can_control: bool
+    can_set_target: bool
+    can_start: bool
     can_stop: bool
     can_handover: bool
     can_reconcile: bool
@@ -121,10 +122,13 @@ class ManualControlService:
             owner, mine,
             allowed and good and mine and not health.stop_latched and
             health.state in ("VERIFIED_STOPPED", "RUNNING") and
+            has_temperature,
+            allowed and good and mine and not health.stop_latched and
+            health.state in ("VERIFIED_STOPPED", "RUNNING") and
             has_temperature and has_operation,
-            allowed and simulator,
-            actor.role is Role.ADMIN and simulator and owner is not None and not mine,
-            actor.role is Role.ADMIN and simulator and health.stop_latched,
+            allowed,  # STOP is always offered to an authorized user, even on stale data
+            actor.role is Role.ADMIN and owner is not None and not mine,
+            actor.role is Role.ADMIN and health.stop_latched,
             presets, last,
         )
 
