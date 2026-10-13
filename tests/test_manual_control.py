@@ -149,6 +149,8 @@ class ManualControlTests(unittest.TestCase):
                                  ManualState.CONFIRMED)
                 self.assertFalse(dash.view().identity is None)
                 self.assertFalse(mgr.capabilities(service.chamber_id).supports_ramp_up)
+                mgr.disconnect(service.chamber_id)
+                self.managers.remove(mgr)
 
     def test_concurrent_operator_claim_and_admin_handover(self):
         service, _, _ = self.make_service()
@@ -306,14 +308,13 @@ class ManualControlTests(unittest.TestCase):
         # New G04 process instance uses identical durable lease directory.
         new_service, new_mgr, _ = self.make_service(suffix="one")
         self.assertTrue(new_mgr.health(new_service.chamber_id).stop_latched)
+        self.assertIn(self.send(new_service, self.op, "start").state,
+                      (ManualState.UNKNOWN, ManualState.REJECTED))
+        # Mock starts freshly STOPPED but controller must not implicitly clear
+        # the durable latch. Only a G08-authorized administrator can reconcile.
         self.assertEqual(self.send(new_service, self.admin, "reconcile").state,
-                         ManualState.UNKNOWN if new_mgr.health(new_service.chamber_id).state == "UNKNOWN"
-                         else ManualState.REJECTED)
-        # Restart reconciliation is refused while readback is RUNNING;
-        # STOP then explicit ADMIN reconciliation is required.
-        self.assertEqual(self.send(new_service, self.admin, "stop").state,
                          ManualState.CONFIRMED)
-        self.assertEqual(self.send(new_service, self.admin, "reconcile").state,
+        self.assertEqual(self.send(new_service, self.op, "claim").state,
                          ManualState.CONFIRMED)
 
 
