@@ -40,15 +40,16 @@ async def test_manual_dashboard_two_browsers_and_authorized_stop(
     await first.open("/")
     await first.should_see("you hold control")
 
+    # A fresh browser page must dispatch as the currently authenticated
+    # operator; a STOP does not require passing the operator's G04 token.
+    first.find("Stop").click()
+    await first.should_see("STOP/reconciliation required", retries=40)
+    await first.should_see("CONFIRMED")
+
+    # An independent VIEWER client may read but cannot command the chamber.
     await viewer.open("/login")
     viewer.find("Username").type("control_viewer")
     viewer.find("Password").type("StrongViewerPassword#2")
     viewer.find("Sign in").click()
     await viewer.should_see("SIMULATION ONLY")
     await viewer.should_see("read only")
-
-    # After browser refresh the server-owned owner identity survives, and an
-    # ADMIN can STOP without the currently active operator lease token.
-    first.find("Stop").click()
-    await first.should_see("CONFIRMED")
-    await first.should_see("STOP/reconciliation required")
