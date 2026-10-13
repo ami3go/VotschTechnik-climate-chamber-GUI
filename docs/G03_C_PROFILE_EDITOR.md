@@ -81,12 +81,14 @@ clean-VM verification and backup/restore documentation.
 
 ## Security and integration gate
 
+PR #26 merged at `fee88ab7929b414e02ac11d81881450e8c9ac365` with G08-min authenticated role guards on the NiceGUI Profiles route and every server-side read/mutation callback. Viewer editor controls are disabled; backend permission checks (READ or PROFILE_EDIT) remain authoritative after refresh/reconnect/session revocation. The browser does not hold a G04 controller or run engine. This is mock-only software verification.
+
 - Current main's web demo binds **127.0.0.1** and uses a **FakeBackend**.
   G03-C does not create an alternative authentication/session scheme or a control API.
-  G08-min must provide ADMIN/OPERATOR/VIEWER authorization, with server-enforced
-  guards for edit/import/duplicate/save/export (as designated by the signed policy)
-  and CSRF/Origin/WebSocket protections **before any non-loopback or physical-device
-  deployment**. UI hiding is not authorization.
+  G08-min PR #25 now provides ADMIN/OPERATOR/VIEWER and server-side per-callback
+  guards for edit/import/duplicate/save/export in PR #26, with
+  CSRF/Origin/WebSocket protections. **Physical and non-loopback operation remain
+  disabled** until full G08, signed site policy, HIL and W02. UI hiding is not authorization.
 - G02-B may consolidate shared navigation/layout and remove the remaining Dashboard-only
   demo draft telemetry/preview. The Dashboard navigation entry and editor card now
   direct users to this persistent route; Dashboard, History, Logs and Settings are not
@@ -109,3 +111,7 @@ capability preview, and per-session browser refresh behavior.
 
 Physical HIL, G08 authentication, G06 execution, G07 run history/recorder, G02-B
 shared-shell integration and W02 fully offline Windows are explicitly OPEN.
+
+## 2026-10-13 merged integration verification
+
+G03-C [PR #26](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/26) merge `fee88ab7929b414e02ac11d81881450e8c9ac365`, final head `e82aba60e30a330c20944d98f9f28040ef1c93d0`. Exact-head Windows Python 3.10/3.12 [NiceGUI/security/profile CI 38441138681](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38441138681), [G06 CI 38441138685](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38441138685), [W01 offline-simulation build 38441138664](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38441138664) all passed. G08 guards enforce authorization at UI callback dispatch and re-check after file-read await; simulated cross-feature regression tests exercise G03 immutable revision, G06 profile execution and G08 revocation/STOP. G07 history and H01 actual chamber validation remain OPEN. Windows CI previously cancelled due 2 MB pytest node IDs; short IDs preserve fixture coverage. Deterministic ZIP entry metadata removes separate timestamp-driven Windows flake (issue #22).

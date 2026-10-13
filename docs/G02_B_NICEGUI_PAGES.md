@@ -14,7 +14,7 @@
 
 ## Future provider seams
 
-G07 must provide HistoryReader.list_runs(chamber_id, search, limit) and EventReader.list_events(chamber_id, severity, search, limit), respecting server authorization, per-chamber filtering, retention and bounded pagination. G08-min must bind a server-derived authenticated principal and enforce all mutations at controller/API boundaries. Neither capability exists as a completed gate in this PR.
+G07 must provide HistoryReader.list_runs(chamber_id, search, limit) and EventReader.list_events(chamber_id, severity, search, limit), respecting server authorization, per-chamber filtering, retention and bounded pagination. G08-min [PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25) provides a server-derived authenticated principal, enforced for the persistent Profiles page after [PR #26](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/26). G07 history/event readers and real G05 controller commands remain absent; no physical HIL approval.
 
 ## Review / verification checklist
 
