@@ -54,6 +54,8 @@ _SCRYPT_N = 1 << 15
 _SCRYPT_R = 8
 _SCRYPT_P = 1
 _DUMMY_SALT = b"no-user-salt-16!"
+# Limit simultaneous memory-hard login hashing under malicious concurrency.
+_LOGIN_KDF_SLOTS = threading.BoundedSemaphore(2)
 _DUMMY_HASH = hashlib.scrypt(b"no-such-user-password", salt=_DUMMY_SALT,
                              n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32, maxmem=64 * 1024 * 1024)
 
@@ -305,7 +307,12 @@ class SecurityStore(AccountOperations):
                 "SELECT id,username,password_hash,enabled FROM users WHERE username=?",
                 (username,),
             ).fetchone()
-            valid = _verify_password(password, candidate[2] if candidate else None)
+            if not _LOGIN_KDF_SLOTS.acquire(timeout=5):
+                raise AuthenticationError("Invalid username or password")
+            try:
+                valid = _verify_password(password, candidate[2] if candidate else None)
+            finally:
+                _LOGIN_KDF_SLOTS.release()
             with self._lock:
                 db.execute("BEGIN IMMEDIATE")
                 # Re-read after locking: account may have been disabled, or
@@ -326,12 +333,16 @@ class SecurityStore(AccountOperations):
                         fail[0] + 1 if fail and fail[1] > now else 1)
                     # Attempts during lockout may not prolong the lockout.
                     until = fail[1] if locked else now + self.lockout_seconds
-                    db.execute(
-                        "INSERT INTO login_failures(username,attempts,lock_until) VALUES(?,?,?)"
-                        " ON CONFLICT(username) DO UPDATE SET attempts=excluded.attempts,"
-                        " lock_until=excluded.lock_until",
-                        (username, attempts, until),
-                    )
+                    # Unknown usernames do not create unbounded SQL rows;
+                    # the peer rate limiter still counts their failed login.
+                    if row is not None:
+                        db.execute(
+                            "INSERT INTO login_failures(username,attempts,lock_until)"
+                            " VALUES(?,?,?) ON CONFLICT(username)"
+                            " DO UPDATE SET attempts=excluded.attempts,"
+                            " lock_until=excluded.lock_until",
+                            (username, attempts, until),
+                        )
                     if client_hash is not None:
                         row_client = db.execute(
                             "SELECT attempts,window_end FROM login_clients"
@@ -346,6 +357,17 @@ class SecurityStore(AccountOperations):
                             " window_end=excluded.window_end",
                             (client_hash, count, now + self.lockout_seconds),
                         )
+                        # Bound retained client throttles even if a malicious
+                        # client rotates source IPs (notably IPv6 privacy IPs).
+                        db.execute("DELETE FROM login_clients WHERE window_end<=?",
+                                   (now,))
+                        total = db.execute(
+                            "SELECT count(*) FROM login_clients").fetchone()[0]
+                        if total > 4096:
+                            db.execute("DELETE FROM login_clients WHERE client_hash IN"
+                                       " (SELECT client_hash FROM login_clients"
+                                       " ORDER BY window_end LIMIT ?)",
+                                       (total - 4096,))
                     self._audit(db, None, "login", "DENIED",
                                 detail="invalid credentials or lockout")
                     db.commit()
