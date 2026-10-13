@@ -7,11 +7,11 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 | B1 | BLOCKER (hardware) | Unbounded/ambiguous TCP exchange | Driver PR #2 merged as `9323e37` with 3.9/3.12 CI; H01 framing certification | SOFTWARE FIX MERGED; HIL OPEN |
 | B2 | BLOCKER (hardware) | STOP verification and uncertainty | Driver PR #2 `9323e37` plus mock-only G04-A [PR #19](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/19): STOP-generation fencing and fresh readback, [Windows mock CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38282962585). Hardware STOP/HIL and site authority remain outstanding | DRIVER/G04-A SOFTWARE MERGED AND TESTED; HIL/SITE OPEN |
 | B3 | BLOCKER (hardware) | Unsigned model envelope and failure response | P00 signed site limits/policy and H01 | OPEN: SITE |
-| B4 | BLOCKER (release) | Controller, run persistence, authentication and HIL incomplete | G04-A mock-only controller PR #19; G08-min, G06/G07, H01, W01/W02, R01 pending | OPEN — NO HARDWARE ACTIVATION |
+| B4 | BLOCKER (release) | Controller, run persistence, authentication and HIL incomplete | G04-A mock-only controller PR #19 and G06-A simulated runner PR #24 merged as `28377a4eb0c7f651063c87ad5789810b036380fe`; G08-min mock-only authorization PR #25 merged `61d8aefaadcdb6f5035b6683410bee0abf76e9d1`; G07, G05, G08-full, H01, W02 and R01 pending | OPEN — NO HARDWARE ACTIVATION |
 | H1 | HIGH | Non-finite driver numeric inputs | Driver PR #2 `9323e37` and unit tests | SOFTWARE FIX MERGED |
 | H2 | HIGH | Null gradient inherits prior hardware state | P00 explicit baseline semantics + G06 tests/HIL | ENGINEERING CONTRACT DRAFTED; HIL PENDING |
-| H3 | HIGH | Zero-stability, gaps, deadline ambiguity | P00 virtual-clock semantics + G06 tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
-| H4 | HIGH | Loopback hardware authentication gate too late | G08-min prerequisite to G05 and live HIL | SEQUENCE CORRECTED; CODE OPEN |
+| H3 | HIGH | Zero-stability, gaps, deadline ambiguity | P00 virtual-clock semantics + G06-A PR #24 simulation-only tests; Windows Python 3.10/3.12 [run 38289290272](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38289290272) green | SOFTWARE VERIFIED IN SIMULATION; HIL/SITE OPEN |
+| H4 | HIGH | Loopback hardware authentication gate too late | G08-min [PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25) merged `61d8aefaadcdb6f5035b6683410bee0abf76e9d1`; [3.10/3.12 CI 38438666305](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38438666305) passed; dependent endpoints must integrate its guards before writes | AUTH CORE SOFTWARE VERIFIED; LIVE INTEGRATION/HIL OPEN |
 | H5 | HIGH | Previous finding IDs undefined | This ledger and sequence linkage, P00 PR #6 | CLOSED (documentation) |
 | H6 | HIGH | Legacy demo CSV migration ambiguous | GUI PR #8 `2ef81b6` adds strict parser and legacy-source-preserving ZIP; [GUI PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) adds transactional SQLite revisions with strict schema checks. G03-C UI/editor still pending | CORE + PROFILE STORAGE SOFTWARE VERIFIED; #15 validation remediation merged/CI green; EDITOR OPEN |
 | H7 | HIGH | SQLite/filesystem crash gap | G07 journal/recovery/fault tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
@@ -22,6 +22,10 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 **Definition of closure:** a merged PR and passing unit/static/integration checks alone close a code finding only to **software-verified** status. Safety-related findings require signed site documentation and physical HIL. Each future PR must update the row's status, exact merged commit/test run link, and owner/approver; never claim HIL from mocks. Hardware remains disabled in the current demo.
 
 ## Implemented PR audit trail
+
+- GUI [PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25): G08-min offline identity, server-side roles, session/CSRF/Origin controls and audited G04 facade merged `61d8aefaadcdb6f5035b6683410bee0abf76e9d1`, final head `8a4164b6098187e57f026718410bf2be7ae96bac`, Windows NiceGUI/security [38438666305](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38438666305) and Windows offline freeze [38438666518](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38438666518) pass. AI-assisted review; G03-C/G06 endpoint wiring, full G08, site signoff and hardware HIL remain OPEN.
+
+- GUI [PR #24](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/24): G06-A simulated, single-chamber deterministic execution engine merged `28377a4eb0c7f651063c87ad5789810b036380fe` from head `ef2e602b3d56b21ae1e7c9b5bfd2a86f817c690f`. Final-head Windows Python 3.10/3.12 G06 [38289290272](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38289290272), NiceGUI [38289290361](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38289290361) and W01 [38289290197](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38289290197) successful. AI-assisted code review closed earlier software HIGH findings; no independent human/safety certification. G08 authenticated binding, G07 durable recorder, H01 physical STOP and site safety approval remain OPEN; all physical writes disabled.
 
 - Driver [PR #2](https://github.com/ami3go/VotschTechnik-climate-chamber-Python/pull/2): `9323e3701f3befedcc23b45170a851fd327f0bcc`, mocked transport/STOP tests green, no HIL.
 - GUI [PR #6](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/6): P00 requirements/traceability contracts, `635c453`.
@@ -65,3 +69,13 @@ All release, HIL, Windows offline and operational security gates remain mandator
 ## Active status/next-PR source of truth
 
 See [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md) for per-delivery-unit progress, G02-A merged and remaining G08-min-A/G02-B/G03-C PR order (W01-A feasibility delivered; G04-A merged, W02 pending), acceptance and review/merge loops. **No site approval or HIL is recorded.** Hardware remains disabled. Status updates must distinguish phase-complete evidence from a merged foundation or demo.
+
+## G08-min security checkpoint (implementation candidate)
+
+Offline first-admin provisioning, SQLite session authority, server-side role guards,
+Origin/CSRF gates and durable command audit are proposed on
+`feat/g08-min-authentication`. See [G08_MIN_SECURITY.md](G08_MIN_SECURITY.md).
+Until the security CI, review and package/browser evidence is confirmed, this
+work is **not** an approved G08 gate. Even after software verification, G04
+remains mock-only, the site STOP/limits/HIL approvals and complete G08 LAN
+security remain NO-GO.

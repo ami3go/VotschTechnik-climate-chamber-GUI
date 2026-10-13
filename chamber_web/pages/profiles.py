@@ -11,6 +11,9 @@ from pathlib import Path
 
 from nicegui import ui
 
+from chamber_web.security.guards import Permission
+from chamber_web.security.nicegui import (require_authenticated_page,
+                                          require_browser_permission)
 from chamber_web.domain.profile import MAX_BYTES
 from chamber_web.persistence.profiles import (
     ProfileConflictError, ProfileNotFoundError, ProfileStore,
@@ -78,7 +81,16 @@ def _rows(draft: EditorDraft) -> list[dict]:
 
 @ui.page("/profiles")
 def profiles_page() -> None:
+    if not require_authenticated_page():
+        return
     service = get_profile_editor_service()
+
+    def require_read() -> None:
+        # Session, role, CSRF and revocation are rechecked at event dispatch.
+        require_browser_permission(Permission.READ, service.chamber_id)
+
+    def require_edit() -> None:
+        require_browser_permission(Permission.PROFILE_EDIT, service.chamber_id)
     draft = service.new_draft()
     selected_step = 0
     offset = 0
@@ -136,6 +148,7 @@ def profiles_page() -> None:
         show_warnings()
 
     def refresh_library() -> None:
+        require_read()
         profiles = service.profiles(limit=100, offset=offset)
         choices = {
             p.profile_id: f"{p.name} · rev {p.current_revision} · {p.updated_at_utc[:19]}"
@@ -153,6 +166,7 @@ def profiles_page() -> None:
         return True
 
     def load_profile() -> None:
+        require_read()
         nonlocal draft, selected_step
         if not can_discard() or not profile_select.value:
             return
@@ -165,6 +179,7 @@ def profiles_page() -> None:
             notice_error(exc)
 
     def new_profile() -> None:
+        require_edit()
         nonlocal draft, selected_step
         if not can_discard():
             return
@@ -173,6 +188,7 @@ def profiles_page() -> None:
         populate()
 
     def discard() -> None:
+        require_edit()
         nonlocal draft, selected_step
         try:
             draft = (service.open(draft.profile_id) if draft.profile_id
@@ -184,6 +200,7 @@ def profiles_page() -> None:
             notice_error(exc)
 
     def meta(field: str, value: object) -> None:
+        require_edit()
         nonlocal draft
         try:
             draft = service.set_metadata(draft, field, value)
@@ -192,6 +209,7 @@ def profiles_page() -> None:
             notice_error(exc)
 
     def grid_select(event) -> None:
+        require_read()
         nonlocal selected_step
         data = event.args.get("data", {}) if isinstance(event.args, dict) else {}
         number = data.get("step") if isinstance(data, dict) else None
@@ -199,6 +217,7 @@ def profiles_page() -> None:
             selected_step = number - 1
 
     def grid_edit(event) -> None:
+        require_edit()
         nonlocal draft, selected_step
         args = event.args if isinstance(event.args, dict) else {}
         data = args.get("data", {})
@@ -216,6 +235,7 @@ def profiles_page() -> None:
             populate()
 
     def change_step(operation: str) -> None:
+        require_edit()
         nonlocal draft
         try:
             draft = service.change_step(draft, operation,
@@ -225,6 +245,7 @@ def profiles_page() -> None:
             notice_error(exc)
 
     def save() -> None:
+        require_edit()
         nonlocal draft
         try:
             draft = service.save(draft)
@@ -243,6 +264,7 @@ def profiles_page() -> None:
             notice_error(exc)
 
     def duplicate() -> None:
+        require_edit()
         nonlocal draft
         try:
             draft = service.duplicate(draft)
@@ -254,6 +276,7 @@ def profiles_page() -> None:
             notice_error(exc)
 
     def browse_revision() -> None:
+        require_read()
         nonlocal draft
         if not can_discard() or not draft.profile_id:
             return
@@ -267,6 +290,7 @@ def profiles_page() -> None:
             notice_error(exc)
 
     def restore() -> None:
+        require_edit()
         nonlocal draft
         try:
             draft = service.use_historical_as_draft(draft)
@@ -276,6 +300,7 @@ def profiles_page() -> None:
             notice_error(exc)
 
     def export_file(format: str) -> None:
+        require_read()
         try:
             data, filename, content_type = service.export(draft, format=format)
             ui.download.content(data, filename, media_type=content_type)
@@ -283,12 +308,14 @@ def profiles_page() -> None:
             notice_error(exc)
 
     async def import_file(event) -> None:
+        require_edit()
         nonlocal draft, selected_step
         if not can_discard():
             return
         try:
             data = await event.file.read()
             filename = event.file.name
+            require_edit()  # Revalidate after await: session may be revoked mid-upload.
             draft = service.import_file(
                 data, filename=filename, legacy_reach_timeout_s=legacy_timeout.value
             )
@@ -304,6 +331,7 @@ def profiles_page() -> None:
             notice_error(exc)
 
     def paginate(delta: int) -> None:
+        require_read()
         nonlocal offset
         offset = max(0, offset + 100 * delta)
         refresh_library()

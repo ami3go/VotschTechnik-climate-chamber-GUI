@@ -9,6 +9,8 @@ from typing import Callable
 
 from nicegui import ui
 
+from chamber_web.security.nicegui import require_authenticated_page
+
 from chamber_web.services.web_read_models import (
     EventReader, HistoryReader, RecordPage, UnavailableEventReader,
     UnavailableHistoryReader, bounded_search,
@@ -118,6 +120,8 @@ def page_frame(active: str, service, *, title: str):
                     "demo-banner w-full")
                 yield
     def update_shell():
+        if not require_authenticated_page(touch=False):
+            return
         refresh_header()
         display = project_telemetry(safe_view(service))
         banner.set_text(f"{display.mode} / READ-ONLY — {display.quality} · "
@@ -145,11 +149,12 @@ def register_pages(
     history = history_reader or UnavailableHistoryReader()
     events = event_reader or UnavailableEventReader()
 
-    # G03-C registers /profiles independently in chamber_web.pages.profiles.
-    # Do not install a competing placeholder route.
+    # /profiles is registered by G03-C with G08 guards in pages/profiles.py.
 
     @ui.page("/history")
     def history_page():
+        if not require_authenticated_page():
+            return
         service = get_dashboard_service()
         with page_frame("/history", service, title="Run History"):
             with ui.column().classes("panel gap-3"):
@@ -170,6 +175,8 @@ def register_pages(
                     "w-full small-table")
 
                 def reload():
+                    if not require_authenticated_page():
+                        return
                     try:
                         page = history.list_runs(
                             service.chamber_id, search=bounded_search(search.value), limit=50)
@@ -194,6 +201,8 @@ def register_pages(
 
     @ui.page("/logs")
     def logs_page():
+        if not require_authenticated_page():
+            return
         service = get_dashboard_service()
         with page_frame("/logs", service, title="Logs"):
             with ui.column().classes("panel gap-3"):
@@ -218,6 +227,8 @@ def register_pages(
                     "flat bordered wrap-cells").classes("w-full small-table")
 
                 def reload():
+                    if not require_authenticated_page():
+                        return
                     try:
                         page = events.list_events(
                             service.chamber_id, severity=severity.value,
@@ -243,6 +254,8 @@ def register_pages(
 
     @ui.page("/settings")
     def settings_page():
+        if not require_authenticated_page():
+            return
         service = get_dashboard_service()
         with page_frame("/settings", service, title="Settings"):
             with ui.column().classes("panel gap-3"):
@@ -254,6 +267,8 @@ def register_pages(
                     pass
 
                 def update_details():
+                    if not require_authenticated_page(touch=False):
+                        return
                     view = safe_view(service)
                     cap = project_capabilities(view)
                     display = project_telemetry(view)
