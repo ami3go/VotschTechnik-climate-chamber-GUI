@@ -240,9 +240,15 @@ class ManualControlService:
                 self._authorized.stop(session, csrf, chamber_id)
                 sample = self._manager.status(chamber_id)
                 self._require_mock(sample.identity)
+                sampled = sample.sampled_at_utc
+                age = ((datetime.now(timezone.utc) - sampled.astimezone(timezone.utc))
+                       .total_seconds() if sampled is not None and
+                       sampled.tzinfo is not None else float("inf"))
+                health = self._manager.health(chamber_id)
                 if (sample.quality is not ReadingQuality.GOOD or
                         sample.operation_state is not OperationState.STOPPED or
-                        self._manager.health(chamber_id).state != "VERIFIED_STOPPED"):
+                        not (-1 <= age <= self._max_age) or
+                        not health.connected or health.state != "VERIFIED_STOPPED"):
                     raise ChamberSafetyError("STOP not confirmed by fresh readback")
             elif action == "claim":
                 sample, _ = self._fresh(chamber_id)
