@@ -6,7 +6,7 @@ Status: **implementation candidate, software-only; G06-A #24 merged as 28377a4e;
 
 `chamber_web.persistence.runs.RunStore(root)` owns a dedicated SQLite database at `root/data/runs.sqlite3`. `RunRecorder(store)` implements the **G06-A v1 synchronous EventSink** (`prepare(snapshot)`, `emit(event)`). The server composition root, not a NiceGUI page, injects `RunRecorder` via `ProfileRunner(..., sink=recorder)`. No automatic runner, backend connection or device mutation is created. The recorder imports only standard Python and `validate_chamber_id` from the vendor-neutral domain. It does not import a manufacturer adapter, socket, NiceGUI or G06's scheduler.
 
-Only **one authoritative application process** may own a deployment. Startup `store.reconcile_startup()` must run under exclusive process/service ownership **before** accepting profiles or enabling chamber mutations. G08-min must guard History/Logs reads and exports, enforce operator access and audit permission decisions at the service/router boundary. Caller-provided run/chamber IDs are *never* authorization.
+Only **one authoritative application process** may own a deployment. Startup `store.reconcile_startup()` must run under exclusive process/service ownership **before** accepting profiles or enabling chamber mutations. G08-min (merged [PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25), still separate from G07) must guard History/Logs reads and exports, enforce operator access and audit permission decisions at the service/router boundary. Caller-provided run/chamber IDs are *never* authorization.
 
 ## Transaction/lifecycle semantics
 
@@ -27,9 +27,10 @@ The presence of STOP_INTENT **does not** establish STOP success. G06's terminal 
 
 Files live under `root/data/chambers/<chamber_id>/runs/<run_uuid>/`. `run_uuid` is a canonical UUID4; `chamber_id` is validated by the G01 domain contract. Paths are constructed solely from validated identifiers. No supplied filename/path is accepted for generated artifacts.
 
+- `snapshot.json`: frozen canonical execution snapshot, including profile revision provenance, backend identity/capabilities/parameters and initial controller generation. Its SHA-256 must match the immutable SQLite run snapshot digest.
 - `events.csv`: immutable indexed events, elapsed monotonic seconds, quality, state, active step and fault diagnostics.
 - `samples.csv`: measured temperature, **intended setpoint** from the most recent SETPOINT_INTENT, UTC/source UTC, elapsed time, quality, sequence and step index. **The G06 v1 event does not carry independently read-back setpoint**, so this field must not be mislabeled as readback.
-- `manifest.json`: version, run/chamber IDs, frozen snapshot digest, controller generation, terminal state, counts and SHA-256 digests of both CSV artifacts.
+- `manifest.json`: version, run/chamber IDs, frozen snapshot digest, controller generation, terminal state, counts and SHA-256 digests of snapshot and both CSV artifacts.
 - Run identity and snapshot are retained in the SQLite database. G03 immutable profile revisions remain in their own independent G03 store.
 
 Export uses temporary files in the same directory, flushed + `fsync`, then `os.replace` and directory `fsync` on POSIX. On Windows, the directory `fsync` is unavailable through this portable implementation; file contents are flushed, and atomic replace is used, but unexpected **power loss between rename and durable directory metadata** remains an explicit Windows risk pending volume-specific tests. Manifest is installed **last**; SQLite terminal state is committed only after completed manifest. A missing/corrupted export never silently overwrites conflicting existing evidence. SQLite and files are not falsely described as a single distributed/atomic transaction; `FINALIZING` is the recovery bridge.
@@ -55,8 +56,8 @@ Windows Python 3.10/3.12: `python -m unittest discover -s tests -p "test_run_rec
 1. **INTEGRATION GATE — merged G06-A dependency:** PR #24 merged as `28377a4e`. G07-A is rebased on that commit, with a real G06 ProfileRunner-to-RunRecorder integration suite covering separate Fake/alternate adapter instances and an injected START_INTENT write failure. Remains a blocker until both Windows versions pass on the final reviewed commit.
 2. **HIGH — verified setpoint in G06 v1 EventSink:** SAMPLE emits measured temperature but no *readback* setpoint or per-event controller-generation. G07 captures the immutable generation and intended setpoint; to satisfy independently observed setpoint per sample, extend the upstream G06 contract/add a compatible field and test it before interpreting command intent as observation.
 3. **HIGH — single-host durability:** Windows rename/directory metadata durability under power loss remains unverified. Workstation disk and clean-VM fault tests required for release; SQLite assumes durable local storage.
-4. **HIGH — access control:** G08-min cannot be bypassed by exposing history, logs or evidence files directly to unauthenticated clients. These are server-service APIs only; no HTTP endpoint is defined by this PR.
+4. **HIGH — access control:** Merged G08-min cannot be bypassed by exposing history, logs or evidence files directly to unauthenticated clients. These are server-service APIs only; no HTTP endpoint is defined by this PR.
 5. **MEDIUM — size/plot quality:** 128 MiB bounded downloads reject very large runs, and stride downsampling does not preserve peaks. Implement authenticated streaming and an extrema-preserving plot API before claiming complete large-run UI parity.
 6. **MEDIUM — archival trust:** SHA-256 hashes are corruption checks, not third-party attestations or cryptographic signatures. Formal evidence retention, backup, tamper-evident external anchoring and database-corruption restoration remain site policy work.
 
-This is an engineering/software evidence layer. H01 site safety approval, physical STOP validation, G08-min and W02 certification remain **NO-GO**.
+This is an engineering/software evidence layer. H01 site safety approval, physical STOP validation, G08 full security, G08-min integration with future G07 HTTP pages and W02 certification remain **NO-GO**.
