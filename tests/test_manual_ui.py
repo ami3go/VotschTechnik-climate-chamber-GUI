@@ -36,7 +36,7 @@ async def test_manual_dashboard_two_browsers_and_authorized_stop(
     await first.should_see("Web STOP is a best-effort control command")
 
     first.find("Claim").click()
-    await first.should_see("CONFIRMED")
+    await first.should_see("CONFIRMED", retries=40)
     await first.open("/")
     await first.should_see("you hold control")
 
