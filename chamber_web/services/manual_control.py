@@ -273,8 +273,8 @@ class ManualControlService:
     def unsupported_operation(self, session: str | None, csrf: str | None,
                               chamber_id: str, kind: str) -> None:
         """No ramp/gradient/mode/manual-profile mutation exists in G05."""
-        self._authorized.authorize(
+        actor = self._authorized.authorize(
             session, csrf, Permission.CHAMBER_CONTROL, chamber_id=chamber_id)
         self._check_id(chamber_id)
-        self._security.audit(None, "manual.unsupported", "DENIED", chamber_id, str(kind)[:60])
+        self._security.audit(actor, "manual.unsupported", "DENIED", chamber_id, str(kind)[:60])
         raise ChamberSafetyError("Ramp, gradient and operating-mode writes are disabled")
