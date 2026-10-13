@@ -179,9 +179,17 @@ class AuthorizedChamber:
                 token, user_id = next(iter(self._token_owner.items()))
                 if user_id == actor.user_id:
                     raise AuthorizationError("Administrator already owns the lease")
+                # Recheck the live G08 session after waiting for the lease lock.
+                # A revoked/expired administrator cannot continue a takeover.
+                self.authorize(session, csrf, Permission.SETTINGS,
+                               chamber_id=chamber_id)
                 self._manager.release_operator(chamber_id, token)
                 self._token_owner.pop(token)
                 self._token_names.pop(token, None)
+                # Release and claim are separate G04 generation transitions.
+                # Recheck again so a mid-handover revocation cannot claim it.
+                self.authorize(session, csrf, Permission.SETTINGS,
+                               chamber_id=chamber_id)
                 replacement = self._manager.claim_operator(chamber_id, actor.username)
                 self._token_owner[replacement] = actor.user_id
                 self._token_names[replacement] = actor.username
