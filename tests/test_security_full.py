@@ -145,6 +145,34 @@ class HardenedIdentityTests(unittest.TestCase):
         with self.assertRaises(BackupError):
             verify_security_backup(self.store.directory, path)
 
+    def test_audit_hmac_detects_tampering_and_survives_restart(self):
+        self.store.audit(None, "security.config", "SUCCESS",
+                         detail="password=hidden csrf=fake")
+        self.assertGreater(self.store.verify_audit_integrity(), 1)
+        with closing(sqlite3.connect(self.store.database)) as db:
+            row = db.execute("SELECT detail FROM audit ORDER BY sequence DESC"
+                             " LIMIT 1").fetchone()[0]
+            self.assertNotIn("hidden", row)
+            self.assertNotIn("fake", row)
+            db.execute("UPDATE audit SET detail='tampered' WHERE sequence=("
+                       " SELECT max(sequence) FROM audit)")
+            db.commit()
+        from chamber_web.security.audit_integrity import AuditIntegrityError
+        with self.assertRaises(AuditIntegrityError):
+            self.store.verify_audit_integrity()
+        with self.assertRaises(AuditIntegrityError):
+            SecurityStore(self.store.directory, clock=lambda: self.time[0])
+
+    def test_audit_retention_is_bounded_and_checkpointed(self):
+        other = SecurityStore(self.store.directory,
+                              clock=lambda: self.time[0], audit_max_rows=100)
+        for index in range(120):
+            other.audit(None, "safety.check", "DENIED", detail=str(index))
+        self.assertLessEqual(other.verify_audit_integrity(), 100)
+        restarted = SecurityStore(self.store.directory,
+                                  clock=lambda: self.time[0], audit_max_rows=100)
+        self.assertEqual(restarted.verify_audit_integrity(), 100)
+
     def test_invalid_database_and_missing_key_fail_closed(self):
         bad = self.root / "broken.sqlite3"
         bad.write_bytes(b"not-a-sqlite-database")
