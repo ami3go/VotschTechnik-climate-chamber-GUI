@@ -293,6 +293,8 @@ def dashboard() -> None:
             (set_button, data.can_set_target),
             (stop_button, data.can_stop),
             (claim_button, data.can_stop and data.owner is None and
+             data.connected and not data.stop_latched and
+             data.controller_state in ("VERIFIED_STOPPED", "RUNNING") and
              data.dashboard.quality.value == "GOOD"),
             (release_button, data.can_stop and data.owned_by_actor),
             (handover_button, data.can_handover),
