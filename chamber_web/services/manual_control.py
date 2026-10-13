@@ -109,13 +109,20 @@ class ManualControlService:
             # Do not display a live identity as controllable or confirmed.
             good = False
         caps = dashboard.capabilities
-        has_temperature = bool(caps and caps.supports_setpoint_readback)
+        bounded = bool(caps and math.isfinite(caps.temperature_min_c) and
+                       math.isfinite(caps.temperature_max_c) and
+                       caps.temperature_min_c < caps.temperature_max_c)
+        has_temperature = bool(bounded and caps.supports_setpoint_readback)
         has_operation = bool(caps and caps.supports_start_stop and caps.supports_running_readback)
+        target = dashboard.setpoint_temperature_c
+        has_valid_target = bool(
+            bounded and target is not None and math.isfinite(target) and
+            caps.temperature_min_c <= target <= caps.temperature_max_c)
         from chamber_web.security.auth import Role
         allowed = actor.role in (Role.ADMIN, Role.OPERATOR)
         presets = (tuple(t for t in (0.0, 23.0, 40.0)
                          if caps.temperature_min_c <= t <= caps.temperature_max_c)
-                   if caps and simulator else ())
+                   if bounded and simulator else ())
         with self._lock:
             last = self._last
         return ManualView(
@@ -126,7 +133,7 @@ class ManualControlService:
             has_temperature,
             allowed and good and mine and not health.stop_latched and
             health.state in ("VERIFIED_STOPPED", "RUNNING") and
-            has_temperature and has_operation,
+            has_temperature and has_operation and has_valid_target,
             allowed,  # STOP is always offered to an authorized user, even on stale data
             actor.role is Role.ADMIN and owner is not None and not mine,
             actor.role is Role.ADMIN and health.stop_latched,
