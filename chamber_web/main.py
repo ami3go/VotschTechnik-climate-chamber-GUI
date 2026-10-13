@@ -5,6 +5,7 @@ The legacy CSV editor remains a browser-local unpersisted draft until G03-C.
 """
 from __future__ import annotations
 
+import asyncio
 import math
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
@@ -16,9 +17,9 @@ configure_nicegui_storage()
 
 from nicegui import app, ui  # noqa: E402
 
-from .bootstrap import create_demo_dashboard_service
-from .security.nicegui import (cookie_secret, current_actor, logout,
-                               require_authenticated_page)
+from .bootstrap import create_demo_control_services
+from .security.nicegui import (active_tokens, cookie_secret, current_actor, get_security,
+                               logout, require_authenticated_page)
 from .ui_pages import (NavigationContext, install_navigation_resolver,
                        register_pages, render_navigation)
 from .ui_state import project_capabilities, project_telemetry, safe_view
@@ -53,7 +54,7 @@ class ProfileDraft:
 
 
 # One process-level Fake service, independent of any client/browser lifecycle.
-_dashboard_service = create_demo_dashboard_service()
+_dashboard_service, _manual_service = create_demo_control_services(get_security())
 app.on_startup(_dashboard_service.start)
 app.on_shutdown(_dashboard_service.close)
 
@@ -217,6 +218,81 @@ def dashboard() -> None:
                 "accept=.csv").classes("w-full")
             ui.button("Close", on_click=import_dialog.close).props("flat")
 
+    async def execute_manual(action: str) -> None:
+        """Page event handler: pass only server-side G08 session tokens to G05."""
+        if not require_authenticated_page(touch=False):
+            return
+        session, csrf = active_tokens()
+        if action == "set_temperature":
+            kw = {"target_c": target_input.value}
+        else:
+            kw = {}
+        outcome_label.set_text(
+            "STOP_REQUESTED — attempting STOP and checking readback"
+            if action == "stop" else f"PENDING — {action}")
+        try:
+            result = await asyncio.to_thread(
+                _manual_service.command, session, csrf, service.chamber_id,
+                action, **kw)
+        except Exception as exc:
+            # G08 security checks also run at mutation time inside G05; a
+            # revoked, expired or viewer session cannot dispatch via the UI.
+            outcome_label.set_text("REJECTED — authentication or authorization failed")
+            ui.notify("Control denied: " + type(exc).__name__, color="negative")
+            return
+        outcome_label.set_text(
+            f"{result.state.value} · {result.action} · {result.message}")
+        if result.state.value != "CONFIRMED":
+            ui.notify(result.message, color="warning")
+        refresh_manual()
+
+    def use_suggestion() -> None:
+        # Cosmetic text-field helper: never dispatch a preset automatically.
+        if preset_select.value is not None:
+            target_input.value = preset_select.value
+
+    def refresh_manual() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        try:
+            data = _manual_service.view(active_tokens()[0], service.chamber_id)
+        except Exception:
+            outcome_label.set_text("UNKNOWN — manual status unavailable")
+            for b in (start_button, set_button, claim_button, release_button,
+                      handover_button, reconcile_button):
+                b.disable()
+            # STOP remains available; G08 re-authorizes the event callback.
+            stop_button.enable()
+            return
+        lease_label.set_text(
+            f"Owner: {data.owner or 'unclaimed'} · "
+            f"{'you hold control' if data.owned_by_actor else 'read only'}")
+        control_health_label.set_text(
+            f"Controller: {data.controller_state} · generation {data.controller_generation} · "
+            f"{'STOP/reconciliation required' if data.stop_latched else 'fence clear'}")
+        for button, available in (
+            (start_button, data.can_start),
+            (set_button, data.can_set_target),
+            (stop_button, data.can_stop),
+            (claim_button, data.can_stop and data.owner is None and
+             data.dashboard.quality.value == "GOOD"),
+            (release_button, data.can_stop and data.owned_by_actor),
+            (handover_button, data.can_handover),
+            (reconcile_button, data.can_reconcile),
+        ):
+            button.enable() if available else button.disable()
+        choices = {n: f"{n:g} °C · suggestion only"
+                   for n in data.presets_c}
+        if choices != preset_select.options:
+            preset_select.options = choices
+            if preset_select.value not in choices:
+                preset_select.value = None
+            preset_select.update()
+        if data.last_command:
+            outcome_label.set_text(
+                f"{data.last_command.state.value} · {data.last_command.action} · "
+                f"{data.last_command.message}")
+
     with ui.row().classes("app-shell no-wrap"):
         with ui.column().classes("sidebar gap-1"):
             render_navigation("/")
@@ -235,17 +311,21 @@ def dashboard() -> None:
 
             with ui.column().classes("dashboard gap-0").props('id="dashboard-content"'):
                 ui.label(
-                    "SIMULATION — server-owned Fake backend telemetry. Hardware controls are unavailable."
+                    "SIMULATION ONLY — G04/G08-min authorized manual control. Physical hardware I/O is disabled."
                 ).classes("demo-banner w-full")
                 with ui.element("div").classes("top-grid"):
                     with ui.column().classes("panel"):
                         with ui.row().classes("panel-head"):
                             _panel_title("power_settings_new", "Chamber Control")
                             with ui.row().classes("gap-1"):
-                                ui.button("Start", icon="play_arrow").props(
-                                    "color=blue no-caps disable").classes("toolbar-button")
-                                ui.button("Stop", icon="stop").props(
-                                    "color=deep-orange no-caps disable").classes("toolbar-button")
+                                start_button = ui.button(
+                                    "Start", icon="play_arrow",
+                                    on_click=lambda: execute_manual("start")).props(
+                                        "color=blue no-caps disable").classes("toolbar-button")
+                                stop_button = ui.button(
+                                    "Stop", icon="stop",
+                                    on_click=lambda: execute_manual("stop")).props(
+                                        "color=deep-orange no-caps").classes("toolbar-button")
                                 ui.button("Hold", icon="pause").props(
                                     "outline color=dark no-caps disable").classes("toolbar-button")
                         ui.separator()
@@ -263,11 +343,48 @@ def dashboard() -> None:
                         ui.separator()
                         with ui.element("div").classes("controls-line"):
                             with ui.column().classes("gap-1"):
-                                ui.label("Verified capability range (view only)").classes("text-xs")
+                                ui.label("Simulated capability range (not site-certified)").classes("text-xs")
                                 limits_label = ui.label("Waiting for backend capabilities")
-                                ui.label("Start / Stop / Hold / setpoint locked until G04/G08-min")
                                 capability_detail_label = ui.label("Capabilities unverified").classes("text-xs text-orange-9")
-                                ramp_detail_label = ui.label("Gradient support unverified").classes("text-xs text-grey-7")
+                                ramp_detail_label = ui.label("Gradients/modes unavailable; no ramp writes").classes("text-xs text-grey-7")
+                                with ui.row().classes("items-center gap-2 flex-wrap"):
+                                    target_input = ui.number(
+                                        "Target °C", value=23.0, step=0.5).props(
+                                            "outlined dense").classes("max-w-40")
+                                    set_button = ui.button(
+                                        "Set Target", icon="thermostat",
+                                        on_click=lambda: execute_manual("set_temperature")).props(
+                                            "outline no-caps disable").classes("toolbar-button")
+                                with ui.row().classes("items-center gap-2 flex-wrap"):
+                                    preset_select = ui.select(
+                                        options={}, label="Suggested targets only").props(
+                                            "outlined dense").classes("min-w-40")
+                                    ui.button("Fill target", icon="edit",
+                                              on_click=use_suggestion).props("outline no-caps")
+                                ui.separator()
+                                with ui.row().classes("items-center gap-2 flex-wrap"):
+                                    claim_button = ui.button(
+                                        "Claim", icon="lock",
+                                        on_click=lambda: execute_manual("claim")).props(
+                                            "outline no-caps disable")
+                                    release_button = ui.button(
+                                        "Release", icon="lock_open",
+                                        on_click=lambda: execute_manual("release")).props(
+                                            "outline no-caps disable")
+                                    handover_button = ui.button(
+                                        "Admin takeover", icon="swap_horiz",
+                                        on_click=lambda: execute_manual("handover")).props(
+                                            "outline no-caps disable")
+                                    reconcile_button = ui.button(
+                                        "Admin reconcile STOP", icon="verified_user",
+                                        on_click=lambda: execute_manual("reconcile")).props(
+                                            "outline no-caps disable")
+                                lease_label = ui.label("Operator lease: unverified").classes("text-xs")
+                                control_health_label = ui.label("Controller: UNKNOWN").classes("text-xs")
+                                outcome_label = ui.label("IDLE — no manual command").classes("text-xs")
+                                ui.label(
+                                    "Web STOP is a best-effort control command, not an emergency stop."
+                                ).classes("text-xs text-orange-9")
 
 
                     with ui.column().classes("panel"):
@@ -483,7 +600,9 @@ def dashboard() -> None:
         log_table.update_rows(list(state.logs))
 
     ui.timer(1.0, refresh, immediate=False)
+    ui.timer(1.0, refresh_manual, immediate=False)
     refresh()
+    refresh_manual()
 
 
 def run() -> None:
