@@ -97,8 +97,12 @@ def login_page() -> None:
         try:
             request = getattr(ui.context.client, "request", None)
             peer = getattr(getattr(request, "client", None), "host", None)
-            session = get_security().login(username.value, password.value,
-                                           client_id=peer)
+            # Never skip peer throttling just because the framework does not
+            # expose a Request for a websocket-originated login callback.
+            session = get_security().login(
+                username.value, password.value,
+                client_id=peer if isinstance(peer, str) and peer else "unknown-peer",
+            )
         except AuthenticationError:
             password.value = ""
             ui.notify("Invalid credentials or account temporarily locked", color="negative")
