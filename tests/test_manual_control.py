@@ -396,6 +396,22 @@ class ManualControlTests(unittest.TestCase):
         self.assertEqual(service.view(self.admin.session, service.chamber_id)
                          .last_command.state, ManualState.STOP_REQUESTED)
 
+    def test_later_denied_start_cannot_hide_pending_stop(self):
+        service, _, _ = self.make_service()
+        stop_serial = service._begin("stop")
+        newer_start = service._begin("start")
+        self.assertEqual(service.view(self.admin.session, service.chamber_id)
+                         .last_command.state, ManualState.STOP_REQUESTED)
+        service._finish(newer_start, "start", ManualState.REJECTED,
+                        "Controller STOP latch prevents START")
+        pending = service.view(self.admin.session, service.chamber_id).last_command
+        self.assertEqual(pending.action, "stop")
+        self.assertEqual(pending.state, ManualState.STOP_REQUESTED)
+        service._finish(stop_serial, "stop", ManualState.CONFIRMED, "verified")
+        completed = service.view(self.admin.session, service.chamber_id).last_command
+        self.assertEqual(completed.action, "stop")
+        self.assertEqual(completed.state, ManualState.CONFIRMED)
+
     def test_stale_disconnected_telemetry_denies_nonstop_commands(self):
         class StaleFake(FakeBackend):
             stale = False
