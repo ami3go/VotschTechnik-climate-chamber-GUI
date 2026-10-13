@@ -1,6 +1,6 @@
 # G06-A — Server-side profile runner contract (simulation only)
 
-Status: **G06-A implementation submitted for review; not hardware-certified**. This file specifies software semantics, not an approval for physical chamber operation. Normative sources: [P00_DECISION_CONTRACTS.md](P00_DECISION_CONTRACTS.md), [G04_A_CONTROLLER_CONTRACT.md](G04_A_CONTROLLER_CONTRACT.md), [CHAMBER_ABSTRACTION_CONTRACT.md](CHAMBER_ABSTRACTION_CONTRACT.md).
+Status: **G06-A simulation-only software merged in PR #24** (`28377a4eb0c7f651063c87ad5789810b036380fe`; final-head Windows 3.10/3.12 run [38289290272](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38289290272)); **not hardware-certified**. This file specifies software semantics, not an approval for physical chamber operation. Normative sources: [P00_DECISION_CONTRACTS.md](P00_DECISION_CONTRACTS.md), [G04_A_CONTROLLER_CONTRACT.md](G04_A_CONTROLLER_CONTRACT.md), [CHAMBER_ABSTRACTION_CONTRACT.md](CHAMBER_ABSTRACTION_CONTRACT.md).
 
 ## Ownership, boundaries, and entrypoints
 
