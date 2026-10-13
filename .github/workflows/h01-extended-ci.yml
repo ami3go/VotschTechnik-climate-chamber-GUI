@@ -1,0 +1,90 @@
+name: H01 extended simulated HIL web and GUI
+
+on:
+  push:
+    branches: [feat/h01-hil-readiness]
+    paths:
+      - 'tests/test_h01_*.py'
+      - 'docs/H01_EXTENDED_*.md'
+      - '.github/workflows/h01-extended-ci.yml'
+      - 'chamber_web/hil/**'
+      - 'chamber_web/security/**'
+      - 'chamber_web/execution/**'
+  pull_request:
+    paths:
+      - 'tests/test_h01_*.py'
+      - 'docs/H01_EXTENDED_*.md'
+      - '.github/workflows/h01-extended-ci.yml'
+      - 'chamber_web/hil/**'
+      - 'chamber_web/security/**'
+      - 'chamber_web/execution/**'
+
+permissions:
+  contents: read
+
+jobs:
+  simulated-full-stack:
+    name: Simulated HIL / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            python: '3.10'
+          - os: windows-latest
+            python: '3.12'
+          - os: ubuntu-latest
+            python: '3.12'
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install application packages
+        run: python -m pip install -r requirements-web.txt
+      - name: H01 original safety fixtures
+        run: python -m unittest discover -s tests -p "test_h01_simulation.py" -v
+      - name: H01 G08-G04-G06 full-stack invariants
+        run: python -m unittest discover -s tests -p "test_h01_full_stack.py" -v
+      - name: H01 HTTP/WebSocket cross-origin and denial cases
+        run: python -m unittest discover -s tests -p "test_h01_web_transport.py" -v
+      - name: No direct driver access from H01 tests
+        shell: python
+        run: |
+          from pathlib import Path
+          test_files = [Path('tests/test_h01_full_stack.py'),
+                        Path('tests/test_h01_web_transport.py'),
+                        Path('tests/test_h01_browser_e2e.py')]
+          for path in test_files:
+              content = path.read_text(encoding='utf-8')
+              assert 'import VotschTechnikClimateChamber' not in content, path
+              assert 'socket.connect(' not in content, path
+          print('H01 remains simulated only')
+
+  chromium-nicegui-e2e:
+    name: Browser-to-NiceGUI Chromium smoke (simulation only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install isolated test dependencies
+        run: |
+          python -m pip install -r requirements-web.txt
+          python -m pip install pytest==9.1.1 pytest-asyncio==1.4.0 playwright==1.58.0
+          python -m playwright install --with-deps chromium
+      - name: Existing NiceGUI integration regression
+        run: python -m pytest -q tests/test_web_ui.py tests/test_web_profiles_ui.py
+      - name: Real Chromium browser/server lifecycle
+        run: python -m pytest -v -s tests/test_h01_browser_e2e.py --junitxml=h01-browser-junit.xml
+      - name: Publish browser test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: h01-browser-junit
+          path: h01-browser-junit.xml
+          if-no-files-found: ignore
