@@ -37,11 +37,17 @@ def live_app():
             admin.session, admin.csrf, "browser_viewer",
             "StrongViewerPassword#2", Role.VIEWER,
         )
-        # pytest/nicegui.testing may set SCREEN_TEST without the paired port.
-        # A separately launched production-like server must not inherit that
-        # in-process test harness flag (NiceGUI ui.run would exit at startup).
+        # NiceGUI 3.18 helpers.is_pytest() checks PYTEST_CURRENT_TEST in the
+        # environment, not whether pytest is imported in this child process.
+        # Strip pytest and NiceGUI test/runtime markers: the subprocess is a
+        # real localhost-only server, not an in-process NiceGUI test fixture.
+        inherited_test_vars = {
+            "PYTEST_CURRENT_TEST", "NICEGUI_USER_SIMULATION",
+            "NICEGUI_HOST", "NICEGUI_PORT", "NICEGUI_PROTOCOL",
+        }
         env = {key: value for key, value in os.environ.items()
-               if not key.startswith("NICEGUI_SCREEN_TEST")}
+               if key not in inherited_test_vars and
+               not key.startswith("NICEGUI_SCREEN_TEST")}
         env.update({
             "CHAMBER_SECURITY_DIR": str(security_root),
             "CHAMBER_PORT": "8080",
