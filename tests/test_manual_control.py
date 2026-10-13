@@ -179,6 +179,30 @@ class ManualControlTests(unittest.TestCase):
         self.assertEqual(self.send(service, self.admin, "release").state,
                          ManualState.CONFIRMED)
 
+    def test_admin_expiry_during_handover_preserves_existing_owner(self):
+        service, _, _ = self.make_service()
+        self.assertEqual(self.send(service, self.op, "claim").state,
+                         ManualState.CONFIRMED)
+        facade = service._authorized
+        original_authorize = facade.authorize
+        validated = [0]
+
+        def expire_after_initial_handover_check(session, csrf, permission, *,
+                                                 chamber_id=None):
+            actor = original_authorize(session, csrf, permission,
+                                       chamber_id=chamber_id)
+            validated[0] += 1
+            if validated[0] == 2:
+                # Session expires after outer service + inner handover checks,
+                # but before the G04 lease release/claim transition.
+                self.clock[0] += 61
+            return actor
+
+        facade.authorize = expire_after_initial_handover_check
+        outcome = self.send(service, self.admin, "handover")
+        self.assertEqual(outcome.state, ManualState.REJECTED)
+        self.assertIn("operator_1", facade._token_names.values())
+
     def test_anonymous_viewer_csrf_revoked_and_wrong_identity(self):
         service, _, _ = self.make_service()
         with self.assertRaises(AuthenticationError):
