@@ -26,7 +26,7 @@ def get_security() -> SecurityStore:
     global _store
     with _store_lock:
         if _store is None:
-            _store = SecurityStore(security_directory())
+            _store = SecurityStore.from_environment(security_directory())
         return _store
 
 
