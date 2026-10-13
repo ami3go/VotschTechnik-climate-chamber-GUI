@@ -79,3 +79,18 @@ Until the security CI, review and package/browser evidence is confirmed, this
 work is **not** an approved G08 gate. Even after software verification, G04
 remains mock-only, the site STOP/limits/HIL approvals and complete G08 LAN
 security remain NO-GO.
+
+
+## G07-A draft evidence / durability readiness checkpoint (2026-10-13)
+
+[Draft G07-A PR #27](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/27) provides an implementation candidate, **not** a merged safety gate. Source review: SQLite FULL synchronous intent writes and immutable snapshots; bounded record queries; disk exports with checksums; restart decisions PREPARED-only → INTERRUPTED and command-intent/no-terminal → UNKNOWN. These are **implementation claims pending final Windows checks and G06-A runner integration**, not externally validated power-loss or HIL behavior.
+
+| Finding | Severity | Disposition / required evidence |
+|---|---|---|
+| G07-R1: G06-A #24 merged as 28377a4e; final G06/G07 integration verification pending | BLOCKER UNTIL CI | #27 rebased on merged #24; added real G06 ProfileRunner + Fake/alternate mock adapters in separate instances, verify passing final-head Windows CI before closure |
+| G07-R2: G06 v1 SAMPLE has no verified setpoint/readback or per-sample controller generation | HIGH | The stored field is explicitly named `intended_setpoint_c`; coordinate readback event amendment with G06 before certifying observed setpoint evidence |
+| G07-R3: Windows atomic rename directory metadata not fsynced | HIGH | File content fsync and atomic replace implemented; clean-VM/power-loss fault gate remains OPEN |
+| G07-R4: G08-min authorization not supplied to History/Logs/exports | HIGH | G07 exposes Python-only service reads, no unauthenticated web routes; apply G08-min guards before exposing pages |
+| G07-R5: plot downsampling may miss peaks and exports above 128 MiB are rejected | MEDIUM | Bounded query/downloads are safe but not full large-run UI parity; future extrema-preserving plotting/streaming needed |
+
+No B1–B4/H01/HIL item is closed by the recorder, even if simulated CI succeeds. Physical operation is still disabled; G06/G08-min dependencies and signed equipment safety decisions remain prerequisites.
