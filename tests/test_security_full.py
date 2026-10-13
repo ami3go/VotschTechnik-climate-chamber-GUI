@@ -66,6 +66,7 @@ class HardenedIdentityTests(unittest.TestCase):
         with self.assertRaises(AuthenticationError):
             self.store.recover_admin_offline(token, "admin_1",
                                              "AnotherLongStrongPassword#2")
+        self.tokens = self.store.login("admin_1", "VeryLongStrongPassword#123")
         self.store.create_user(self.tokens.session, self.tokens.csrf,
                                "viewer_1", "VeryLongStrongPassword#456", Role.VIEWER)
         token2 = self.store.issue_recovery_token(
