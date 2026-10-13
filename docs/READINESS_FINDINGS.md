@@ -11,7 +11,7 @@ Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status r
 | H1 | HIGH | Non-finite driver numeric inputs | Driver PR #2 `9323e37` and unit tests | SOFTWARE FIX MERGED |
 | H2 | HIGH | Null gradient inherits prior hardware state | P00 explicit baseline semantics + G06 tests/HIL | ENGINEERING CONTRACT DRAFTED; HIL PENDING |
 | H3 | HIGH | Zero-stability, gaps, deadline ambiguity | P00 virtual-clock semantics + G06 tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
-| H4 | HIGH | Loopback hardware authentication gate too late | G08-min prerequisite to G05 and live HIL | SEQUENCE CORRECTED; CODE OPEN |
+| H4 | HIGH | Loopback hardware authentication gate too late | G08-min [PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25) and stacked G08 implementation; explicit G04 command authorization, no unauthenticated local exception | SOFTWARE CANDIDATE — NOT MERGED / NOT REVIEWED; HIL AND SITE AUTHORIZATION OPEN |
 | H5 | HIGH | Previous finding IDs undefined | This ledger and sequence linkage, P00 PR #6 | CLOSED (documentation) |
 | H6 | HIGH | Legacy demo CSV migration ambiguous | GUI PR #8 `2ef81b6` adds strict parser and legacy-source-preserving ZIP; [GUI PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) adds transactional SQLite revisions with strict schema checks. G03-C UI/editor still pending | CORE + PROFILE STORAGE SOFTWARE VERIFIED; #15 validation remediation merged/CI green; EDITOR OPEN |
 | H7 | HIGH | SQLite/filesystem crash gap | G07 journal/recovery/fault tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
@@ -75,3 +75,7 @@ Until the security CI, review and package/browser evidence is confirmed, this
 work is **not** an approved G08 gate. Even after software verification, G04
 remains mock-only, the site STOP/limits/HIL approvals and complete G08 LAN
 security remain NO-GO.
+
+## G08 full-security candidate (not closed, 2026-10-13)
+
+Full G08 is being developed as a **stacked unmerged branch** `feat/g08-full-security` atop [G08-min PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25). See [G08 threat model and operations](G08_FULL_SECURITY.md). Proposed software defenses: deny-by-default localhost/LAN policy with TLS/client peer ACL, privileged offline recovery with one-use revocation, bounded tamper-evident SQLite audit, security backup verification/staging, password rotation and Windows CLI. **No CLOSED/VERIFIED status is assigned until final-head CI + independent review + #25 merge.** Security release blockers: actual browser-LAN tests, session fixation/WS revalidation assessment, Windows service/logoff behavior, NTFS ACL assessment, signed offline software supply chain, disconnected packaging and site operational approval. B1–B4, H4 (hardware), H01 and W02 remain unresolved; no physical device I/O.
