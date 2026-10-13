@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from chamber_web.domain.chamber import (
-    ChamberSafetyError, ChamberSnapshot, OperationState, ReadingQuality,
+    ChamberProtocolError, ChamberSafetyError, ChamberSnapshot, OperationState, ReadingQuality,
     finite_temperature, validate_chamber_id,
 )
 from chamber_web.security.auth import SecurityStore
@@ -264,7 +264,15 @@ class ManualControlService:
                         target_c, caps.temperature_min_c, caps.temperature_max_c)
                     self._authorized.execute_owned(
                         session, csrf, chamber_id, "set_temperature", target)
-                self._fresh(chamber_id)  # independent second authoritative readback
+                verified, _ = self._fresh(chamber_id)  # independent authoritative readback
+                if action == "start" and verified.operation_state is not OperationState.RUNNING:
+                    raise ChamberProtocolError("Follow-up START readback disagrees")
+                if action == "set_temperature" and (
+                    verified.setpoint_temperature_c is None or
+                    not math.isfinite(verified.setpoint_temperature_c) or
+                    abs(verified.setpoint_temperature_c - target) > 0.1
+                ):
+                    raise ChamberProtocolError("Follow-up setpoint readback disagrees")
                 completion = self._manager.health(chamber_id)
                 if (completion.generation != admitted_generation or
                         completion.stop_latched or completion.state not in (
