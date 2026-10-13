@@ -6,10 +6,10 @@ Status: **IMPLEMENTATION IN PROGRESS / RELEASE NO-GO**. This work extends W01-A;
 
 W01 build-manifest.json and SHA256SUMS.txt detect accidental changes only. W02 introduces w02-release.json and an Ed25519 signature over canonical JSON and its complete closed file inventory. **Hashing alone cannot establish publisher authenticity.** The site must independently pin the approved Ed25519 public key (not trust a key copied from the same unverified ZIP). The private key must be provided only on a protected signing host/CI secret, never embedded in source control, an artifact, or on target machines. Neither the unsigned GitHub CI artifact nor example signing keys constitute a trusted release.
 
-Sign the extracted completed bundle on a trusted signing host (Python 3.12 + pinned cryptography), with the exact Git commit SHA:
+Sign the extracted completed bundle on a trusted signing host (Python 3.12 + pinned cryptography), with a 64-hex-character source provenance digest (not a raw Git SHA-1):
 
 ```powershell
-python -m scripts.w02_release --sign --bundle .\ClimateChamber-Web-Windows-x64-1.0.0-offline --version 1.0.0 --source-sha <40-or-64-character-hex-sha256-value> --private-key C:\Protected\release-private.pem
+python -m scripts.w02_release --sign --bundle .\ClimateChamber-Web-Windows-x64-1.0.0-offline --version 1.0.0 --source-sha <64-character-source-provenance-sha256> --private-key C:\Protected\release-private.pem
 python -m scripts.w02_release --verify --bundle .\ClimateChamber-Web-Windows-x64-1.0.0-offline --public-key C:\SiteTrusted\release-public.pem
 ```
 
