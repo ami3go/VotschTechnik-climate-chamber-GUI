@@ -13,7 +13,7 @@ from chamber_web.adapters.fake import FakeBackend
 from chamber_web.adapters.alternate_stub import AlternateStubBackend
 from chamber_web.adapters.votsch import VotschBackend
 from chamber_web.domain.chamber import (
-    ChamberCapabilities, ChamberSafetyError, OperationState, ReadingQuality,
+    ChamberSafetyError, ReadingQuality,
 )
 from chamber_web.domain.config import ChamberConfig
 from chamber_web.security.auth import (
