@@ -50,8 +50,9 @@ class H01SimulationTests(unittest.TestCase):
 
     def test_timeout_fails_closed(self):
         self.fake.fail_readback = True
+        # Cached status() does not perform I/O; verified mutation does.
         with self.assertRaises(Exception):
-            self.ctrl.status("h01sim")
+            self.ctrl.set_temperature("h01sim", 24)
         self.assertTrue(self.ctrl.health.stop_latched)
 
     def test_stale_readback_fails_closed(self):
