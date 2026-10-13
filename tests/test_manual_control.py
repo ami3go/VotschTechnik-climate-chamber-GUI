@@ -373,6 +373,20 @@ class ManualControlTests(unittest.TestCase):
         self.assertEqual(outcome.state, ManualState.UNKNOWN)
         self.assertTrue(mgr.health(service.chamber_id).stop_latched)
 
+    def test_good_but_stale_post_stop_timestamp_is_unknown(self):
+        service, mgr, _ = self.make_service()
+        original_status = mgr.status
+
+        def stale_good_status(chamber_id):
+            return replace(original_status(chamber_id),
+                           sampled_at_utc=datetime.now(timezone.utc) -
+                           timedelta(seconds=60))
+
+        mgr.status = stale_good_status
+        outcome = self.send(service, self.op, "stop")
+        self.assertEqual(outcome.state, ManualState.UNKNOWN)
+        self.assertTrue(mgr.health(service.chamber_id).stop_latched)
+
     def test_older_confirmed_result_does_not_supersede_stop(self):
         service, _, _ = self.make_service()
         old = service._begin("start")
