@@ -163,7 +163,13 @@ readiness, service recovery conditions and durable run reconciliation.
 W01 `windows_manifest.py` verifies a **content hash** for extracted files,
 not authenticated software publisher identity. Do not treat the bundle's
 co-distributed SHA256SUMS or a successful extraction as sufficient to trust an
-offline update. Production updates require an out-of-band approved hash and
+offline update. The `scripts/verify_g08_offline_update.ps1` gate takes an independently
+approved SHA-256 and pinned Authenticode publisher thumbprint, recomputes
+bundle-file hashes, checks for extra files, validates both Windows EXE
+signatures and **does not execute/install the archive**. Unsigned W01
+simulator packages must fail that gate. This is preparatory verification,
+not a complete W02 signed release/reproducible supply-chain process.
+Production updates require an out-of-band approved hash and
 verified signed publisher/Authenticode or equivalent signed release manifest;
 inventory/pin the full transitive wheel closure, scan vulnerabilities,
 test rollback on disconnected Win10/11 x64, preserve data directory and
