@@ -11,11 +11,9 @@ import base64
 from datetime import datetime, timezone
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import shutil
-import tempfile
 
 EXCLUDED = {"w02-release.json", "w02-release.sig"}
 VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.]+)?$")
@@ -36,19 +34,25 @@ def inventory(root: Path) -> dict[str, str]:
         relative = path.relative_to(root).as_posix()
         if relative in EXCLUDED:
             continue
-        files[relative] = hashlib.file_digest(path.open("rb"), "sha256").hexdigest()
+        with path.open("rb") as stream:
+            files[relative] = hashlib.file_digest(stream, "sha256").hexdigest()
     return files
 
 
 def validate_entries(entries: dict) -> None:
     if not isinstance(entries, dict) or not entries:
         raise ValueError("Empty/invalid release inventory")
+    folded = set()
     for name, digest in entries.items():
-        p = Path(name)
+        p = Path(name) if isinstance(name, str) else Path("")
         if (not isinstance(name, str) or not name or "\\" in name or ":" in name
                 or name.startswith("/") or any(x in {"", ".", ".."} for x in name.split("/"))
                 or p.is_absolute() or not isinstance(digest, str) or not SHA.fullmatch(digest)):
             raise ValueError("Unsafe release manifest entry")
+        normalized = name.casefold()
+        if normalized in folded:
+            raise ValueError("Windows case-insensitive path collision")
+        folded.add(normalized)
 
 
 def sign(root: Path, version: str, key: Path, *, source_sha: str) -> None:
