@@ -67,3 +67,13 @@ All release, HIL, Windows offline and operational security gates remain mandator
 ## Active status/next-PR source of truth
 
 See [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md) for per-delivery-unit progress, G02-A merged and remaining G08-min-A/G02-B/G03-C PR order (W01-A feasibility delivered; G04-A merged, W02 pending), acceptance and review/merge loops. **No site approval or HIL is recorded.** Hardware remains disabled. Status updates must distinguish phase-complete evidence from a merged foundation or demo.
+
+## G08-min security checkpoint (implementation candidate)
+
+Offline first-admin provisioning, SQLite session authority, server-side role guards,
+Origin/CSRF gates and durable command audit are proposed on
+`feat/g08-min-authentication`. See [G08_MIN_SECURITY.md](G08_MIN_SECURITY.md).
+Until the security CI, review and package/browser evidence is confirmed, this
+work is **not** an approved G08 gate. Even after software verification, G04
+remains mock-only, the site STOP/limits/HIL approvals and complete G08 LAN
+security remain NO-GO.

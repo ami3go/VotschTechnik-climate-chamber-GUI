@@ -236,8 +236,12 @@ def serve(*, port: int) -> int:
         temporary.write_text(json.dumps(identity), encoding="utf-8")
         temporary.replace(path)
         try:
+            from chamber_web.security.paths import configure_nicegui_storage
+            configure_nicegui_storage()
             from nicegui import app, ui
+            os.environ["CHAMBER_PORT"] = str(port)
             import chamber_web.main  # noqa: F401 - register demo page/assets
+            from chamber_web.security.nicegui import cookie_secret
 
             @app.get("/__w01_ready")
             def ready(challenge: str = "") -> dict:
@@ -250,7 +254,9 @@ def serve(*, port: int) -> int:
                 }
 
             ui.run(title="Climate Chamber - SIMULATION ONLY", host="127.0.0.1",
-                   port=port, reload=False, show=False)
+                   port=port, reload=False, show=False,
+                    storage_secret=cookie_secret(),
+                    session_middleware_kwargs={"same_site": "strict", "max_age": 28800})
         finally:
             if read_instance() == identity:
                 path.unlink(missing_ok=True)
@@ -277,9 +283,14 @@ def server_main() -> int:
     parser = argparse.ArgumentParser(description="W01 simulated NiceGUI server")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--bootstrap-admin", action="store_true",
+                        help="Interactive, offline first administrator; no web provisioning")
     parser.add_argument("--require-module", action="append", default=[])
     args = parser.parse_args()
     try:
+        if args.bootstrap_admin:
+            from chamber_web.security.bootstrap import interactive_bootstrap
+            return interactive_bootstrap()
         if args.self_test:
             return frozen_self_test(required_modules=tuple(args.require_module))
         return serve(port=args.port)

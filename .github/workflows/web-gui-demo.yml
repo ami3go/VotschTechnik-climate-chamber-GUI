@@ -9,6 +9,7 @@ on:
       - "tests/test_web_*.py"
       - "tests/test_chamber_*.py"
       - "tests/test_profile_*.py"
+      - "tests/test_security_*.py"
       - "requirements-web.txt"
       - "requirements-hardware.txt"
       - ".github/workflows/web-gui-demo.yml"
@@ -21,6 +22,7 @@ on:
       - "tests/test_web_*.py"
       - "tests/test_chamber_*.py"
       - "tests/test_profile_*.py"
+      - "tests/test_security_*.py"
       - "requirements-web.txt"
       - "requirements-hardware.txt"
       - ".github/workflows/web-gui-demo.yml"
@@ -43,13 +45,15 @@ jobs:
       - name: Install architecture lint
         run: python -m pip install ruff==0.17.0
       - name: Lint G01, G02 and G04 services and safety tests
-        run: python -m ruff check chamber_web/domain chamber_web/adapters chamber_web/services chamber_web/persistence chamber_web/ui_pages.py chamber_web/ui_state.py tests/test_chamber_backend.py tests/test_chamber_controller.py tests/test_profile_storage.py tests/test_dashboard_service.py tests/test_web_views.py --select E4,E7,E9,F
+        run: python -m ruff check chamber_web/domain chamber_web/adapters chamber_web/services chamber_web/persistence chamber_web/ui_pages.py chamber_web/ui_state.py tests/test_chamber_backend.py tests/test_chamber_controller.py tests/test_profile_storage.py tests/test_dashboard_service.py tests/test_web_views.py chamber_web/security tests/test_security_core.py --select E4,E7,E9,F
       - name: Contract and single-device safety unit tests
         run: python -m unittest discover -s tests -p "test_chamber_*.py" -v
       - name: G02-A server-side telemetry and backend substitution tests
         run: python -m unittest discover -s tests -p "test_dashboard_service.py" -v
       - name: Canonical and legacy profile CSV/ZIP tests
         run: python -m unittest discover -s tests -p "test_profile_*.py" -v
+      - name: G08-min offline identity and adversarial transport tests
+        run: python -m unittest discover -s tests -p "test_security_*.py" -v
       - name: Compile Python sources
         run: python -m compileall -q chamber_web main.py
       - name: Profile validation and demo tests

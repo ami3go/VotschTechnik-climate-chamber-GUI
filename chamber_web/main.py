@@ -10,10 +10,17 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from nicegui import app, ui
+from .security.paths import configure_nicegui_storage
+
+configure_nicegui_storage()
+
+from nicegui import app, ui  # noqa: E402
 
 from .bootstrap import create_demo_dashboard_service
-from .ui_pages import register_pages, render_navigation
+from .security.nicegui import (cookie_secret, current_actor, logout,
+                               require_authenticated_page)
+from .ui_pages import (NavigationContext, install_navigation_resolver,
+                       register_pages, render_navigation)
 from .ui_state import project_capabilities, project_telemetry, safe_view
 
 from .model import (
@@ -55,6 +62,19 @@ def get_dashboard_service():
     return _dashboard_service
 
 
+# G02-B stable navigation resolver: cosmetic labels, never the permission gate.
+def _server_navigation_context() -> NavigationContext:
+    actor = current_actor()
+    return NavigationContext(
+        authenticated=actor is not None,
+        role=actor.role.value if actor else None,
+        permitted_routes=frozenset({"/", "/profiles", "/history", "/logs", "/settings"})
+        if actor else frozenset(),
+    )
+
+
+install_navigation_resolver(_server_navigation_context)
+
 # G07 readers are injected when the recording service is implemented.
 register_pages(get_dashboard_service)
 
@@ -76,11 +96,15 @@ def _panel_title(icon: str, title: str) -> None:
 
 @ui.page("/")
 def dashboard() -> None:
+    if not require_authenticated_page():
+        return
     service = get_dashboard_service()
     # Local drafts are not executable runs or chamber state.
     state = ProfileDraft()
 
     def warn_while_running() -> bool:
+        if not require_authenticated_page():
+            return True
         # No runnable profile engine exists in G02-A.
         return False
 
@@ -92,6 +116,8 @@ def dashboard() -> None:
         )
 
     def export_csv() -> None:
+        if not require_authenticated_page():
+            return
         try:
             content = export_profile_csv(state.steps)
             ui.download.content(content, "temperature_profile.csv", "text/csv")
@@ -100,6 +126,8 @@ def dashboard() -> None:
             ui.notify(str(exc), color="negative")
 
     async def import_csv(event) -> None:
+        if not require_authenticated_page():
+            return
         if warn_while_running():
             return
         try:
@@ -197,11 +225,13 @@ def dashboard() -> None:
             with ui.row().classes("topbar"):
                 with ui.column().classes("gap-0"):
                     ui.label("Climate Chamber").classes("top-title")
+                    ui.label(f"Signed in: {current_actor().username} ({current_actor().role.value})")
                     ui.label("Test Control Platform").classes("top-subtitle")
                 with ui.column().classes("items-end gap-0"):
                     backend_label = ui.label("● SIMULATION · UNKNOWN").classes("demo-status")
                     backend_id_label = ui.label("Backend: fake · demo-chamber").classes("text-xs text-grey-4")
                     clock_label = ui.label("").classes("text-xs text-grey-4")
+                    ui.button("Sign out", icon="logout", on_click=logout).props("flat")
 
             with ui.column().classes("dashboard gap-0").props('id="dashboard-content"'):
                 ui.label(
@@ -411,6 +441,8 @@ def dashboard() -> None:
                                     "small-table w-full")
 
     def refresh() -> None:
+        if not require_authenticated_page(touch=False):
+            return
         view = safe_view(service)
         display = project_telemetry(view)
         capability = project_capabilities(view)
@@ -457,7 +489,9 @@ def dashboard() -> None:
 def run() -> None:
     # Fail safe: localhost-only until authentication / network controls exist.
     ui.run(title="Climate Chamber — server simulation", host="127.0.0.1",
-           port=8080, reload=False, show=False)
+           port=8080, reload=False, show=False,
+           storage_secret=cookie_secret(),
+           session_middleware_kwargs={"same_site": "strict", "max_age": 28800})
 
 
 if __name__ == "__main__":
