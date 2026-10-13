@@ -35,7 +35,8 @@ def valid_origin(origin: str | None, host: str | None,
         target = urlsplit(normalized)
         supplied = urlsplit("//" + host)
         return (not supplied.username and not supplied.password and
-                supplied.hostname == target.hostname and
+                not supplied.path and not supplied.query and
+                not supplied.fragment and supplied.hostname == target.hostname and
                 (supplied.port or (443 if target.scheme == "https" else 80)) ==
                 (target.port or (443 if target.scheme == "https" else 80)))
     except ValueError:
