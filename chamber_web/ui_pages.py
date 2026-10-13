@@ -40,7 +40,7 @@ class NavigationContext:
     def label(self) -> str:
         if not self.authenticated:
             return "Access: unauthenticated · read-only"
-        return f"Role: {self.role or 'unverified'} · controls locked"
+        return f"Role: {self.role or 'unverified'} · simulation only"
 
 
 # Only Python composition/bootstrap can set this resolver; no UI handler may modify it.
