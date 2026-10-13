@@ -83,14 +83,14 @@ security remain NO-GO.
 
 ## G07-A draft evidence / durability readiness checkpoint (2026-10-13)
 
-[Draft G07-A PR #27](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/27) provides an implementation candidate, **not** a merged safety gate. Source review: SQLite FULL synchronous intent writes and immutable snapshots; bounded record queries; disk exports with checksums; restart decisions PREPARED-only → INTERRUPTED and command-intent/no-terminal → UNKNOWN. These are **implementation claims pending final Windows checks and G06-A runner integration**, not externally validated power-loss or HIL behavior.
+[Draft G07-A PR #27](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/27) provides an implementation candidate, **not** a merged safety gate. Source review: SQLite FULL synchronous intent writes and immutable snapshots; bounded record queries; disk exports with checksums; restart decisions PREPARED-only → INTERRUPTED and command-intent/no-terminal → UNKNOWN. Pre-final head `8b242b0b` was **verified** with passing Windows Python 3.10/3.12 recorder and merged-G06 real simulated-runner integration plus one-million-sample checksum test in [Actions 38439628199](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38439628199), and G06/NiceGUI/W01 follow-up workflows. Newer snapshot ZIP and duplicate-terminal retry code must pass **separate final-head CI** before its claims are closed. No external power-loss or HIL validation.
 
 | Finding | Severity | Disposition / required evidence |
 |---|---|---|
-| G07-R1: G06-A #24 merged as 28377a4e; final G06/G07 integration verification pending | BLOCKER UNTIL CI | #27 rebased on merged #24; added real G06 ProfileRunner + Fake/alternate mock adapters in separate instances, verify passing final-head Windows CI before closure |
+| G07-R1: merged G06-A runner contract with G07 verified on 8b242b0b; final revision verification outstanding | BLOCKER UNTIL FINAL CI | G06-A PR #24 merged; real ProfileRunner Fake/alternate adapter tests and disk-intent failure passed on 8b242b0b ([Actions 38439628199](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38439628199)); rerun on latest revision |
 | G07-R2: G06 v1 SAMPLE has no verified setpoint/readback or per-sample controller generation | HIGH | The stored field is explicitly named `intended_setpoint_c`; coordinate readback event amendment with G06 before certifying observed setpoint evidence |
 | G07-R3: Windows atomic rename directory metadata not fsynced | HIGH | File content fsync and atomic replace implemented; clean-VM/power-loss fault gate remains OPEN |
-| G07-R4: G08-min authorization not supplied to History/Logs/exports | HIGH | G07 exposes Python-only service reads, no unauthenticated web routes; apply G08-min guards before exposing pages |
+| G07-R4: G08-min merged but not wired into G07 History/Logs/exports web routes | HIGH | G07 exposes Python-only service reads, no unauthenticated web routes; apply merged G08-min authorization/audit guards before exposing future pages |
 | G07-R5: plot downsampling may miss peaks and exports above 128 MiB are rejected | MEDIUM | Bounded query/downloads are safe but not full large-run UI parity; future extrema-preserving plotting/streaming needed |
 
-No B1–B4/H01/HIL item is closed by the recorder, even if simulated CI succeeds. Physical operation is still disabled; G06/G08-min dependencies and signed equipment safety decisions remain prerequisites.
+No B1–B4/H01/HIL item is closed by the recorder, even if simulated CI succeeds. Physical operation is still disabled; G06/G08-min core have merged but authenticated G07 UI integration, signed equipment safety decisions and H01 remain prerequisites.
