@@ -6,6 +6,7 @@ directory, never an in-place live SQLite overwrite. All sessions are revoked.
 """
 from __future__ import annotations
 
+from contextlib import closing
 import hashlib
 import hmac
 import json
@@ -58,7 +59,7 @@ def _hash_file(path: Path) -> str:
 
 
 def _integrity(path: Path) -> int:
-    with sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)) as db:
         if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise BackupError("SQLite integrity check failed")
         version = db.execute("PRAGMA user_version").fetchone()[0]
@@ -93,7 +94,8 @@ def backup_security_database(source_dir: Path, destination: Path) -> tuple[Path,
     destination.parent.mkdir(parents=True, exist_ok=True)
     scratch = destination.with_name(destination.name + "." + secrets.token_hex(8) + ".tmp")
     try:
-        with sqlite3.connect(database) as source, sqlite3.connect(scratch) as dest:
+        with closing(sqlite3.connect(database)) as source, closing(
+                sqlite3.connect(scratch)) as dest:
             source.backup(dest, pages=1000, sleep=0.1)
         if scratch.stat().st_size > MAX_BACKUP_BYTES:
             raise BackupError("Security backup exceeds size limit")
@@ -102,7 +104,9 @@ def backup_security_database(source_dir: Path, destination: Path) -> tuple[Path,
                    "size": scratch.stat().st_size, "schema": schema,
                    "sha256": _hash_file(scratch), "created_utc": int(time.time())}
         signed = _signed_manifest(payload, key)
-        with scratch.open("rb") as file:
+        # Windows rejects fsync on a read-only descriptor and holds SQLite
+        # files locked while connections remain open.
+        with scratch.open("r+b") as file:
             os.fsync(file.fileno())
         os.replace(scratch, destination)
         manifest_path.write_text(json.dumps(signed, sort_keys=True) + "\n",
@@ -157,8 +161,9 @@ def stage_security_restore(source_dir: Path, backup: Path, target_dir: Path) -> 
         raise BackupError("Refusing in-place database overwrite")
     temporary = target_dir / ("restore-" + secrets.token_hex(8) + ".tmp")
     try:
-        with sqlite3.connect(f"file:{Path(backup).resolve().as_posix()}?mode=ro",
-                             uri=True) as source, sqlite3.connect(temporary) as dest:
+        with closing(sqlite3.connect(
+                f"file:{Path(backup).resolve().as_posix()}?mode=ro",
+                uri=True)) as source, closing(sqlite3.connect(temporary)) as dest:
             source.backup(dest)
             # Sessions from backup must NOT be resurrected as authenticated.
             dest.execute("UPDATE sessions SET revoked=1")
