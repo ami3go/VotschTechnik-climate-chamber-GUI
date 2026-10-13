@@ -45,6 +45,7 @@ class CommandOutcome:
 class ManualView:
     dashboard: DashboardView
     controller_state: str
+    connected: bool
     controller_generation: int
     stop_latched: bool
     owner: str | None
@@ -118,7 +119,7 @@ class ManualControlService:
         with self._lock:
             last = self._last
         return ManualView(
-            dashboard, health.state, health.generation, health.stop_latched,
+            dashboard, health.state, health.connected, health.generation, health.stop_latched,
             owner, mine,
             allowed and good and mine and not health.stop_latched and
             health.state in ("VERIFIED_STOPPED", "RUNNING") and
