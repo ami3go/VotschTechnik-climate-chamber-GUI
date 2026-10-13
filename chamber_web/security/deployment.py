@@ -87,10 +87,15 @@ class DeploymentPolicy:
         if not bind.is_private and not bind.is_unspecified:
             raise DeploymentError("Public internet address binding is prohibited")
         raw_origin = config.get("CHAMBER_PUBLIC_ORIGIN", "")
-        parts = urlsplit(raw_origin)
-        if (parts.scheme != "https" or not parts.hostname or parts.username
-                or parts.password or parts.path or parts.query or parts.fragment
-                or parts.port != port):
+        try:
+            parts = urlsplit(raw_origin)
+            valid_origin = (parts.scheme == "https" and bool(parts.hostname)
+                            and not parts.username and not parts.password
+                            and not parts.path and not parts.query
+                            and not parts.fragment and parts.port == port)
+        except ValueError as exc:
+            raise DeploymentError("Invalid HTTPS LAN origin") from exc
+        if not valid_origin:
             raise DeploymentError("Explicit https CHAMBER_PUBLIC_ORIGIN with port required")
         cidrs = config.get("CHAMBER_ALLOWED_CLIENT_CIDRS", "")
         if not cidrs:
@@ -100,7 +105,9 @@ class DeploymentPolicy:
                              for s in cidrs.split(","))
         except ValueError as exc:
             raise DeploymentError("Invalid client CIDR allowlist") from exc
-        if not networks or any(net.prefixlen == 0 for net in networks):
+        if not networks or any(
+                net.prefixlen == 0 or not (net.is_private or net.is_loopback)
+                for net in networks):
             raise DeploymentError("Allow-all client CIDR is prohibited")
         cert = config.get("CHAMBER_TLS_CERT")
         key = config.get("CHAMBER_TLS_KEY")
