@@ -319,6 +319,45 @@ class ManualControlTests(unittest.TestCase):
         self.assertEqual(outcome.state, ManualState.UNKNOWN)
         self.assertIn("unverified", outcome.message.lower())
 
+    def test_post_dispatch_validation_failure_is_unknown_not_rejected(self):
+        service, _, _ = self.make_service()
+        self.assertEqual(self.send(service, self.op, "claim").state,
+                         ManualState.CONFIRMED)
+        original_fresh = service._fresh
+        calls = [0]
+
+        def fail_followup(chamber_id):
+            calls[0] += 1
+            if calls[0] == 2:
+                raise ChamberSafetyError("post-write status missing")
+            return original_fresh(chamber_id)
+
+        service._fresh = fail_followup
+        outcome = self.send(service, self.op, "set_temperature", target_c=41)
+        self.assertEqual(outcome.state, ManualState.UNKNOWN)
+        self.assertIn("not guaranteed", outcome.message)
+
+    def test_unverified_post_stop_status_is_unknown_not_refused(self):
+        service, mgr, _ = self.make_service()
+        original_status = mgr.status
+
+        def bad_followup(chamber_id):
+            return replace(original_status(chamber_id), quality=ReadingQuality.STALE)
+
+        mgr.status = bad_followup
+        outcome = self.send(service, self.op, "stop")
+        self.assertEqual(outcome.state, ManualState.UNKNOWN)
+        self.assertTrue(mgr.health(service.chamber_id).stop_latched)
+
+    def test_older_confirmed_result_does_not_supersede_stop(self):
+        service, _, _ = self.make_service()
+        old = service._begin("start")
+        service._begin("stop")
+        outcome = service._finish(old, "start", ManualState.CONFIRMED, "done")
+        self.assertEqual(outcome.state, ManualState.UNKNOWN)
+        self.assertEqual(service.view(self.admin.session, service.chamber_id)
+                         .last_command.state, ManualState.STOP_REQUESTED)
+
     def test_stale_disconnected_telemetry_denies_nonstop_commands(self):
         class StaleFake(FakeBackend):
             stale = False
