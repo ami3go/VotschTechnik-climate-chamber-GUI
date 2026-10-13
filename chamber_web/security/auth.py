@@ -353,9 +353,19 @@ class SecurityStore(AccountOperations):
                     (username,),
                 ).fetchone()
                 locked = bool(fail and fail[0] >= self.lockout_attempts and fail[1] > now)
+                # A pre-KDF peer check is only an optimization. Recheck while
+                # holding SQLite write serialization to close concurrent
+                # brute-force attempts racing the threshold.
+                peer_fail = db.execute(
+                    "SELECT attempts,window_end FROM login_clients"
+                    " WHERE client_hash=?", (client_hash,),
+                ).fetchone() if client_hash is not None else None
+                peer_locked = bool(
+                    peer_fail and peer_fail[0] >= self.client_attempts
+                    and peer_fail[1] > now)
                 current = bool(candidate and row and candidate[2] == row[2]
                                and candidate[0] == row[0] and row[3])
-                if locked or not valid or not current:
+                if locked or peer_locked or not valid or not current:
                     attempts = fail[0] if locked else (
                         fail[0] + 1 if fail and fail[1] > now else 1)
                     # Attempts during lockout may not prolong the lockout.
@@ -375,14 +385,17 @@ class SecurityStore(AccountOperations):
                             "SELECT attempts,window_end FROM login_clients"
                             " WHERE client_hash=?", (client_hash,),
                         ).fetchone()
-                        count = (row_client[0] + 1 if row_client and
+                        count = (row_client[0] if peer_locked else
+                                 row_client[0] + 1 if row_client and
                                  row_client[1] > now else 1)
                         db.execute(
                             "INSERT INTO login_clients(client_hash,attempts,window_end)"
                             " VALUES(?,?,?) ON CONFLICT(client_hash)"
                             " DO UPDATE SET attempts=excluded.attempts,"
                             " window_end=excluded.window_end",
-                            (client_hash, count, now + self.lockout_seconds),
+                            (client_hash, count,
+                             row_client[1] if peer_locked else
+                             now + self.lockout_seconds),
                         )
                         # Bound retained client throttles even if a malicious
                         # client rotates source IPs (notably IPv6 privacy IPs).
