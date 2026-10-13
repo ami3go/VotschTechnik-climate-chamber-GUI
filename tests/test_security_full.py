@@ -283,6 +283,13 @@ class HardenedNetworkTests(unittest.TestCase):
             (b"host", b"127.0.0.1:8080"),
             (b"host", b"attacker.invalid:8080")])[0]["status"], 403)
 
+    def test_rejects_forged_testserver_host_even_during_unit_testing(self):
+        self.assertEqual(self.probe(
+            "http", [(b"host", b"testserver")])[0]["status"], 403)
+        self.assertEqual(self.probe(
+            "websocket", [(b"host", b"testserver"),
+                          (b"origin", b"http://testserver")])[0]["code"], 1008)
+
     def test_websocket_origin_and_cross_site_replay(self):
         base = [(b"host", b"127.0.0.1:8080")]
         for headers in (base, base + [(b"origin", b"http://evil.invalid:8080")],
