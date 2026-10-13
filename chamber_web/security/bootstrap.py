@@ -14,7 +14,7 @@ def interactive_bootstrap(directory: Path | None = None) -> int:
     if not sys.stdin.isatty():
         print("Refusing bootstrap without an interactive local terminal", file=sys.stderr)
         return 2
-    store = SecurityStore(directory)
+    store = SecurityStore.from_environment(directory)
     if store.is_bootstrapped():
         print("Administrator already provisioned; bootstrap disabled", file=sys.stderr)
         return 2
@@ -33,8 +33,6 @@ def interactive_bootstrap(directory: Path | None = None) -> int:
     return 0
 
 
-
-
 def interactive_recovery(*, issue: bool = False, directory: Path | None = None) -> int:
     """Offline host-only recovery enrollment or one-use consumption.
 
@@ -45,7 +43,7 @@ def interactive_recovery(*, issue: bool = False, directory: Path | None = None) 
         print("Recovery requires an interactive local terminal", file=sys.stderr)
         return 2
     from .auth import AuthenticationError
-    store = SecurityStore(directory)
+    store = SecurityStore.from_environment(directory)
     if not store.is_bootstrapped():
         print("No administrator provisioned", file=sys.stderr)
         return 2
