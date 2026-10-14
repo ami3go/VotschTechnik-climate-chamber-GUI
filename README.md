@@ -6,7 +6,29 @@ The new browser-based interface is being developed in `chamber_web/`, based on t
 
 **Safety:** The web scaffold is a DEMO only. It does not communicate with chamber hardware. Real device control will use the separate [Python driver](https://github.com/ami3go/VotschTechnik-climate-chamber-Python) in a later, tested integration. See [web setup and current limitations](README_WEB.md) and the [migration plan](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/3).
 
-Start locally with `python -m pip install -r requirements-web.txt` and `python main.py` (visit http://127.0.0.1:8080).
+## Cross-platform Python setup (Windows/Linux)
+
+Install Python 3.10+ (CI-tested on 3.10 and 3.12) and Git. From a repository checkout, run:
+
+**Windows** (PowerShell):
+
+```powershell
+py -3.12 setup_environment.py
+.venv\Scripts\python.exe main.py
+```
+
+**Linux**:
+
+```bash
+python3 setup_environment.py
+.venv/bin/python main.py
+```
+
+The setup detects the operating system, creates or reuses `.venv`, installs the NiceGUI web requirements and the **commit-pinned external Vötsch Python driver**, then runs `pip check`. No hardware I/O is performed. Open http://127.0.0.1:8080 after starting the app.
+
+To install pytest, ruff and Playwright for HIL/browser testing, add `--with-tests`; add `--browser` to download Chromium as well. For a simulation-only installation without the external driver or Git, use `--no-driver`. Use `--run` to start the GUI after installation. An internet connection is needed for fresh package installs; this is **not** the offline Windows release process (see [offline packaging](README_OFFLINE_WINDOWS.md)).
+
+See [web setup and safety limitations](README_WEB.md) for details. Physical chamber operation remains disabled pending site authorization/HIL validation.
 
 ---
 
