@@ -168,8 +168,16 @@ def dashboard() -> None:
             for b in (start_button, set_button, claim_button, release_button,
                       handover_button, reconcile_button):
                 b.disable()
-            # STOP remains available; G08 re-authorizes the event callback.
-            stop_button.enable()
+            # Keep STOP available despite telemetry failure *only* for an
+            # independently reauthenticated G08 ADMIN/OPERATOR. A revoked or
+            # VIEWER browser must never be shown an enabled mutation control.
+            from .security.auth import Role
+            try:
+                actor = current_actor(touch=False)
+                may_stop = actor is not None and actor.role in (Role.ADMIN, Role.OPERATOR)
+            except Exception:
+                may_stop = False
+            stop_button.enable() if may_stop else stop_button.disable()
             return
         lease_label.set_text(
             f"Owner: {data.owner or 'unclaimed'} · "

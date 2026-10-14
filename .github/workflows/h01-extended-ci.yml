@@ -10,6 +10,11 @@ on:
       - 'chamber_web/hil/**'
       - 'chamber_web/security/**'
       - 'chamber_web/execution/**'
+      - 'chamber_web/persistence/**'
+      - 'tests/test_run_recording*.py'
+      - 'chamber_web/services/**'
+      - 'chamber_web/main.py'
+      - 'tests/test_manual_*.py'
   pull_request:
     paths:
       - 'tests/test_h01_*.py'
@@ -18,6 +23,11 @@ on:
       - 'chamber_web/hil/**'
       - 'chamber_web/security/**'
       - 'chamber_web/execution/**'
+      - 'chamber_web/persistence/**'
+      - 'tests/test_run_recording*.py'
+      - 'chamber_web/services/**'
+      - 'chamber_web/main.py'
+      - 'tests/test_manual_*.py'
 
 permissions:
   contents: read

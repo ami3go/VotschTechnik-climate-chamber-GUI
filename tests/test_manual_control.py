@@ -478,6 +478,43 @@ class ManualControlTests(unittest.TestCase):
         self.assertEqual(service.view(self.admin.session, service.chamber_id).last_command.action,
                          "stop")
 
+    def test_manual_and_g06_profile_runner_exclusive_ownership(self):
+        # Independent simulated callers share G04; an authenticated manual
+        # controller must not steal G06's lease, nor vice versa. Authorized
+        # non-owner STOP is deliberately still available through G08.
+        from decimal import Decimal
+        from chamber_web.domain.profile import ParsedProfile, ProfileStep
+        from chamber_web.execution.profile_runner import ProfileRunner, VirtualClock
+        from chamber_web.persistence.profiles import ProfileStore
+
+        service, manager, _ = self.make_service()
+        chamber_id = service.chamber_id
+        profiles = ProfileStore(self.root / "profile-ownership.sqlite3")
+        step = ProfileStep(1, True, Decimal("25"), None, None,
+                           Decimal("1"), Decimal("0"), Decimal("10"),
+                           Decimal("30"), "manual-vs-profile")
+        header = profiles.create_profile(chamber_id, ParsedProfile((step,)))
+        runner = ProfileRunner(manager, profiles,
+                               authorize=lambda action, cid: "G06-test-principal",
+                               clock=VirtualClock())
+        try:
+            self.assertEqual(self.send(service, self.op, "claim").state,
+                             ManualState.CONFIRMED)
+            with self.assertRaises(ChamberSafetyError):
+                runner.start(chamber_id, header.profile_id, revision=1)
+            self.assertEqual(self.send(service, self.op, "release").state,
+                             ManualState.CONFIRMED)
+            runner.start(chamber_id, header.profile_id, revision=1)
+            self.assertEqual(self.send(service, self.op, "claim").state,
+                             ManualState.REJECTED)
+            self.assertEqual(self.send(service, self.op2, "stop").state,
+                             ManualState.CONFIRMED)
+            self.assertTrue(manager.health(chamber_id).stop_latched)
+            self.assertIn(self.send(service, self.op, "start").state,
+                          (ManualState.UNKNOWN, ManualState.REJECTED))
+        finally:
+            runner.close()
+
     def test_refresh_same_actor_separate_clients_and_restart_reconcile(self):
         service, mgr, dashboard = self.make_service()
         self.assertEqual(self.send(service, self.op, "claim").state,

@@ -124,3 +124,8 @@ must explicitly apply any target. No signed site-approved limits exist.
    R01 signoff remain outstanding.
 
 **Release decision: NO-GO.** All manual workflows in this PR are simulation-only.
+
+
+### Integrated H01/manual regression update (2026-10-14)
+
+The actual H01 headless Chromium workflow now runs on G05 source changes, with claim/setpoint/START/STOP and VIEWER-denial checks in the real server browser. G05 also tests that manual ownership and G06 runner ownership are mutually exclusive using a shared G04 controller while separately authorized STOP remains available. A UI fallback now reauthenticates role before enabling STOP when passive status cannot be read; VIEWER/revoked controls stay disabled. These checks require fresh GitHub Actions verification and do not certify physical hardware, emergency STOP or G07 combined wiring. G07-A integration and independent human approval remain explicit merge gates.
