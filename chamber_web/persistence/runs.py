@@ -158,6 +158,16 @@ class RunStore:
         self.data = self.root / "data"
         self.data.mkdir(parents=True, exist_ok=True)
         self.database = self.data / "runs.sqlite3"
+        # Check existing SQLite pages before accepting control-run evidence. A
+        # corrupt journal is a startup NO-GO, never a request to recreate it.
+        # quick_check is structural, not a substitute for site backup/restore.
+        try:
+            with self._read() as check:
+                result = check.execute("PRAGMA quick_check(1)").fetchone()
+                if result is None or result[0] != "ok":
+                    raise RunIntegrityError("Run journal SQLite integrity check failed")
+        except sqlite3.DatabaseError as exc:
+            raise RunIntegrityError("Corrupted/unreadable run journal; startup refused") from exc
         with self._write() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
             app = db.execute("PRAGMA application_id").fetchone()[0]

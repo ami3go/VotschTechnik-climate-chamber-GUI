@@ -61,3 +61,8 @@ Windows Python 3.10/3.12: `python -m unittest discover -s tests -p "test_run_rec
 6. **MEDIUM — archival trust:** SHA-256 hashes are corruption checks, not third-party attestations or cryptographic signatures. Formal evidence retention, backup, tamper-evident external anchoring and database-corruption restoration remain site policy work.
 
 This is an engineering/software evidence layer. H01 site safety approval, physical STOP validation, G08 full security, G08-min integration with future G07 HTTP pages and W02 certification remain **NO-GO**.
+
+
+### SQLite startup corruption regression (2026-10-14)
+
+`RunStore` now executes SQLite `PRAGMA quick_check(1)` on startup before accepting its schema and refuses damaged database pages with `RunIntegrityError`. A regression test corrupts the database header and verifies startup rejects it without silent recreation. This is only a structural check, not a substitute for full integrity scanning, independent evidence anchoring, backup/restore drills, or Windows power-cut tests. H01 extended simulated test workflow now also triggers on G07 recorder changes. Independent review and site safety acceptance remain outstanding.

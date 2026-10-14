@@ -323,6 +323,19 @@ class RecorderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.read_csv(self.chamber, self.run, name="../runs.sqlite3")
 
+    def test_damaged_sqlite_header_prevents_startup_without_recreation(self):
+        # Never convert corrupt SQLite bytes into a fresh empty journal.
+        original_bytes = self.store.database.read_bytes()
+        self.assertGreater(len(original_bytes), 100)
+        with self.store.database.open("r+b") as stream:
+            stream.seek(0)
+            stream.write(b"CORRUPTED_SQLITE!")
+            stream.flush()
+        with self.assertRaises(RunIntegrityError):
+            RunStore(self.temp.name)
+        self.assertNotEqual(self.store.database.read_bytes(), original_bytes)
+        self.assertTrue(self.store.database.read_bytes().startswith(b"CORRUPTED_SQLITE!"))
+
     def test_unknown_schema_refused(self):
         db = sqlite3.connect(self.store.database)
         try:
