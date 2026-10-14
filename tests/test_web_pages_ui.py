@@ -1,7 +1,26 @@
 """G02-B NiceGUI page/browser smoke tests (FakeBackend only)."""
 from typing import Callable
 
+import pytest
 from nicegui.testing import User
+
+
+@pytest.fixture(autouse=True)
+def _trusted_loopback_test_client(monkeypatch):
+    """Model W01's trusted loopback Host only in the in-process NiceGUI client.
+
+    Do not weaken the production ASGI Host/Origin gate: "testserver" must
+    continue to return 403. Other test modules retain their own fixtures.
+    """
+    original_open = User.open
+
+    async def open_with_localhost(self, path, *, clear_forward_history=True):
+        self.http_client.base_url = "http://127.0.0.1:8080"
+        return await original_open(
+            self, path, clear_forward_history=clear_forward_history
+        )
+
+    monkeypatch.setattr(User, "open", open_with_localhost)
 
 
 async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], User], monkeypatch, tmp_path) -> None:
