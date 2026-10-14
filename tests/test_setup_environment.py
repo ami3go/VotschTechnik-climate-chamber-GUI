@@ -17,7 +17,7 @@ class SetupEnvironmentTests(unittest.TestCase):
             (self.root / name).write_text("# test\n", encoding="utf-8")
 
     def fake_venv(self, system="Linux"):
-        python = setup.python_in_venv(self.root / ".venv", system)
+        python = setup.python_in_venv(self.root.resolve() / ".venv", system)
         python.parent.mkdir(parents=True, exist_ok=True)
         python.touch()
         return python
