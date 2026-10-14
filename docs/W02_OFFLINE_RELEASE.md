@@ -1,40 +1,66 @@
-# W02 — offline Windows packaging and certification evidence
+# W02 — Windows offline signed-release foundation and acceptance ledger
 
-Status: **IMPLEMENTATION IN PROGRESS / RELEASE NO-GO**. This work extends W01-A; it does not authorize live chamber communications. Server startup and application data remain owned by the existing W01 launcher and G08/G07 components.
+**Status: SOFTWARE IMPLEMENTATION PARTIAL / RELEASE NO-GO / PR #30 DRAFT.**
+This extends W01-A; no second launcher, no new chamber I/O owner and no enablement of physical Vötsch communication. W01's frozen PyInstaller executable remains a **simulation-only** portable prototype. A green connected Windows Actions job does not certify disconnected Windows 10/11 or release signing.
 
-## Release trust model
+## Build and architecture
 
-W01 build-manifest.json and SHA256SUMS.txt detect accidental changes only. W02 introduces w02-release.json and an Ed25519 signature over canonical JSON and its complete closed file inventory. **Hashing alone cannot establish publisher authenticity.** The site must independently pin the approved Ed25519 public key (not trust a key copied from the same unverified ZIP). The private key must be provided only on a protected signing host/CI secret, never embedded in source control, an artifact, or on target machines. Neither the unsigned GitHub CI artifact nor example signing keys constitute a trusted release.
+- The W01 scripts `scripts/build_windows_launcher.ps1` and `scripts/build_windows_offline.ps1` are the sole launcher/freezer path. Build natively on Windows x64 with Python **3.12** and PowerShell 5.1+; Windows 10 and 11 x64 target baselines remain **unverified**. The browser is an OS-installed browser, not bundled.
+- Bundles include NiceGUI and `chamber_web` assets, the FakeBackend and alternate test stub. The pinned external Vötsch Python dependency is included by default through the dedicated `VotschBackend` import path, but G04 rejects physical I/O. `-SimulationOnly` omits the external driver and is non-release test scope.
+- `setup_environment.py` from merged PR #33 is an **online developer bootstrap** (may run pip/Git/Playwright downloads). It is not, and must not be invoked as, a frozen/offline updater or on-target installation requirement.
+- W01 still resolves packages using connected pip without verified full transitive wheel hashes. The W01 archive's SHA256SUMS is a corruption checksum, **not** a publisher authentication mechanism. The CI artifact is unsigned.
+- The W01 manifest builder now emits `sbom.cdx.json` (CycloneDX 1.5), `THIRD_PARTY_LICENSES.csv`, and `build-provenance.json` *before* hashing files into `build-manifest.json`. These are deterministic **build-environment inventory** artifacts; every license is `REVIEW_REQUIRED`, the dependency closure is `UNVERIFIED`, and source provenance is `UNATTESTED`. **They are not a complete frozen dependency closure, an approved license report, or signed provenance.**
 
-Sign the extracted completed bundle on a trusted signing host (Python 3.12 + pinned cryptography), with a 64-hex-character source provenance digest (not a raw Git SHA-1):
+## Cryptographic trust and signing
+
+`scripts/w02_release.py` creates `w02-release.json` (canonical ASCII-serialized JSON, Ed25519 signature `w02-release.sig`) and validates a complete closed inventory, Windows case-insensitive name/file-directory collisions, unsafe NTFS paths, reparse-point/symlink checks, altered/missing/extra files, invalid signatures and W01's legacy file hashes. The two W02 signature sidecars are excluded **only** in the explicitly W02-authorized W01 validation; standalone W01 continues rejecting unlisted files.
+
+**Publisher keys MUST be distributed out of band.** Do not copy a public key out of the unverified ZIP or use a test key from CI; verification rejects an embedded public key path. Generate an Ed25519 signing key on a protected dedicated signing host, store the private key in secured escrow/HSM, and record fingerprint, issuer, approval, rotation, compromise and revocation procedure in the site release register. Protect key access with independent authorizations; never upload private keys to artifacts/repository.
+
+On a trusted isolated signing station with approved Python and the pinned `cryptography` dependency, after producing and extracting the unsigned W01 bundle:
 
 ```powershell
-python -m scripts.w02_release --sign --bundle .\ClimateChamber-Web-Windows-x64-1.0.0-offline --version 1.0.0 --source-sha <64-character-source-provenance-sha256> --private-key C:\Protected\release-private.pem
-python -m scripts.w02_release --verify --bundle .\ClimateChamber-Web-Windows-x64-1.0.0-offline --public-key C:\SiteTrusted\release-public.pem
+python -m scripts.w02_release --sign --bundle .\ClimateChamber-Web-Windows-x64-1.0.0-offline --version 1.0.0 --source-sha <64-lowercase-hex-of-reviewed-source-provenance> --private-key C:\Protected\w02-private.pem
+python -m scripts.w02_release --verify --bundle .\ClimateChamber-Web-Windows-x64-1.0.0-offline --public-key C:\SiteTrusted\w02-publisher.pem --min-version 1.0.0
 ```
 
-The current CLI requires 64 hex characters for source_sha (SHA-256 provenance identifier); a Git SHA-1 commit must instead be recorded in an independently archived provenance record. Do not claim the provided manifest alone proves source/build reproducibility. Verification requires a trusted *external* Python verifier; it is **not yet a Python-free target verifier**. Execution before trusted verification remains prohibited by deployment policy, not yet hard-enforced by the launcher.
+The 64-character source SHA-256 field is a **claimed provenance reference**, not a signed builder attestation. A Git SHA-1 commit ID cannot substitute for it. Verify exact source/tree, build logs, dependency fingerprints and signing attestation *out of band*. The site must independently pin the trusted publisher key **and** the minimum accepted version before first install. A copied manifest cannot define its own trusted rollback floor. Version floors must be maintained in a separately protected site policy; no such on-target policy store is implemented yet.
 
-For upgrade staging: `python -m scripts.w02_release --stage-update --bundle OLD --candidate NEW --backup PREVIOUS --public-key C:\SiteTrusted\release-public.pem`. This only validates and stages a verified rollback copy; it intentionally does **not** swap running binaries or migrate G07/G08 databases. Same-version replacement and downgrade are refused. Operators must stop the app and use a controlled deployment runbook. Failed or interrupted staging is fail-closed.
+**Target verification remains a BLOCKER:** `scripts/verify_w02_release.ps1` intentionally fails closed under Windows PowerShell 5.1 because no tested independent Ed25519 verifier is shipped. Target-side release trust currently requires a separately provisioned trusted offline Python verification station, **not** a Python-free clean machine. Do not run or install the archive until the separate approved target verification path and artifact are delivered and tested. Signed W02 artifacts have **not** been generated with an approved publisher key.
 
-## Integration boundaries
+## Updates, backups and data safety
 
-- W01 owns the single-instance launcher/server, loopback binding and shortcut helper.
-- G08-min provides interactive `server\ClimateChamberServer.exe --bootstrap-admin` with no default credential. G08-full PR #29 remains draft; backup/access controls and dedicated diagnostics must be integrated only after merge.
-- G07-A PR #27 remains draft; do not invent a recorder backup or schema migration until its storage contract merges.
-- G05 PR #28 remains draft; the bundle is simulator-only, and UI STOP is not an emergency stop.
-- The build host uses online `pip install` with currently **unlocked transitive dependencies**. This cannot yet be described as reproducible or supply-chain-certified. Establish a hash-locked wheelhouse with offline `pip --no-index --require-hashes`, complete SPDX/CycloneDX SBOM and redistribution/license approval.
+`python -m scripts.w02_release --stage-update --bundle OLD --candidate NEW --backup PREVIOUS --public-key C:\SiteTrusted\w02-publisher.pem` verifies both software trees, refuses same-core/same-version and downgrades, rejects aliasing/overlapping staging directories and creates a verified copy of OLD using `PREVIOUS.pending` followed by rename. It does **not** replace binaries, stop processes, migrate SQLite or back up user data; do not mistake this for an installed/atomic updater.
 
-## Required independent acceptance matrix (all pending)
+**Required operator procedure (NOT yet certified):** stop the existing server and verify process exit; independently verify NEW and the site's version floor; preserve immutable backups of profile revisions, G07 run journals/exports and G08 security credentials, audited events and cookie-signing keys under restricted OS ACLs; inspect SQLite `quick_check` and approved schema version; stage candidate on the same volume, keep live data outside executable trees; run migrations with version checks and a pre-migration snapshot; then atomically switch a supervised executable pointer; restart in simulated mode only, validate bootstrap/login, continuity/revocation policy and run recovery; on failure, restore **verified** original binaries and matching data snapshot, never silently replay chamber commands. Retain hashes, logs, timestamps and two-person approval.
 
-| Evidence ID | Environment / procedure | Required evidence | Current status |
-| --- | --- | --- | --- |
-| W02-VM10 | Fresh Windows 10 x64, user without admin, Python/Git/Node absent, NIC physically disconnected | OS build, VM snapshot ID, SHA-256 ZIP, Windows Event Viewer, browser console/network HAR, startup/read pages | **NO-GO: not performed** |
-| W02-VM11 | Fresh Windows 11 x64 with no connectivity, software prereqs absent | Same, per-user NTFS ACL checks and browser/WebSocket tests | **NO-GO: not performed** |
-| W02-AUTH | G08 merged final code with separate browser operator/viewer and session revocation | Login/bootstrap + refresh, expiry, CSRF/origin denial and multi-client test log | **NO-GO** |
-| W02-DATA | G07 merged final recorder and G03 persistent profile migrations | Encrypted off-host backup, corrupted backups, crash/restart and rollback; evidence hashes | **NO-GO** |
-| W02-PKG | Source-locked wheel closure, signed approved key, complete license inventory and SBOM | Wheel digests, provenance, verified signature on disconnected host | **NO-GO** |
-| W02-OPS | Planned/unplanned shutdown, logoff/reboot, PID lock, restore, diagnostic redaction | Process-tree observations, no live I/O and site acceptance | **NO-GO** |
-| W02-EGRESS | Browser assets and packaged server in isolated VM | Windows firewall outbound deny + DNS audit/DevTools HAR; no CDN, external URLs or pip execution | **NO-GO** |
+This transactional install/migration/rollback sequence is **not implemented** and must not be described as an automated update. G03-C profile SQLite, G07-A recorder and G08-full security storage are distinct owners; their changes must be integrated only after their separate PRs merge. Windows NTFS ACL validation, logoff/restart supervision, credential-safe logging, restored-session policy, corrupt backup rejection and upgrade-interruption drills are not certified.
 
-**Do not merge as production release or claim Windows offline certification** before these gates close with exact accepted SHA, job URLs, signed operator/QA results, and independently verified threat model. W01 simulated CI on connected Windows is not an air-gap test.
+## CI and release evidence
+
+`W02 signed-inventory` Windows Python 3.10/3.12 runs Ruff plus adversarial tests against cryptography and W01 checks. The W01 workflow builds the frozen x64 simulator and launches it on a **connected** Windows runner. The H01 extended merged workflow exercises simulated web/GUI/browser behavior; it is **not** a physical HIL or disconnected test.
+
+| Gate | Status as of 2026-10-14 | Acceptable closure |
+| --- | --- | --- |
+| Code signing and closed-file inventory | **PARTIAL SOFTWARE** | Final-head 3.10/3.12 Windows unit results, independent review |
+| Connected Windows frozen x64 smoke | **EARLY W01 evidence only** | Final-head W01 job and extraction / simulator launch |
+| Complete lockfile, hashes and air-gap wheel closure | **NO-GO** | Approved wheelhouse hash lock, offline pip resolution and damaged-wheel negative tests |
+| SBOM and license/provenance review | **PROVISIONAL FILES ONLY** | Reviewed runtime/component inventory with licenses, signed build provenance |
+| Independent target-side verifier with no Python | **NO-GO** | Approved externally distributed trust root and standalone verifier tested on PowerShell 5.1/Windows 10/11 |
+| Profile/G07/G08 data migration and reversible upgrade | **NO-GO** | Atomic stage/swap, snapshot, schema and interrupted-update trials |
+| Windows service/portable logoff/reboot and NTFS credentials | **NO-GO** | Clean-VM functional and security observations and site-approved policy |
+| H01 simulated web/GUI | **MERGED UPSTREAM; W02 compatibility pending** | Exact final-head H01 CI and frozen browser checks |
+| Windows 10 clean VM with NIC disconnected | **NOT PERFORMED** | OS build, snapshot, no Python/Git, offline launcher/web traces, event logs |
+| Windows 11 clean VM with NIC disconnected | **NOT PERFORMED** | Same plus ACL/Chrome/Edge WebSocket and session checks |
+| Independent security/supply-chain review | **NOT OBTAINED** | Qualified independent approval on the exact accepted head |
+| Production/site/physical release | **NO-GO** | W02 + G05/G07/G08 + P00 signed site policy + H01 physical HIL |
+
+### Disconnected Windows 10/11 acceptance runbook (future site QA)
+
+On **clean** isolated x64 VMs with Python, Git, Node and build tools absent, record OS build, browser version, VM snapshot ID, security policy/ACLs and independent publisher-verifier identity. Physically disconnect NIC or enforce a logged firewall deny-all egress policy; record network status and DNS/firewall evidence. Transfer signed release and site-pinned trust root separately; verify *before* extraction/execution, hash the transfer ZIP and check every unpacked file. Confirm offline first-admin bootstrap, read-only pages, two independent browsers, viewer denial/session revocation, CSV/profile run in FakeBackend, simulated STOP and G07 crash recovery (when merged), clean shutdown, logoff/reboot, reinstall, tamper, backup/rollback and no runtime pip/CDN/outbound requests. Save event logs, browser console + HAR, signed evidence hashes and operator/QA approvals.
+
+**Do not use an internet-connected Actions runner as replacement for this procedure.** No physical chamber is connected and Web STOP is not a physical emergency stop.
+
+## Integration/merge decision
+
+The existing [W02 PR #30](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/30) has incorporated the merged H01 simulated CI and PR #33 developer setup from current `main`. G05 [#28](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/28), G07-A [#27](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/27) and G08-full [#29](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/29) remain separate draft integrations. **Do not merge PR #30 while its software BLOCKER/HIGH findings or required merge gates remain open.** Independent Windows VM, signed release and operational approval are distinct stages; neither PR merge nor unit-test success grants hardware enablement.
