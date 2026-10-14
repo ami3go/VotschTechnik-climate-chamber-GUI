@@ -97,5 +97,79 @@ class W02ReleaseTests(unittest.TestCase):
         self.assertEqual(release.verify(backup, self.pub)["version"], "1.0.0")
 
 
+    def test_w01_verifier_requires_explicit_signed_sidecar_allowlist(self):
+        # Standalone W01 verification must not begin accepting unsigned extras.
+        with self.assertRaisesRegex(ValueError, "Integrity mismatch"):
+            windows_manifest.verify_manifest(self.bundle)
+        self.assertEqual(release.verify(self.bundle, self.pub)["schema"], 2)
+
+    def test_missing_file_and_truncated_signature_rejected(self):
+        missing = self.bundle / "server/_internal/nicegui/assets/runtime.js"
+        missing.unlink()
+        with self.assertRaises(ValueError):
+            release.verify(self.bundle, self.pub)
+        missing.write_bytes(b"mock bytes")
+        (self.bundle / "w02-release.sig").write_text("AAAA", encoding="ascii")
+        with self.assertRaises(Exception):
+            release.verify(self.bundle, self.pub)
+
+    def test_sign_refuses_mismatched_legacy_w01_inventory(self):
+        (self.bundle / "ClimateChamberLauncher.exe").write_bytes(b"tampered")
+        with self.assertRaisesRegex(ValueError, "Integrity mismatch"):
+            release.sign(self.bundle, "2.0.0", self.priv, source_sha=self.sha)
+
+    def test_windows_reserved_names_and_directory_collisions(self):
+        unsafe = ("CON.txt", "aux", "lpt1.data", "data/trailing.",
+                  "data/name ", "dir/foo?.dll", "data/DEL\\x00")
+        for name in unsafe:
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                release.validate_entries({name: "a" * 64})
+        for entries in (
+            {"Folder": "a" * 64, "folder/a.txt": "b" * 64},
+            {"Folder/a.txt": "a" * 64, "folder": "b" * 64},
+        ):
+            with self.assertRaisesRegex(ValueError, "collision"):
+                release.validate_entries(entries)
+
+    def test_external_trust_root_enforced(self):
+        embedded = self.bundle / "publisher.pem"
+        embedded.write_bytes(self.pub.read_bytes())
+        with self.assertRaisesRegex(ValueError, "outside"):
+            release.verify(self.bundle, embedded)
+
+    def test_fresh_install_minimum_version_policy(self):
+        self.assertEqual(release.verify(self.bundle, self.pub, minimum_version="1.0.0")["version"], "1.0.0")
+        with self.assertRaisesRegex(ValueError, "minimum version"):
+            release.verify(self.bundle, self.pub, minimum_version="1.0.1")
+        with self.assertRaisesRegex(ValueError, "minimum version"):
+            release.verify(self.bundle, self.pub, minimum_version="1.0.0-rc1")
+        with self.assertRaisesRegex(ValueError, "Invalid"):
+            release.verify(self.bundle, self.pub, minimum_version="not-a-version")
+
+    def test_refuse_backup_destination_inside_installed_bundle(self):
+        import shutil
+        candidate = self.bundle.parent / "candidate"
+        shutil.copytree(self.bundle, candidate)
+        release.sign(candidate, "1.1.0", self.priv, source_sha=self.sha)
+        with self.assertRaisesRegex(ValueError, "overlap"):
+            release.stage_update(self.bundle, candidate, self.pub, self.bundle / "backup")
+        self.assertFalse((self.bundle / "backup").exists())
+
+    def test_refuse_symlink_in_signed_inventory(self):
+        external = self.bundle.parent / "external.dat"
+        external.write_bytes(b"x")
+        link = self.bundle / "unsafe.link"
+        try:
+            link.symlink_to(external)
+        except (OSError, NotImplementedError):
+            self.skipTest("No permission to create a symlink")
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            release.verify(self.bundle, self.pub)
+
+    def test_signature_sidecar_is_not_an_authentication_key(self):
+        with self.assertRaisesRegex(ValueError, "signatures"):
+            release.validate_entries({"w02-release.sig": "a" * 64})
+
+
 if __name__ == "__main__":
     unittest.main()
