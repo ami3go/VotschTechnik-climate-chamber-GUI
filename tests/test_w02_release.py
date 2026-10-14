@@ -171,5 +171,29 @@ class W02ReleaseTests(unittest.TestCase):
             release.validate_entries({"w02-release.sig": "a" * 64})
 
 
+    def test_sbom_license_and_provenance_are_explicitly_unapproved(self):
+        output = self.bundle.parent / "supply-chain"
+        output.mkdir()
+        packages = [
+            {"name": "nicegui", "version": "3.18.0", "license": "MIT"},
+            {"name": "unknown-package", "version": "1.0", "license": ""},
+        ]
+        windows_manifest.write_supply_chain_reports(
+            output, installed=packages, version="1.0.0", include_driver=False,
+            web_sha256="a" * 64, driver_sha256="b" * 64)
+        sbom = json.loads((output / "sbom.cdx.json").read_text(encoding="utf-8"))
+        self.assertEqual(sbom["bomFormat"], "CycloneDX")
+        self.assertEqual(sbom["specVersion"], "1.5")
+        self.assertEqual(len(sbom["components"]), 2)
+        self.assertIn("unapproved-build-environment-not-runtime-closure",
+                      json.dumps(sbom))
+        licenses = (output / "THIRD_PARTY_LICENSES.csv").read_text(encoding="utf-8")
+        self.assertIn("REVIEW_REQUIRED", licenses)
+        self.assertIn("unknown-package", licenses)
+        provenance = json.loads((output / "build-provenance.json").read_text(encoding="utf-8"))
+        self.assertEqual(provenance["dependency_closure"], "UNVERIFIED")
+        self.assertEqual(provenance["publisher_signature"], "NOT_ISSUED")
+
+
 if __name__ == "__main__":
     unittest.main()
