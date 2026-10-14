@@ -26,7 +26,24 @@ python -m scripts.w02_release --verify --bundle .\ClimateChamber-Web-Windows-x64
 
 The 64-character source SHA-256 field is a **claimed provenance reference**, not a signed builder attestation. A Git SHA-1 commit ID cannot substitute for it. Verify exact source/tree, build logs, dependency fingerprints and signing attestation *out of band*. The site must independently pin the trusted publisher key **and** the minimum accepted version before first install. A copied manifest cannot define its own trusted rollback floor. Version floors must be maintained in a separately protected site policy; no such on-target policy store is implemented yet.
 
-**Target verification remains a BLOCKER:** `scripts/verify_w02_release.ps1` intentionally fails closed under Windows PowerShell 5.1 because no tested independent Ed25519 verifier is shipped. Target-side release trust currently requires a separately provisioned trusted offline Python verification station, **not** a Python-free clean machine. Do not run or install the archive until the separate approved target verification path and artifact are delivered and tested. Signed W02 artifacts have **not** been generated with an approved publisher key.
+**Target-side software verifier candidate:** `scripts/w02_target_verifier.py` is a no-launch, no-network, no-hardware archive verifier intended to be frozen independently using PyInstaller `--onefile` as `ClimateChamberReleaseVerifier.exe`. It pre-validates ZIP entries for traversal/NTFS aliasing, zip expansion limits and unsafe links, extracts into a fresh `.pending` quarantine, checks an out-of-band Ed25519 publisher key and externally pinned minimum version against every file, and stages via same-volume rename only after verification. `scripts/verify_w02_release.ps1` uses Windows PowerShell 5.1 `Get-FileHash` to check an **independently supplied** verifier SHA-256 before invoking the EXE. The PowerShell script, verifier binary and expected hash must themselves be distributed/attested separately by the site; a digest taken from the untrusted bundle cannot authenticate the verifier.
+
+Example **candidate** procedure; not a production-authorized package, and do not treat a test/CI hash or key as approved:
+
+```powershell
+# On a trusted Windows x64 build/signing station, not the target:
+python -m pip install pyinstaller==6.16.0 -r requirements-w02-build.txt
+python -m PyInstaller --noconfirm --clean --onefile --console --name ClimateChamberReleaseVerifier --paths . scripts/w02_target_verifier.py
+
+# On target in a trusted offline PowerShell 5.1 console, before any GUI launch:
+powershell.exe -NoProfile -File C:\SiteTrusted\verify_w02_release.ps1 `
+  -Archive D:\Transfer\W02-signed.zip -InstallDir C:\AppStaging\ClimateChamber-1.0.0 `
+  -VerifierPath C:\SiteTrusted\ClimateChamberReleaseVerifier.exe `
+  -VerifierSha256 <64-lowercase-hex-OUT-OF-BAND-approved-verifier-digest> `
+  -TrustedPublicKey C:\SiteTrusted\publisher.pem -MinimumVersion 1.0.0
+```
+
+The independently provisioned verifier and PowerShell 5.1 wrapper require **exact Windows CI proof and separate clean disconnected Windows 10/11 testing**, controlled signing/Authenticode or protected digest attestation, site trust-key management, permissions review and security approval. Until then the release gate **remains fail-closed / NO-GO**. Signed production W02 artifacts have **not** been generated with a site-approved key.
 
 ## Updates, backups and data safety
 
@@ -46,7 +63,7 @@ This transactional install/migration/rollback sequence is **not implemented** an
 | Connected Windows frozen x64 smoke | **EARLY W01 evidence only** | Final-head W01 job and extraction / simulator launch |
 | Complete lockfile, hashes and air-gap wheel closure | **NO-GO** | Approved wheelhouse hash lock, offline pip resolution and damaged-wheel negative tests |
 | SBOM and license/provenance review | **PROVISIONAL FILES ONLY** | Reviewed runtime/component inventory with licenses, signed build provenance |
-| Independent target-side verifier with no Python | **NO-GO** | Approved externally distributed trust root and standalone verifier tested on PowerShell 5.1/Windows 10/11 |
+| Independent target-side verifier with no Python | **CANDIDATE CODE / NO-GO** | Frozen tool + PowerShell 5.1 Windows CI, independently attested tool/key policy, clean offline Windows 10/11 evidence |
 | Profile/G07/G08 data migration and reversible upgrade | **NO-GO** | Atomic stage/swap, snapshot, schema and interrupted-update trials |
 | Windows service/portable logoff/reboot and NTFS credentials | **NO-GO** | Clean-VM functional and security observations and site-approved policy |
 | H01 simulated web/GUI | **MERGED UPSTREAM; W02 compatibility pending** | Exact final-head H01 CI and frozen browser checks |
@@ -57,7 +74,7 @@ This transactional install/migration/rollback sequence is **not implemented** an
 
 ### Disconnected Windows 10/11 acceptance runbook (future site QA)
 
-On **clean** isolated x64 VMs with Python, Git, Node and build tools absent, record OS build, browser version, VM snapshot ID, security policy/ACLs and independent publisher-verifier identity. Physically disconnect NIC or enforce a logged firewall deny-all egress policy; record network status and DNS/firewall evidence. Transfer signed release and site-pinned trust root separately; verify *before* extraction/execution, hash the transfer ZIP and check every unpacked file. Confirm offline first-admin bootstrap, read-only pages, two independent browsers, viewer denial/session revocation, CSV/profile run in FakeBackend, simulated STOP and G07 crash recovery (when merged), clean shutdown, logoff/reboot, reinstall, tamper, backup/rollback and no runtime pip/CDN/outbound requests. Save event logs, browser console + HAR, signed evidence hashes and operator/QA approvals.
+On **clean** isolated x64 VMs with Python, Git, Node and build tools absent, record OS build, browser version, VM snapshot ID, security policy/ACLs and independent publisher-verifier identity. Physically disconnect NIC or enforce a logged firewall deny-all egress policy; record network status and DNS/firewall evidence. Transfer the signed release separately from a site-pinned verifier/key/minimum-version policy; run the verifier's **quarantine extraction** and signature validation before staging or executing any app binary; hash the transfer ZIP and check every unpacked file. Confirm offline first-admin bootstrap, read-only pages, two independent browsers, viewer denial/session revocation, CSV/profile run in FakeBackend, simulated STOP and G07 crash recovery (when merged), clean shutdown, logoff/reboot, reinstall, tamper, backup/rollback and no runtime pip/CDN/outbound requests. Save event logs, browser console + HAR, signed evidence hashes and operator/QA approvals.
 
 **Do not use an internet-connected Actions runner as replacement for this procedure.** No physical chamber is connected and Web STOP is not a physical emergency stop.
 
