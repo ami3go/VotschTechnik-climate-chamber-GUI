@@ -89,9 +89,21 @@ security remain NO-GO.
 - **SOFTWARE FIXED:** G03-C import/ZIP test identifiers previously overwhelmed Windows logs; [issue #22](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/22) canonical ZIP wall-clock timestamps removed with a regression. No physical chamber has been started or certified.
 
 
+## H01 preparation baseline — 2026-10-13 (PR #32)
+
+H01 simulation-only readiness package proposed in [PR #32](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/32), branch `feat/h01-hil-readiness`. Includes 20-case *future* site HIL procedure matrix, unsigned site equipment checklist, blank signed acceptance report, GO/NO-GO matrix and G04-injected FakeBackend tests. The driver remains pinned to `9323e3701f3befedcc23b45170a851fd327f0bcc`; no driver protocol was modified. This update is **NOT** evidence of executing, passing or certifying HIL. Windows and independent review gates are pending on the PR final head.
+
+B1 transport physical framing/timeout; B2 actual STOP and local emergency procedure; B3 approved exact model/serial/firmware, manual, operating envelope/gradient and site signatures; B4 G05/G07/G08/W02/R01 integration and signed witnessed HIL remain **OPEN / PHYSICAL NO-GO**. H2, H4, H7 and H8 retain their previously documented physical/deployment gaps. Site data, operator signatures, readbacks, STOP timing, alarm semantics and power-loss permits have not been supplied. No physical enable path was added. See [H01 test plan](H01_HIL_VERIFICATION_PLAN.md), [inventory](H01_HARDWARE_ACCEPTANCE_CHECKLIST.md), [report](H01_TEST_REPORT_TEMPLATE.md), and [decision matrix](H01_SITE_APPROVAL_AND_GO_NOGO.md).
+
+
 ## G07-A current readiness — 2026-10-13
 
 - [Draft PR #27](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/27) source `c586bd563b60830130d1d098c0bf21ef3ab47a23` has recorded passing [G07 recorder + 1M samples](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440410962), [G06](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440410835), [NiceGUI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440411011) and [W01](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440410963) workflows. These checks precede synchronization with `main` `7a481d1125148fdcd610c0e9fea1dd7621ac938a`; exact integrated-branch verification remains required.
 - **RELEASE HIGH (open):** Windows power-loss/rename durability, G06 independently observed setpoint readback, G08 authorization and audit for any future G07 History/Logs/download routes, offline corruption disposition and independent human architecture/security approval. Existing Python-only read services do not constitute authenticated web routes.
 - **MEDIUM (open):** stride-based plotting can miss extrema; CSV/ZIP hard bounds reject large runs. Simulator-only integration does not close H7, B1–B4, site STOP approval, H01 or W02.
 - **NO MERGE** until reviewed final integrated head passes all G07/G06/G08/NiceGUI/W01 Windows gates, branch is GitHub-mergeable, and required independent approval is obtained. UNKNOWN/INTERRUPTED must never be reported as verified STOPPED; recovery must never issue chamber I/O.
+
+
+## G07-A integration sync — 2026-10-14
+
+The existing G07-A branch was integrated with `main` including merged H01 #32 and environment setup #33. Original earlier-head CI evidence remains historical; final merge requires exact updated-head G07/G06/G08/NiceGUI/H01/Windows packaging checks and independent human architecture/durability/security acceptance. Physical hardware remains disabled; H01 site physical certification, G08-full, W02 and signed site safety approval remain NO-GO.
