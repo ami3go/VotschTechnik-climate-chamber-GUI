@@ -23,13 +23,13 @@ def canonical(payload: dict) -> bytes:
 
 
 def inventory(root: Path) -> dict[str, str]:
-    if root.is_symlink() or getattr(root, "is_junction", lambda: False)():
-        raise ValueError("Release root is a symlink or junction")
-    from scripts.windows_manifest import sha256
+    from scripts.windows_manifest import sha256, unsafe_reparse
+    if unsafe_reparse(root):
+        raise ValueError("Release root is a symlink, junction or reparse point")
     files: dict[str, str] = {}
     for path in sorted(root.rglob("*")):
-        if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
-            raise ValueError("Release contains symlink or junction")
+        if unsafe_reparse(path):
+            raise ValueError("Release contains symlink, junction or reparse point")
         if not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()
