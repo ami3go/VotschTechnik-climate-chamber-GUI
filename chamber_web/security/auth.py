@@ -129,6 +129,19 @@ class SecurityStore(AccountOperations):
         if __import__("os").name != "nt":
             self.directory.chmod(0o700)
         self.database = self.directory / "security.sqlite3"
+        # An established deployment must never silently become a new,
+        # unbootstrapped identity authority because its DB was removed.
+        # The audit/backup keys are independent local persistence markers.
+        # Loss of both DB and keys still needs external inventory/ACL controls.
+        if not self.database.exists() and any(
+            (self.directory / key).exists()
+            or (self.directory / key).is_symlink()
+            for key in ("audit_hmac_key", "backup_signing_key")
+        ):
+            raise RuntimeError(
+                "Existing security credentials found but database is missing; "
+                "restore an approved backup"
+            )
         # Create a new SQLite file private from its FIRST byte; chmod after
         # schema initialization alone leaves a credential disclosure window.
         if not self.database.exists():

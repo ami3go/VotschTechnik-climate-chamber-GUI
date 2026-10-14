@@ -213,6 +213,23 @@ class HardenedIdentityTests(unittest.TestCase):
         with self.assertRaises(AuditIntegrityError):
             SecurityStore(self.store.directory, clock=lambda: self.time[0])
 
+    def test_missing_security_db_cannot_rebootstrap_existing_authority(self):
+        # A credential-file-only survivor is evidence that a database was
+        # removed, not an invitation to provision a new first administrator.
+        self.store.database.unlink()
+        with self.assertRaisesRegex(RuntimeError, "database is missing"):
+            SecurityStore(self.store.directory, clock=lambda: self.time[0])
+
+    def test_missing_checkpoint_and_chain_never_reseals_old_database(self):
+        from chamber_web.security.audit_integrity import AuditIntegrityError
+        self.store.audit(None, "safety.audit", "DENIED")
+        with closing(sqlite3.connect(self.store.database)) as db:
+            db.execute("DELETE FROM audit_chain")
+            db.execute("DELETE FROM audit_anchor")
+            db.commit()
+        with self.assertRaises(AuditIntegrityError):
+            SecurityStore(self.store.directory, clock=lambda: self.time[0])
+
     def test_audit_retention_is_bounded_and_checkpointed(self):
         other = SecurityStore(self.store.directory,
                               clock=lambda: self.time[0], audit_max_rows=100)

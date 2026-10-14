@@ -41,6 +41,7 @@ class AuditLedger:
             );
         """)
         existing = db.execute("SELECT count(*) FROM audit_chain").fetchone()[0]
+        key_preexisting = self.key_path.exists() or self.key_path.is_symlink()
         if self.key_path.is_symlink():
             raise AuditIntegrityError("Audit key symlink forbidden")
         if not self.key_path.exists():
@@ -73,8 +74,11 @@ class AuditLedger:
                 "SELECT last_pruned,mac FROM audit_anchor WHERE id=1"
             ).fetchone()
             if checkpoint is None:
-                if existing:
-                    raise AuditIntegrityError("Audit checkpoint missing")
+                # Pre-existing audit key proves this is not the first G08
+                # initialization. Do not silently reseal an attacker-edited
+                # database after audit_chain and audit_anchor are emptied.
+                if existing or key_preexisting:
+                    raise AuditIntegrityError("Established audit checkpoint missing")
                 # One-time migration: seal pre-existing G08-min audit records.
                 db.execute("INSERT INTO audit_anchor VALUES(1,0,?)", ("0" * 64,))
                 for row in db.execute("SELECT * FROM audit ORDER BY sequence"):
