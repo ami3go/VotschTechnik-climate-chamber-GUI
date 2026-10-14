@@ -195,5 +195,24 @@ class W02ReleaseTests(unittest.TestCase):
         self.assertEqual(provenance["publisher_signature"], "NOT_ISSUED")
 
 
+    def test_reparse_point_flag_rejected_on_old_windows_python(self):
+        # Unlike Path.is_junction(), st_file_attributes exists in Python 3.10.
+        from types import SimpleNamespace
+        from unittest import mock
+
+        class Junction:
+            @staticmethod
+            def is_symlink():
+                return False
+
+            @staticmethod
+            def lstat():
+                return SimpleNamespace(st_file_attributes=1024)
+
+        with mock.patch.object(windows_manifest.stat, "FILE_ATTRIBUTE_REPARSE_POINT",
+                               1024, create=True):
+            self.assertTrue(windows_manifest.unsafe_reparse(Junction()))
+
+
 if __name__ == "__main__":
     unittest.main()
