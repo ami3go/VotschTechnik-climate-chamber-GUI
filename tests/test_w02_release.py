@@ -3,11 +3,13 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import zipfile
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from scripts import w02_release as release
+from scripts import w02_target_verifier as target_verifier
 from scripts import windows_manifest
 
 
@@ -212,6 +214,77 @@ class W02ReleaseTests(unittest.TestCase):
         with mock.patch.object(windows_manifest.stat, "FILE_ATTRIBUTE_REPARSE_POINT",
                                1024, create=True):
             self.assertTrue(windows_manifest.unsafe_reparse(Junction()))
+
+
+    def _signed_archive(self, location=None, *, mutate=None):
+        zip_path = location or (self.bundle.parent / "candidate.zip")
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zipped:
+            for file in sorted(self.bundle.rglob("*")):
+                if file.is_file():
+                    name = "signed-bundle/" + file.relative_to(self.bundle).as_posix()
+                    zipped.writestr(name, mutate(name, file.read_bytes()) if mutate else
+                                    file.read_bytes())
+        return zip_path
+
+    def test_offline_archive_verifier_stages_only_signed_bytes(self):
+        archive = self._signed_archive()
+        install = self.bundle.parent / "installed"
+        result = target_verifier.verify_archive(
+            archive, install, self.pub, minimum_version="1.0.0")
+        self.assertEqual(result["version"], "1.0.0")
+        self.assertEqual(release.verify(install, self.pub)["version"], "1.0.0")
+        self.assertFalse(install.with_name("installed.pending").exists())
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            target_verifier.verify_archive(archive, install, self.pub,
+                                           minimum_version="1.0.0")
+
+    def test_archive_tampering_fails_without_installing(self):
+        archive = self._signed_archive(
+            mutate=lambda name, content:
+            b"MODIFIED" if name.endswith("ClimateChamberServer.exe") else content)
+        install = self.bundle.parent / "installed"
+        with self.assertRaises(ValueError):
+            target_verifier.verify_archive(archive, install, self.pub, minimum_version="1.0.0")
+        self.assertFalse(install.exists())
+        self.assertFalse(install.with_name("installed.pending").exists())
+
+    def test_archive_zip_slip_and_casefold_duplicate_fails_pre_extract(self):
+        for name in ("signed-bundle/../escape.dll", "signed-bundle/C:/escape.dll",
+                     "signed-bundle/server\\evil.dll", "other-root/file.dll"):
+            archive = self.bundle.parent / ("bad-" + str(len(name)) + ".zip")
+            with zipfile.ZipFile(archive, "w") as zipped:
+                zipped.writestr("signed-bundle/w02-release.json", b"{}")
+                zipped.writestr("signed-bundle/w02-release.sig", b"AA")
+                zipped.writestr(name, b"evil")
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError):
+                    target_verifier.verify_archive(
+                        archive, self.bundle.parent / "install", self.pub, minimum_version="1.0.0")
+                self.assertFalse((self.bundle.parent / "install").exists())
+        archive = self.bundle.parent / "duplicate.zip"
+        with zipfile.ZipFile(archive, "w") as zipped:
+            zipped.writestr("signed-bundle/w02-release.json", b"{}")
+            zipped.writestr("signed-bundle/w02-release.sig", b"AA")
+            zipped.writestr("signed-bundle/ONE.dll", b"A")
+            zipped.writestr("signed-bundle/one.DLL", b"B")
+        with self.assertRaisesRegex(ValueError, "collision"):
+            target_verifier.verify_archive(archive, self.bundle.parent / "install",
+                                           self.pub, minimum_version="1.0.0")
+
+    def test_archive_requires_external_minimum_version_and_trust_key(self):
+        archive = self._signed_archive()
+        dest = self.bundle.parent / "install"
+        with self.assertRaisesRegex(ValueError, "minimum version"):
+            target_verifier.verify_archive(archive, dest, self.pub, minimum_version="")
+        with self.assertRaisesRegex(ValueError, "minimum version"):
+            target_verifier.verify_archive(archive, dest, self.pub, minimum_version="2.0.0")
+        self.assertFalse(dest.exists())
+        wrong = self.bundle.parent / "wrong.pem"
+        wrong.write_bytes(Ed25519PrivateKey.generate().public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
+        with self.assertRaises(Exception):
+            target_verifier.verify_archive(archive, dest, wrong, minimum_version="1.0.0")
+        self.assertFalse(dest.exists())
 
 
 if __name__ == "__main__":
