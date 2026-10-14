@@ -8,6 +8,10 @@ on:
       - "README_OFFLINE_WINDOWS.md"
       - "tests/test_windows_packaging.py"
       - ".github/workflows/windows-packaging.yml"
+      - ".github/workflows/w02-release-validation.yml"
+      - ".github/workflows/h01-extended-ci.yml"
+      - "docs/W02_OFFLINE_RELEASE.md"
+      - "docs/W02_SECURITY_REVIEW.md"
       - "requirements-web.txt"
       - "requirements-hardware.txt"
   push:
