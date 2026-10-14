@@ -69,7 +69,7 @@ def archive_entries(archive: zipfile.ZipFile) -> list[tuple[zipfile.ZipInfo, str
                 raise ValueError("Case-insensitive directory collision")
         else:
             if folded in regular:
-                raise ValueError("Duplicate/case-colliding archive file")
+                raise ValueError("Duplicate/case-insensitive archive path collision")
             regular[folded] = "0" * 64
         if info.flag_bits & 1:
             raise ValueError("Encrypted release ZIP is not supported")
