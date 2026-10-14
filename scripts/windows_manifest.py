@@ -21,14 +21,14 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def files_under(folder: Path) -> dict[str, str]:
+def files_under(folder: Path, *, sidecars: frozenset[str] = frozenset()) -> dict[str, str]:
     result = {}
     for path in sorted(folder.rglob("*")):
         if path.is_symlink():
             raise ValueError("Symlink in offline bundle: " + str(path))
         if path.is_file():
             name = path.relative_to(folder).as_posix()
-            if name not in {"build-manifest.json", "SHA256SUMS.txt"}:
+            if name not in {"build-manifest.json", "SHA256SUMS.txt"} | sidecars:
                 result[name] = sha256(path)
     return result
 
@@ -81,7 +81,7 @@ def write_manifest(bundle: Path, *, version: str, include_driver: bool,
     verify_manifest(bundle)
 
 
-def verify_manifest(bundle: Path) -> None:
+def verify_manifest(bundle: Path, *, sidecars: frozenset[str] = frozenset()) -> None:
     manifest = json.loads((bundle / "build-manifest.json").read_text(encoding="utf-8"))
     expected = manifest["files"]
     if not isinstance(expected, dict):
@@ -90,7 +90,7 @@ def verify_manifest(bundle: Path) -> None:
         path = Path(name)
         if path.is_absolute() or ".." in path.parts or "\\" in name:
             raise ValueError("Unsafe manifest path: " + name)
-    actual = files_under(bundle)
+    actual = files_under(bundle, sidecars=sidecars)
     if actual != expected:
         removed = sorted(set(expected) - set(actual))
         added = sorted(set(actual) - set(expected))
