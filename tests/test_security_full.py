@@ -239,6 +239,26 @@ class HardenedIdentityTests(unittest.TestCase):
         with self.assertRaises(AuditIntegrityError):
             SecurityStore(self.store.directory, clock=lambda: self.time[0])
 
+    def test_parallel_first_security_store_initialization(self):
+        # Two initializers previously saw a freshly created audit key before
+        # its first SQLite checkpoint existed and falsely rejected startup.
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+
+        directory = self.root / "parallel-initialization"
+        barrier = Barrier(6)
+
+        def start(_index):
+            barrier.wait()
+            return SecurityStore(directory).verify_audit_integrity()
+
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            counts = list(executor.map(start, range(6)))
+        self.assertEqual(counts, [0] * 6)
+        SecurityStore(directory).bootstrap_admin(
+            "parallel_admin", "AnIndependentLongPassword#10")
+        self.assertGreater(SecurityStore(directory).verify_audit_integrity(), 0)
+
     def test_missing_checkpoint_and_chain_never_reseals_old_database(self):
         from chamber_web.security.audit_integrity import AuditIntegrityError
         self.store.audit(None, "safety.audit", "DENIED")

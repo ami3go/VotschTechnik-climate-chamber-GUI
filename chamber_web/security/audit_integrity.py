@@ -40,6 +40,11 @@ class AuditLedger:
                 mac TEXT NOT NULL
             );
         """)
+        # Hold SQLite's cross-process writer lock for both new-key creation
+        # and checkpoint installation. Otherwise a concurrent first starter
+        # can see a newly created key but not the still-uncommitted anchor,
+        # falsely reporting tampering.
+        db.execute("BEGIN IMMEDIATE")
         existing = db.execute("SELECT count(*) FROM audit_chain").fetchone()[0]
         key_preexisting = self.key_path.exists() or self.key_path.is_symlink()
         if self.key_path.is_symlink():
@@ -68,7 +73,6 @@ class AuditLedger:
             __import__("time").sleep(0.05)
         if len(self.key) != 32:
             raise AuditIntegrityError("Invalid audit key")
-        db.execute("BEGIN IMMEDIATE")
         try:
             checkpoint = db.execute(
                 "SELECT last_pruned,mac FROM audit_anchor WHERE id=1"
