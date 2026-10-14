@@ -10,6 +10,7 @@ import csv
 import hashlib
 from importlib import metadata
 import json
+import stat
 from pathlib import Path
 import sys
 
@@ -22,11 +23,27 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def unsafe_reparse(path: Path) -> bool:
+    """Treat Windows junctions and all reparse points as unsafe, including on 3.10.
+
+    Path.is_junction() is only available in newer Python versions. lstat's
+    FILE_ATTRIBUTE_REPARSE_POINT bit works on supported Windows interpreters.
+    """
+    if path.is_symlink():
+        return True
+    attrs = getattr(path.lstat(), "st_file_attributes", 0)
+    if attrs & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+        return True
+    return getattr(path, "is_junction", lambda: False)()
+
+
 def files_under(folder: Path, *, sidecars: frozenset[str] = frozenset()) -> dict[str, str]:
+    if unsafe_reparse(folder):
+        raise ValueError("Reparse point in offline bundle root: " + str(folder))
     result = {}
     for path in sorted(folder.rglob("*")):
-        if path.is_symlink():
-            raise ValueError("Symlink in offline bundle: " + str(path))
+        if unsafe_reparse(path):
+            raise ValueError("Reparse point in offline bundle: " + str(path))
         if path.is_file():
             name = path.relative_to(folder).as_posix()
             if name not in {"build-manifest.json", "SHA256SUMS.txt"} | sidecars:
