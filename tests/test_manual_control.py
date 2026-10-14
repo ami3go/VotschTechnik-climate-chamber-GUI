@@ -512,8 +512,23 @@ class ManualControlTests(unittest.TestCase):
             self.assertTrue(manager.health(chamber_id).stop_latched)
             self.assertIn(self.send(service, self.op, "start").state,
                           (ManualState.UNKNOWN, ManualState.REJECTED))
+            # External STOP is asynchronous relative to the G06 scheduler.
+            # Drive its state machine to a terminal UNKNOWN, never force-close
+            # an active run or infer that STOP readback completed G06 cleanup.
+            from chamber_web.execution.profile_runner import RunState
+            import time
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline and runner.state not in (
+                RunState.COMPLETED, RunState.CANCELLED, RunState.FAULT, RunState.UNKNOWN
+            ):
+                runner.advance()
+                time.sleep(.01)
+            self.assertIn(runner.state, (RunState.UNKNOWN, RunState.FAULT,
+                                         RunState.CANCELLED))
         finally:
-            runner.close()
+            if runner.state in (RunState.COMPLETED, RunState.CANCELLED,
+                                RunState.FAULT, RunState.UNKNOWN, None):
+                runner.close()
 
     def test_refresh_same_actor_separate_clients_and_restart_reconcile(self):
         service, mgr, dashboard = self.make_service()
