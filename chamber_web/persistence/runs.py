@@ -201,11 +201,17 @@ class RunStore:
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(str(self.database), timeout=10, isolation_level=None)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA foreign_keys=ON")
-        db.execute("PRAGMA busy_timeout=10000")
-        db.execute("PRAGMA synchronous=FULL")
-        return db
+        try:
+            db.row_factory = sqlite3.Row
+            db.execute("PRAGMA foreign_keys=ON")
+            db.execute("PRAGMA busy_timeout=10000")
+            db.execute("PRAGMA synchronous=FULL")
+            return db
+        except BaseException:
+            # Failed PRAGMA setup (including corrupt SQLite headers) must not
+            # leak an open Windows file handle or prevent safe recovery.
+            db.close()
+            raise
 
     @contextmanager
     def _read(self) -> Iterator[sqlite3.Connection]:
