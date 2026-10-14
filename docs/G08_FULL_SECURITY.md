@@ -195,3 +195,9 @@ the final SHA, and retain PR #29 targeting main. No hardware integration or
 real Vötsch operations are enabled by this PR. Operational LAN signoff
 requires an independent security reviewer, site admin/owner and W02;
 physical HIL requires signed P00 + G05/G06/G07/H01 gates.
+
+## 2026-10-14 software integration checkpoint
+
+The existing G08-full PR #29 is reconciled with `main` through H01 #32 and environment setup #33. G05 #28 and G07-A #27 are still open, so no interface from either draft is assumed deployed. An omitted G02-B NiceGUI browser-test fixture has been corrected to use the permitted loopback host. Production Host and Origin enforcement remain unchanged.
+
+A new defense-in-depth audit validation rejects deletion of the newest audit rows and matching HMAC rows when SQLite's AUTOINCREMENT watermark remains intact. Because that watermark is inside SQLite, it is **not** an independently sealed trust anchor. Offline append-only export/anchoring, backup anti-rollback authorization, NTFS owner/DACL enforcement, and actual LAN penetration tests remain HIGH/open or release-blocking as recorded in G08_SECURITY_REVIEW.md. No physical I/O is authorized.

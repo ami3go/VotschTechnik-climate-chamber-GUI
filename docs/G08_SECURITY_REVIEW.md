@@ -66,3 +66,14 @@ NO-GO even after software CI.
 - Corrective commits: `bac2bde65c7bc78260440426a944eaad44a05217`, `286ef01ba32c7396b0b04f1bf3b8995d5d018ffd`, `d8968d6dd07ec60aef69ac8937749fed4cb7f055`. Final-head CI must be rerun and **completed**; in-flight or older-head workflows are not passing evidence.
 - **Still OPEN HIGH:** audit tail-truncation not anchored outside SQLite; historical G08-min audit authenticity cannot be established retroactively; signed backup replay/rollback policy missing; Windows DACL/owner enforcement not implemented. These are material security issues, not documentation-only closure. Review independently before merge.
 - Independent human/security approval is still absent. `main` merge and LAN/physical deployment are NOT authorized.
+
+## 2026-10-14 follow-up findings and CI integration
+
+| Finding | Severity | Evidence and disposition |
+|---|---|---|
+| G08-R11 — NiceGUI G02-B fixture mismatch | CI failure; software test | Both Windows Python 3.10/3.12 jobs in [run 38457405604](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38457405604) failed at `tests/test_web_pages_ui.py::test_read_only_routes_and_repeat_browsers` on HTTP 403. Cause was NiceGUI's default `Host: testserver`. Fixed only in that test's loopback fixture; adverse Host rejection remains tested. Final-SHA CI must establish the fix. |
+| G08-R12 — audit suffix deletion | HIGH, partly mitigated | Deleting the newest audit and audit_chain rows leaves a valid internal HMAC prefix. Added `sqlite_sequence` watermark checking and `test_audit_suffix_deletion_detected_before_reopen`. A DB attacker who also rewrites the allocation watermark can still evade local-only detection. Off-device sealed audit tips remain **OPEN**. |
+| G08-R13 — signed backup rollback | HIGH, OPEN | Manifest HMAC verifies authenticity, not whether an older valid snapshot is acceptable. Explicit operator-authorized recovery freshness/anti-rollback policy and external escrow remain release gates. |
+| G08-R14 — Windows NTFS key protection | HIGH, OPEN | POSIX file-mode validation is not an NTFS owner/DACL audit. Independently assess the launcher/service account, effective permissions, and host key protection before LAN use. |
+
+Merged H01 #32 and cross-platform setup #33 were integrated through commit `cd59d5e`, with no G04 hardware activation. G05 #28 and G07-A #27 remain draft/open. **This is AI-assisted self-review, not independent external human approval.** PR #29 must remain unmerged until final-head CI, independent security review, and all code-level HIGH/BLOCKER gates are resolved. Physical HIL, site LAN approval, W02 release certification and actual hardware enablement remain separately NO-GO.

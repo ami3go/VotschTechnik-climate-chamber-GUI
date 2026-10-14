@@ -102,3 +102,9 @@ B1 transport physical framing/timeout; B2 actual STOP and local emergency proced
 ## G08 integration follow-up (2026-10-14)
 
 G08 PR #29 remains software-only, with physical I/O disabled. H01 #32 and cross-platform setup #33 are now merged into main; this branch incorporates both without introducing hardware enablement. Windows NiceGUI testing exposed a previously missed G02-B test `Host: testserver` mismatch; test fixture corrected without relaxing middleware host enforcement. Final Windows CI and independent human security approval are still required. G05 #28 and G07-A #27 remain separate open PRs; their unmerged interfaces are not assumed available.
+
+## G08-full review and mainline integration checkpoint — 2026-10-14
+
+G08-full [PR #29](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/29) reconciled the merged H01 verification **preparation** #32 and environment setup #33 against `main`. Draft G05 #28 and G07-A #27 were not silently integrated. Python 3.10/3.12 [NiceGUI run 38457405604](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38457405604) exposed a test-client Host mismatch; the test now uses permitted loopback host instead of weakening production defenses.
+
+The security code now checks the SQLite AUTOINCREMENT audit tail against the HMAC chain, with adversarial regression. This does **not** close the HIGH off-device audit anchoring, signed-backup rollback or NTFS ACL findings. External human review and final-head CI remain required for G08 software merge; signed P00/H01 physical HIL, LAN approval and W02 offline certification remain independent operational NO-GO gates.
