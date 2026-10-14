@@ -287,5 +287,13 @@ class W02ReleaseTests(unittest.TestCase):
         self.assertFalse(dest.exists())
 
 
+    def test_signing_key_can_never_be_in_unsigned_release(self):
+        leaked_key = self.bundle / "operator-signing-key.pem"
+        leaked_key.write_bytes(self.priv.read_bytes())
+        with self.assertRaisesRegex(ValueError, "Private signing key"):
+            release.sign(self.bundle, "2.0.0", leaked_key, source_sha=self.sha)
+        self.assertFalse((self.bundle / "w02-release.json").read_bytes().find(b'"version":"2.0.0"') >= 0)
+
+
 if __name__ == "__main__":
     unittest.main()
