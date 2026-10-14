@@ -71,6 +71,8 @@ def validate_entries(entries: dict) -> None:
 
 
 def sign(root: Path, version: str, key: Path, *, source_sha: str) -> None:
+    if key.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Private signing key must remain outside the release bundle")
     if not VERSION.fullmatch(version) or not SHA.fullmatch(source_sha):
         raise ValueError("Version/source revision invalid")
     if not (root / "build-manifest.json").is_file():
