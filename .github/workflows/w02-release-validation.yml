@@ -7,6 +7,7 @@ on:
       - "scripts/verify_w02_release.ps1"
       - "tests/test_windows_packaging.py"
       - ".github/workflows/windows-packaging.yml"
+      - ".github/workflows/h01-extended-ci.yml"
       - "docs/W02_OFFLINE_RELEASE.md"
       - "docs/W02_SECURITY_REVIEW.md"
       - "scripts/windows_manifest.py"
