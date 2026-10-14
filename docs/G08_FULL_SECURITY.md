@@ -201,3 +201,7 @@ physical HIL requires signed P00 + G05/G06/G07/H01 gates.
 The existing G08-full PR #29 is reconciled with `main` through H01 #32 and environment setup #33. G05 #28 and G07-A #27 are still open, so no interface from either draft is assumed deployed. An omitted G02-B NiceGUI browser-test fixture has been corrected to use the permitted loopback host. Production Host and Origin enforcement remain unchanged.
 
 A new defense-in-depth audit validation rejects deletion of the newest audit rows and matching HMAC rows when SQLite's AUTOINCREMENT watermark remains intact. Because that watermark is inside SQLite, it is **not** an independently sealed trust anchor. Offline append-only export/anchoring, backup anti-rollback authorization, NTFS owner/DACL enforcement, and actual LAN penetration tests remain HIGH/open or release-blocking as recorded in G08_SECURITY_REVIEW.md. No physical I/O is authorized.
+
+### Fail-closed security-database recovery
+
+An existing audit or backup signing key is durable evidence of a previously initialized security store. If the SQLite security database is missing, startup refuses implicit re-bootstrap and requires an approved offline restore. Once an HMAC key exists, absence of the checkpoint is not treated as a new G08-min migration. Legacy databases with no HMAC key still support the one-time explicit migration path, covered by adversarial tests. These are local software protections only; separately secured key escrow, signed restore policy and Windows ACL certification remain mandatory for LAN deployment.

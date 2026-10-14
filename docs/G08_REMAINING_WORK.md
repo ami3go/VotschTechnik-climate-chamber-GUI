@@ -51,3 +51,7 @@ PR #29 includes account lifecycle/recovery, application/transport security, audi
 - [ ] W02 offline Win10/11 certification, trusted service lifecycle and actual LAN/physical HIL/site authorization — release gates remain **NO-GO**.
 
 The newly added SQLite tail check is a **partial hardening**, not a closure of the HIGH audit anchor requirement. Web STOP remains an audited ordinary control command, not an emergency stop. Physical Vötsch connectivity stays disabled.
+
+### Recovery/tamper regression follow-up
+
+The existing G08 security authority now rejects (a) a missing SQLite identity DB with surviving audit/backup keys and (b) removal of an established HMAC checkpoint while its key remains. Positive G08-min legacy migration and negative tampering/reboot tests are included. Check final-head Windows CI on both supported Python versions before marking these software defects resolved. Complete loss of both database **and** trust keys is not recoverable or attestable without operator-controlled off-device key escrow and monotonic external evidence.

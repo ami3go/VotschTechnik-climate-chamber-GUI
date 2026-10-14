@@ -220,6 +220,25 @@ class HardenedIdentityTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "database is missing"):
             SecurityStore(self.store.directory, clock=lambda: self.time[0])
 
+    def test_legacy_g08_min_audit_is_sealed_on_first_upgrade(self):
+        # The original G08-min database had plain audit rows but NO HMAC key
+        # or chain tables. This is the single allowed transition to G08-full.
+        from chamber_web.security.audit_integrity import AuditIntegrityError
+        with closing(sqlite3.connect(self.store.database)) as db:
+            db.execute("DROP TABLE audit_chain")
+            db.execute("DROP TABLE audit_anchor")
+            db.commit()
+        (self.store.directory / "audit_hmac_key").unlink()
+        migrated = SecurityStore(self.store.directory, clock=lambda: self.time[0])
+        self.assertGreater(migrated.verify_audit_integrity(), 0)
+        # Later loss of chain metadata MUST be denied once the key exists.
+        with closing(sqlite3.connect(self.store.database)) as db:
+            db.execute("DELETE FROM audit_chain")
+            db.execute("DELETE FROM audit_anchor")
+            db.commit()
+        with self.assertRaises(AuditIntegrityError):
+            SecurityStore(self.store.directory, clock=lambda: self.time[0])
+
     def test_missing_checkpoint_and_chain_never_reseals_old_database(self):
         from chamber_web.security.audit_integrity import AuditIntegrityError
         self.store.audit(None, "safety.audit", "DENIED")
