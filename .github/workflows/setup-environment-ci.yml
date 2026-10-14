@@ -1,0 +1,47 @@
+name: Cross-platform environment bootstrap
+
+on:
+  pull_request:
+    paths:
+      - 'setup_environment.py'
+      - 'requirements-web.txt'
+      - 'requirements-hardware.txt'
+      - 'requirements-dev.txt'
+      - 'tests/test_setup_environment.py'
+      - '.github/workflows/setup-environment-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'setup_environment.py'
+      - 'requirements-web.txt'
+      - 'requirements-hardware.txt'
+      - 'requirements-dev.txt'
+      - 'tests/test_setup_environment.py'
+      - '.github/workflows/setup-environment-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Test bootstrap error paths without a network
+        run: python -m unittest discover -s tests -p 'test_setup_environment.py' -v
+      - name: Install web app and pinned external driver in virtual environment
+        run: python setup_environment.py
+      - name: Verify installed packages (Linux)
+        if: runner.os == 'Linux'
+        run: .venv/bin/python -m pip check
+      - name: Verify installed packages (Windows)
+        if: runner.os == 'Windows'
+        run: .venv/Scripts/python.exe -m pip check
