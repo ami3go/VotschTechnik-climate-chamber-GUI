@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import hashlib
 import json
 from pathlib import Path
 import re
@@ -26,6 +25,7 @@ def canonical(payload: dict) -> bytes:
 def inventory(root: Path) -> dict[str, str]:
     if root.is_symlink() or getattr(root, "is_junction", lambda: False)():
         raise ValueError("Release root is a symlink or junction")
+    from scripts.windows_manifest import sha256
     files: dict[str, str] = {}
     for path in sorted(root.rglob("*")):
         if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
@@ -35,8 +35,7 @@ def inventory(root: Path) -> dict[str, str]:
         relative = path.relative_to(root).as_posix()
         if relative in EXCLUDED:
             continue
-        with path.open("rb") as stream:
-            files[relative] = hashlib.file_digest(stream, "sha256").hexdigest()
+        files[relative] = sha256(path)
     return files
 
 
