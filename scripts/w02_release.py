@@ -98,7 +98,7 @@ def verify(root: Path, public_key: Path) -> dict:
     if current != payload["files"]:
         raise ValueError("Release integrity mismatch (missing/modified/unexpected files)")
     from scripts.windows_manifest import verify_manifest
-    verify_manifest(root)
+    verify_manifest(root, sidecars=frozenset(EXCLUDED))
     return payload
 
 
