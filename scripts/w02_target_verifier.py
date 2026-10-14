@@ -53,7 +53,8 @@ def archive_entries(archive: zipfile.ZipFile) -> list[tuple[zipfile.ZipInfo, str
         # same NTFS restrictions applied to signed inventory entries.
         validate_entries({"/".join(segments): "0" * 64})
         relative = "/".join(segments[1:])
-        validate_entries({relative: "0" * 64})
+        # ZIP names include the two signature sidecars; signed *inventory* does not.
+        validate_entries({"_archive_root_/" + relative: "0" * 64})
         folded = relative.casefold()
         for i in range(1, len(segments)):
             directory = "/".join(segments[1:i])
@@ -88,7 +89,8 @@ def archive_entries(archive: zipfile.ZipFile) -> list[tuple[zipfile.ZipInfo, str
         entries.append((info, relative))
     if len(roots) != 1:
         raise ValueError("Archive contains multiple top-level directories")
-    validate_entries(regular)
+    validate_entries({name: digest for name, digest in regular.items()
+                      if name not in {"w02-release.json", "w02-release.sig"}})
     if set(regular) & set(dirs):
         raise ValueError("Archive file/directory collision")
     if "w02-release.json" not in regular or "w02-release.sig" not in regular:
