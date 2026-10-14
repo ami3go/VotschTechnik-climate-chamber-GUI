@@ -144,4 +144,14 @@ class AuditLedger:
                               " WHERE a.sequence IS NULL").fetchone()[0]
         if orphaned:
             raise AuditIntegrityError("Orphaned audit chain entry")
+        # AUTOINCREMENT retains its allocation watermark after a DELETE of
+        # the newest records, unlike an HMAC verification of the remaining
+        # valid prefix. Fail closed on simple audit-tail truncation.
+        allocation = db.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name='audit'"
+        ).fetchone()
+        if allocation is not None and allocation[0] != prior_seq:
+            raise AuditIntegrityError("Audit tail was truncated")
+        # sqlite_sequence remains inside SQLite and is not an independent
+        # tamper-proof anchor; off-device sealing is a separate release gate.
         return count
