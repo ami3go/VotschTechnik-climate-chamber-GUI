@@ -1,19 +1,39 @@
 #requires -Version 5.1
-<# W02 on-target verification (no Python). This script MUST be run with a
-   pinned public key placed outside the archive by the site's trusted process. #>
+<# W02: offline target-side verification using an INDEPENDENTLY TRUSTED frozen verifier.
+   The verifier EXE, its SHA-256 pin, this wrapper and the publisher key MUST
+   be provisioned by a trusted site process separately from the W02 ZIP.
+   A ZIP's own hash or embedded key cannot establish publisher authenticity.
+   Does not launch the GUI, install packages, connect hardware, or use network.
+#>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][string]$Bundle,
-    [Parameter(Mandatory = $true)][string]$TrustedPublicKey
+    [Parameter(Mandatory = $true)][string]$Archive,
+    [Parameter(Mandatory = $true)][string]$InstallDir,
+    [Parameter(Mandatory = $true)][string]$VerifierPath,
+    [Parameter(Mandatory = $true)][string]$VerifierSha256,
+    [Parameter(Mandatory = $true)][string]$TrustedPublicKey,
+    [Parameter(Mandatory = $true)][string]$MinimumVersion
 )
 $ErrorActionPreference = "Stop"
-$root = [IO.Path]::GetFullPath($Bundle)
-$keyPath = [IO.Path]::GetFullPath($TrustedPublicKey)
-if (-not (Test-Path -LiteralPath $keyPath -PathType Leaf)) { throw "Trusted key missing" }
-$scriptPath = Join-Path $root 'w02-release.json'
-$sigPath = Join-Path $root 'w02-release.sig'
-if (-not (Test-Path -LiteralPath $scriptPath) -or -not (Test-Path -LiteralPath $sigPath)) { throw "Release signature missing" }
-# Windows PowerShell 5.1 lacks native Ed25519. The separate W02 Python signing
-# verifier is required on a trusted offline validation station; this script
-# deliberately fails rather than treating hashes as a signature.
-throw "NO-GO: Windows PowerShell 5.1 has no built-in Ed25519 verifier; use independent trusted offline verification station, not this script."
+if ($VerifierSha256 -cnotmatch '^[a-f0-9]{64}$') { throw "Externally pinned verifier SHA-256 required" }
+if ($MinimumVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$') {
+    throw "Externally pinned minimum release version required"
+}
+$archiveFile = [IO.Path]::GetFullPath($Archive)
+$destination = [IO.Path]::GetFullPath($InstallDir)
+$verifier = [IO.Path]::GetFullPath($VerifierPath)
+$key = [IO.Path]::GetFullPath($TrustedPublicKey)
+foreach ($path in @($archiveFile, $verifier, $key)) {
+    if (-not [IO.File]::Exists($path)) { throw "Missing required offline verification input" }
+}
+if ([IO.Directory]::Exists($destination) -or [IO.File]::Exists($destination)) {
+    throw "Target installation directory already exists"
+}
+if ($archiveFile -eq $verifier -or $archiveFile -eq $key -or $verifier -eq $key) {
+    throw "Release, verifier and trusted publisher key must be distinct files"
+}
+$actual = (Get-FileHash -LiteralPath $verifier -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -cne $VerifierSha256) { throw "Standalone verifier authenticity pin mismatch" }
+& $verifier --archive $archiveFile --install-dir $destination --public-key $key --min-version $MinimumVersion
+if ($LASTEXITCODE -ne 0) { throw "Signed W02 release verification FAILED; no launch permitted" }
+Write-Host "Signed offline release verified and staged. Simulation-only; deployment authorization still required."
