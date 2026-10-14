@@ -213,3 +213,8 @@ PR #26 final isolated Windows CI after bounded pytest case identifiers passed: P
 ## G05 PR #28 integration checkpoint (2026-10-13)
 
 Existing G05 manual control is integrated onto `main` including G03-C and G08-min. The G03-C `/profiles` editor and its regression checks are preserved; G05 adds the authenticated manual Dashboard controls. **Verified on integrated G05 head `3dc72ec7f8df73136a8822f7a201eac082320fab`:** all five Windows checks PASS: Python 3.10/3.12 NiceGUI/G03-C/G05/G08 at [run 38453093551](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38453093551), Python 3.10/3.12 G06 at [run 38453093490](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38453093490), W01 frozen simulator at [run 38453093491](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38453093491). Independent reviewer approval remains absent; PR #28 must not merge until that gate is satisfied. **Physical chamber connections/writes remain disabled. Web STOP is not a physical emergency stop.**
+
+
+## G05 pre-merge rebase/synchronization — 2026-10-14
+
+The existing G05 branch was integrated with latest `main`, preserving merged H01 #32 and environment setup #33. G07-A #27 has not merged: after its independently approved merge G05 must integrate that final `main` again, and rerun Windows 3.10/3.12 G05/G06/G07/G08/NiceGUI/H01/frozen packaging checks. No merged-runner/recorder production claim or site physical authorization exists. All physical I/O remains disabled, including on loopback.
