@@ -149,7 +149,18 @@ def test_browser_g05_actual_manual_start_stop_and_viewer_denial(live_app):
             sign_in(admin, "browser_admin", "StrongAdminPassword#1")
             expect(admin.get_by_role("button", name="Start", exact=True)).to_be_disabled()
             expect(admin.get_by_role("button", name="Stop", exact=True)).to_be_enabled()
-            admin.get_by_role("button", name="Claim", exact=True).click()
+            claim = admin.get_by_role("button", name="Claim", exact=True)
+            # The prior NiceGUI tests share the runner's OS home directory.
+            # G04 correctly carries STOP uncertainty across server restarts.
+            # Exercise explicit, audited ADMIN reconciliation rather than
+            # clearing the lock, mutating SQLite or bypassing safety code.
+            if not claim.is_enabled():
+                expect(admin.locator("body")).to_contain_text(
+                    "STOP/reconciliation required", timeout=15000)
+                admin.get_by_role("button", name="Admin reconcile STOP").click()
+                admin.get_by_role("button", name="Confirm reconcile").click()
+            expect(claim).to_be_enabled(timeout=15000)
+            claim.click()
             expect(admin.locator("body")).to_contain_text("you hold control", timeout=15000)
             expect(admin.get_by_role("button", name="Start", exact=True)).to_be_enabled()
             admin.get_by_label("Target °C").fill("25")
