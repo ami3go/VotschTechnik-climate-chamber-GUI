@@ -218,3 +218,8 @@ Existing G05 manual control is integrated onto `main` including G03-C and G08-mi
 ## G05 pre-merge rebase/synchronization — 2026-10-14
 
 The existing G05 branch was integrated with latest `main`, preserving merged H01 #32 and environment setup #33. G07-A #27 has not merged: after its independently approved merge G05 must integrate that final `main` again, and rerun Windows 3.10/3.12 G05/G06/G07/G08/NiceGUI/H01/frozen packaging checks. No merged-runner/recorder production claim or site physical authorization exists. All physical I/O remains disabled, including on loopback.
+
+
+## G05 real-browser review checkpoint — 2026-10-14
+
+PR #28 was synced with main including H01 #32 and setup #33, without replacing its G08-authorized G04 manual service. A new real Chromium test discovered that manually injecting raw Quasar `disable` into NiceGUI command buttons leaves them disabled after a tracked `enable()` call. Corrected buttons use NiceGUI's own `.disable()` state before later authenticated re-enablement. Added G06/manual shared-controller ownership regression, explicit external STOP terminal-drain test, and server-side reauthorization of degraded-status STOP visibility. **Final-head CI and independent human security/safety acceptance are mandatory; the original H01 browser failures are not approvals.** G07 #27 is unmerged; integration onto merged #27 and G05/G06/G07 end-to-end tests cannot be claimed. Main and physical hardware remain untouched; STOP is not an emergency stop.

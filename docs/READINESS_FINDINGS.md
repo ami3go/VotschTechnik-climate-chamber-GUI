@@ -104,3 +104,10 @@ G05 is a **mock-only software candidate with all five final-head Windows CI chec
 ## G05 pre-merge rebase/synchronization — 2026-10-14
 
 The existing G05 branch was integrated with latest `main`, preserving merged H01 #32 and environment setup #33. G07-A #27 has not merged: after its independently approved merge G05 must integrate that final `main` again, and rerun Windows 3.10/3.12 G05/G06/G07/G08/NiceGUI/H01/frozen packaging checks. No merged-runner/recorder production claim or site physical authorization exists. All physical I/O remains disabled, including on loopback.
+
+
+## G05 final-head review requirements — 2026-10-14
+
+- Existing draft PR #28 now includes the H01 #32/setup #33 merge, actual NiceGUI conditional-button initialization fix, role-guarded degraded STOP visibility, G06/manual exclusive-lease regression and H01 real-browser manual workflow assertions. Prior Chromium CI revealed an actual UI defect; exact final-head green browser and Windows CI are still required. Do not infer acceptance from earlier-head green CI.
+- **UNRESOLVED MERGE GATES:** independent qualified human approval; exact final-head G05/G06/G08/NiceGUI/H01 Windows 3.10/3.12 and frozen Windows package checks; G07 #27 merge and subsequent G05 resynchronization/test; authenticated profile runner and G07 recording composition into the live app; engineering review of real browser session/Origin/CSRF deployment boundaries.
+- **RELEASE NO-GO:** G08-full, W02, physical H01 signed site acceptance/STOP/operating limits, validated physical driver, Windows power-loss evidence. Simulation-only FakeBackend remains unconditional. Web STOP is not physical E-STOP.

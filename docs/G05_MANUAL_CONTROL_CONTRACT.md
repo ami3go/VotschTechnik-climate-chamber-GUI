@@ -129,3 +129,8 @@ must explicitly apply any target. No signed site-approved limits exist.
 ### Integrated H01/manual regression update (2026-10-14)
 
 The actual H01 headless Chromium workflow now runs on G05 source changes, with claim/setpoint/START/STOP and VIEWER-denial checks in the real server browser. G05 also tests that manual ownership and G06 runner ownership are mutually exclusive using a shared G04 controller while separately authorized STOP remains available. A UI fallback now reauthenticates role before enabling STOP when passive status cannot be read; VIEWER/revoked controls stay disabled. These checks require fresh GitHub Actions verification and do not certify physical hardware, emergency STOP or G07 combined wiring. G07-A integration and independent human approval remain explicit merge gates.
+
+
+### Live Chromium UI button state correction — 2026-10-14
+
+A real Playwright/Chromium test exposed a G05 presentation defect that an in-process NiceGUI click test did not detect: initializing buttons using raw Quasar `props(... disable)` does not update NiceGUI's tracked `enabled` state. Subsequent `button.enable()` could leave the raw `disable` prop in place. G05 now constructs every conditionally enabled manual command button using `.disable()` and relies on `.enable()` / `.disable()` only after an authenticated service view. STOP initially renders disabled to avoid displaying an unauthorized transient control; G08 authorization remains mandatory on every STOP callback even if UI state is manipulated. The permanently unsupported Hold action remains disabled. This requires exact-commit H01 real browser validation before accepting the change. No testing-only bypass or physical I/O enablement was added.
