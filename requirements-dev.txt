@@ -1,0 +1,5 @@
+# H01 browser tests and Windows CI development tools; not required to run the GUI.
+pytest==9.1.1
+pytest-asyncio==1.4.0
+playwright==1.58.0
+ruff==0.17.0

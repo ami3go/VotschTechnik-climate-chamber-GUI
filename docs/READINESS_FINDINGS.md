@@ -88,6 +88,17 @@ security remain NO-GO.
 - **HIGH / pending for operational readiness:** H2 signed gradient baseline / HIL; H4 G08-min authority only for integrated simulated interfaces, not standalone physical G05/G07/G06 command surfaces; H7 G07 durable recording/crash recovery; H8 W02 air-gapped Windows dependency and supply-chain verification. Full G08 LAN account recovery/audit tamper controls are absent.
 - **SOFTWARE FIXED:** G03-C import/ZIP test identifiers previously overwhelmed Windows logs; [issue #22](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/22) canonical ZIP wall-clock timestamps removed with a regression. No physical chamber has been started or certified.
 
+
+## H01 preparation baseline — 2026-10-13 (PR #32)
+
+H01 simulation-only readiness package proposed in [PR #32](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/32), branch `feat/h01-hil-readiness`. Includes 20-case *future* site HIL procedure matrix, unsigned site equipment checklist, blank signed acceptance report, GO/NO-GO matrix and G04-injected FakeBackend tests. The driver remains pinned to `9323e3701f3befedcc23b45170a851fd327f0bcc`; no driver protocol was modified. This update is **NOT** evidence of executing, passing or certifying HIL. Windows and independent review gates are pending on the PR final head.
+
+B1 transport physical framing/timeout; B2 actual STOP and local emergency procedure; B3 approved exact model/serial/firmware, manual, operating envelope/gradient and site signatures; B4 G05/G07/G08/W02/R01 integration and signed witnessed HIL remain **OPEN / PHYSICAL NO-GO**. H2, H4, H7 and H8 retain their previously documented physical/deployment gaps. Site data, operator signatures, readbacks, STOP timing, alarm semantics and power-loss permits have not been supplied. No physical enable path was added. See [H01 test plan](H01_HIL_VERIFICATION_PLAN.md), [inventory](H01_HARDWARE_ACCEPTANCE_CHECKLIST.md), [report](H01_TEST_REPORT_TEMPLATE.md), and [decision matrix](H01_SITE_APPROVAL_AND_GO_NOGO.md).
+
 ## G08 full-security integration candidate (2026-10-13)
 
 [PR #29](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/29) contains a mock-only G08 security implementation based on the **merged** G08-min PR #25 and is submitted for integration testing. The branch reconciliation preserves newer mainline profile/editor work. See [G08 threat model](G08_FULL_SECURITY.md), [review ledger](G08_SECURITY_REVIEW.md), and [unresolved tasks](G08_REMAINING_WORK.md). Final-head Windows 3.10/3.12, offline packaging and independent review results remain **PENDING**; no G08 production-security closure, LAN deployment authorization or physical-operation release is asserted.
+
+## G08 integration follow-up (2026-10-14)
+
+G08 PR #29 remains software-only, with physical I/O disabled. H01 #32 and cross-platform setup #33 are now merged into main; this branch incorporates both without introducing hardware enablement. Windows NiceGUI testing exposed a previously missed G02-B test `Host: testserver` mismatch; test fixture corrected without relaxing middleware host enforcement. Final Windows CI and independent human security approval are still required. G05 #28 and G07-A #27 remain separate open PRs; their unmerged interfaces are not assumed available.
