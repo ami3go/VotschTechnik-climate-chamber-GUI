@@ -240,11 +240,11 @@ def dashboard() -> None:
                                 start_button = ui.button(
                                     "Start", icon="play_arrow",
                                     on_click=lambda: execute_manual("start")).props(
-                                        "color=blue no-caps disable").classes("toolbar-button")
+                                        "color=blue no-caps").disable().classes("toolbar-button")
                                 stop_button = ui.button(
                                     "Stop", icon="stop",
                                     on_click=lambda: execute_manual("stop")).props(
-                                        "color=deep-orange no-caps").classes("toolbar-button")
+                                        "color=deep-orange no-caps").disable().classes("toolbar-button")
                                 ui.button("Hold", icon="pause").props(
                                     "outline color=dark no-caps disable").classes("toolbar-button")
                         ui.separator()
@@ -273,7 +273,7 @@ def dashboard() -> None:
                                     set_button = ui.button(
                                         "Set Target", icon="thermostat",
                                         on_click=lambda: execute_manual("set_temperature")).props(
-                                            "outline no-caps disable").classes("toolbar-button")
+                                            "outline no-caps").disable().classes("toolbar-button")
                                 with ui.row().classes("items-center gap-2 flex-wrap"):
                                     preset_select = ui.select(
                                         options={}, label="Suggested targets only").props(
@@ -306,19 +306,19 @@ def dashboard() -> None:
                                     claim_button = ui.button(
                                         "Claim", icon="lock",
                                         on_click=lambda: execute_manual("claim")).props(
-                                            "outline no-caps disable")
+                                            "outline no-caps").disable()
                                     release_button = ui.button(
                                         "Release", icon="lock_open",
                                         on_click=lambda: execute_manual("release")).props(
-                                            "outline no-caps disable")
+                                            "outline no-caps").disable()
                                     handover_button = ui.button(
                                         "Admin takeover", icon="swap_horiz",
                                         on_click=takeover_dialog.open).props(
-                                            "outline no-caps disable")
+                                            "outline no-caps").disable()
                                     reconcile_button = ui.button(
                                         "Admin reconcile STOP", icon="verified_user",
                                         on_click=reconcile_dialog.open).props(
-                                            "outline no-caps disable")
+                                            "outline no-caps").disable()
                                 lease_label = ui.label("Operator lease: unverified").classes("text-xs")
                                 control_health_label = ui.label("Controller: UNKNOWN").classes("text-xs")
                                 outcome_label = ui.label("IDLE — no manual command").classes("text-xs")
