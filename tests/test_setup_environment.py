@@ -47,7 +47,7 @@ class SetupEnvironmentTests(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         self.assertEqual(Path(run.call_args_list[0].args[0][-1]).name, "requirements-web.txt")
 
-    def test_creates_linux_virtual_environment(self):
+    def test_creates_platform_virtual_environment(self):
         # Exercise the real venv bootstrap without downloading packages.
         real_run = setup.run_command
         observed = []
@@ -57,8 +57,7 @@ class SetupEnvironmentTests(unittest.TestCase):
             if command[1:3] == ["-m", "venv"]:
                 real_run(command, cwd=cwd)
 
-        with (mock.patch.object(setup.platform, "system", return_value="Linux"),
-              mock.patch.object(setup, "run_command", side_effect=intercept)):
+        with mock.patch.object(setup, "run_command", side_effect=intercept):
             python = setup.install_environment(root=self.root, include_driver=False)
         self.assertTrue(python.is_file())
         self.assertEqual(observed[0][1:3], ["-m", "venv"])
