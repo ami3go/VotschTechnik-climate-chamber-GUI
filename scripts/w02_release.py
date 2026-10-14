@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
