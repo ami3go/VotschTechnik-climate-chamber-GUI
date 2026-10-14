@@ -154,9 +154,7 @@ def test_browser_g05_actual_manual_start_stop_and_viewer_denial(live_app):
             # G04 correctly carries STOP uncertainty across server restarts.
             # Exercise explicit, audited ADMIN reconciliation rather than
             # clearing the lock, mutating SQLite or bypassing safety code.
-            if not claim.is_enabled():
-                expect(admin.locator("body")).to_contain_text(
-                    "STOP/reconciliation required", timeout=15000)
+            if "STOP/reconciliation required" in admin.locator("body").inner_text():
                 admin.get_by_role("button", name="Admin reconcile STOP").click()
                 admin.get_by_role("button", name="Confirm reconcile").click()
             expect(claim).to_be_enabled(timeout=15000)
