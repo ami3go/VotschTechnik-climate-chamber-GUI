@@ -24,10 +24,12 @@ def canonical(payload: dict) -> bytes:
 
 
 def inventory(root: Path) -> dict[str, str]:
+    if root.is_symlink() or getattr(root, "is_junction", lambda: False)():
+        raise ValueError("Release root is a symlink or junction")
     files: dict[str, str] = {}
     for path in sorted(root.rglob("*")):
-        if path.is_symlink():
-            raise ValueError("Release contains symlink")
+        if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+            raise ValueError("Release contains symlink or junction")
         if not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()
@@ -39,19 +41,34 @@ def inventory(root: Path) -> dict[str, str]:
 
 
 def validate_entries(entries: dict) -> None:
+    """Reject names that are ambiguous or unsafe on Windows/NTFS."""
     if not isinstance(entries, dict) or not entries:
         raise ValueError("Empty/invalid release inventory")
-    folded = set()
+    files: set[str] = set()
+    directories: set[str] = set()
+    device_names = {"con", "prn", "aux", "nul"}
+    device_names.update(f"{prefix}{number}" for prefix in ("com", "lpt")
+                        for number in range(1, 10))
     for name, digest in entries.items():
-        p = Path(name) if isinstance(name, str) else Path("")
-        if (not isinstance(name, str) or not name or "\\" in name or ":" in name
-                or name.startswith("/") or any(x in {"", ".", ".."} for x in name.split("/"))
-                or p.is_absolute() or not isinstance(digest, str) or not SHA.fullmatch(digest)):
+        if (not isinstance(name, str) or not name or name.startswith("/")
+                or not isinstance(digest, str) or not SHA.fullmatch(digest)):
             raise ValueError("Unsafe release manifest entry")
-        normalized = name.casefold()
-        if normalized in folded:
+        parts = name.split("/")
+        for part in parts:
+            if (part in {"", ".", ".."} or part[-1:] in {" ", "."}
+                    or any(ord(char) < 32 or char in '<>:"\\|?*' for char in part)
+                    or part.split(".")[0].casefold() in device_names):
+                raise ValueError("Unsafe Windows release manifest path")
+        folded = name.casefold()
+        if folded in EXCLUDED:
+            raise ValueError("Release signatures cannot be inventory entries")
+        if folded in files or folded in directories:
             raise ValueError("Windows case-insensitive path collision")
-        folded.add(normalized)
+        ancestors = {"/".join(parts[:i]).casefold() for i in range(1, len(parts))}
+        if ancestors & files:
+            raise ValueError("Windows file/directory path collision")
+        files.add(folded)
+        directories.update(ancestors)
 
 
 def sign(root: Path, version: str, key: Path, *, source_sha: str) -> None:
@@ -64,22 +81,32 @@ def sign(root: Path, version: str, key: Path, *, source_sha: str) -> None:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     if not isinstance(private, Ed25519PrivateKey):
         raise ValueError("Ed25519 signing key required")
+    from scripts.windows_manifest import verify_manifest
+    verify_manifest(root, sidecars=frozenset(EXCLUDED))
+    entries = inventory(root)
+    validate_entries(entries)
     payload = {"schema": 2, "version": version, "source_sha256": source_sha,
                "hardware_enabled": False, "platform": "windows-x64",
-               "files": inventory(root)}
+               "files": entries}
     (root / "w02-release.json").write_bytes(canonical(payload))
     (root / "w02-release.sig").write_text(
         base64.b64encode(private.sign(canonical(payload))).decode("ascii") + "\n",
         encoding="ascii")
 
 
-def verify(root: Path, public_key: Path) -> dict:
+def verify(root: Path, public_key: Path, *, minimum_version: str | None = None) -> dict:
+    # A key obtained from the same untrusted release can never authenticate it.
+    if public_key.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Trusted publisher key must be outside the release")
     from cryptography.hazmat.primitives.serialization import load_pem_public_key
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     key = load_pem_public_key(public_key.read_bytes())
     if not isinstance(key, Ed25519PublicKey):
         raise ValueError("Ed25519 verification key required")
-    raw = (root / "w02-release.json").read_bytes()
+    manifest_file = root / "w02-release.json"
+    if manifest_file.stat().st_size > 16 * 1024 * 1024:
+        raise ValueError("Release manifest exceeds size limit")
+    raw = manifest_file.read_bytes()
     payload = json.loads(raw)
     if (not isinstance(payload, dict) or canonical(payload) != raw
             or set(payload) != {"schema", "version", "source_sha256",
@@ -92,6 +119,14 @@ def verify(root: Path, public_key: Path) -> dict:
             or not SHA.fullmatch(payload["source_sha256"])):
         raise ValueError("Malformed/noncanonical release")
     validate_entries(payload["files"])
+    if minimum_version is not None:
+        if not VERSION.fullmatch(minimum_version):
+            raise ValueError("Invalid externally pinned minimum version")
+        minimum_core = tuple(map(int, minimum_version.split("-")[0].split(".")))
+        actual_core = tuple(map(int, payload["version"].split("-")[0].split(".")))
+        if actual_core < minimum_core or (actual_core == minimum_core
+                                         and payload["version"] != minimum_version):
+            raise ValueError("Release below externally pinned minimum version")
     signature = base64.b64decode((root / "w02-release.sig").read_text(encoding="ascii").strip(), validate=True)
     key.verify(signature, raw)
     current = inventory(root)
@@ -117,8 +152,15 @@ def stage_update(installed: Path, candidate: Path, public_key: Path, backup: Pat
         raise ValueError("Downgrade is forbidden")
     if backup.exists():
         raise ValueError("Backup destination already exists")
-    if candidate.resolve() == installed.resolve():
-        raise ValueError("Update must be staged separately")
+    installed_root = installed.resolve()
+    candidate_root = candidate.resolve()
+    backup_root = backup.resolve()
+    if (installed_root == candidate_root or installed_root in candidate_root.parents
+            or candidate_root in installed_root.parents):
+        raise ValueError("Update must be staged in a separate tree")
+    if any(backup_root == root or backup_root in root.parents or root in backup_root.parents
+           for root in (installed_root, candidate_root)):
+        raise ValueError("Backup must not overlap a release tree")
     temp = backup.with_name(backup.name + ".pending")
     if temp.exists():
         raise ValueError("Interrupted staging detected: inspect manually")
@@ -144,6 +186,7 @@ def main() -> int:
     parser.add_argument("--source-sha")
     parser.add_argument("--candidate", type=Path)
     parser.add_argument("--backup", type=Path)
+    parser.add_argument("--min-version", help="Minimum version from an out-of-band trusted policy")
     args = parser.parse_args()
     if args.sign:
         if not (args.private_key and args.version and args.source_sha):
@@ -152,7 +195,7 @@ def main() -> int:
     elif args.verify:
         if not args.public_key:
             parser.error("Verification requires trusted public key")
-        verify(args.bundle, args.public_key)
+        verify(args.bundle, args.public_key, minimum_version=args.min_version)
     else:
         if not (args.public_key and args.candidate and args.backup):
             parser.error("Update staging requires trusted public key, candidate and backup")
