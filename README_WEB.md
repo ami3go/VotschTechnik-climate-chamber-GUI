@@ -18,16 +18,42 @@ a persisted revision store or executable profile; G03-C will connect those
 to the existing server-side SQLite profile services. Run History and
 device logs are also not implemented. Draft events are not hardware logs.
 
-## Start on Windows (Python 3.10+)
+## Automatic environment setup (Windows / Linux)
+
+Prerequisites: Python 3.10+ (CI-tested on 3.10 and 3.12), Git, and internet
+access for downloads. The script detects Windows or Linux, creates/reuses
+`.venv`, installs the web app and pinned external Vötsch driver, and runs
+`pip check`. Installing the driver **does not enable physical hardware I/O**.
+
+Windows PowerShell:
 
 ```powershell
-py -m venv .venv
-.venv\Scripts\python -m pip install -r requirements-web.txt
-.venv\Scripts\python main.py
+py -3.12 setup_environment.py
+.venv\Scripts\python.exe main.py
 ```
 
-Open http://127.0.0.1:8080. The development app binds to **127.0.0.1 only**.
-The "Visteon" wordmark remains a placeholder pending approved brand assets.
+Linux:
+
+```bash
+python3 setup_environment.py
+.venv/bin/python main.py
+```
+
+Open http://127.0.0.1:8080. The development app binds to loopback only.
+
+Optional script arguments:
+
+- `--with-tests`: install pinned pytest, pytest-asyncio, ruff and Playwright.
+- `--with-tests --browser`: also download Chromium for browser tests. On Linux,
+  required system browser libraries must be present or installed separately.
+- `--no-driver`: simulation-only installation without Git/external driver.
+- `--run`: launch the local simulated GUI after dependency installation.
+- `--venv PATH`: choose a custom venv; a non-venv directory is never overwritten.
+
+Rerunning the script reuses the virtual environment. Run
+`python setup_environment.py --help` for options. This source installation
+requires network access for first-time downloads; use the separate
+[offline Windows bundle](README_OFFLINE_WINDOWS.md) for offline deployment.
 
 ## Verification
 
