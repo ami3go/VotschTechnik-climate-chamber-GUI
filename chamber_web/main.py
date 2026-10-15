@@ -63,7 +63,7 @@ _HIL = hil_authorization_from_env(os.environ)
 if _HIL is not None and deployment_policy.is_lan:
     raise ChamberSafetyError("Supervised physical HIL is restricted to loopback deployment")
 _dashboard_service, _manual_service = create_demo_control_services(get_security(), _HIL)
-_MODE = "simulation" if _HIL is None else "physical HIL"
+_MODE = "Simulation" if _HIL is None else "Physical HIL"
 app.on_startup(_dashboard_service.start)
 app.on_shutdown(_dashboard_service.close)
 
@@ -264,18 +264,16 @@ def dashboard() -> None:
                                     "Stop", icon="stop",
                                     on_click=lambda: execute_manual("stop")).props(
                                         "color=deep-orange no-caps").disable().classes("toolbar-button")
-                                ui.button("Hold", icon="pause").props(
-                                    "outline color=dark no-caps disable").classes("toolbar-button")
                         ui.separator()
                         with ui.element("div").classes("metric-row"):
                             with ui.column().classes("metric gap-1"):
-                                ui.label(f"Backend measured ({_MODE})").classes("metric-caption")
+                                ui.label("Measured").classes("metric-caption")
                                 current_label = ui.label("—").classes("metric-value")
                             with ui.column().classes("metric gap-1"):
-                                ui.label(f"Backend setpoint ({_MODE})").classes("metric-caption")
+                                ui.label("Setpoint").classes("metric-caption")
                                 manual_target_label = ui.label("—").classes("metric-value")
                             with ui.column().classes("metric gap-1"):
-                                ui.label("Backend reported state").classes("metric-caption")
+                                ui.label("State").classes("metric-caption")
                                 status_label = ui.label("UNKNOWN").classes("status-pill")
                                 quality_label = ui.label("Awaiting telemetry").classes("text-xs text-grey-7")
                         with ui.dialog() as takeover_dialog:
@@ -404,7 +402,7 @@ def dashboard() -> None:
 
                 with ui.column().classes("panel chart-panel"):
                     with ui.row().classes("panel-head"):
-                        _panel_title("show_chart", f"Temperature Graph ({_MODE.title()})")
+                        _panel_title("show_chart", f"Temperature Graph ({_MODE})")
                         with ui.row().classes("items-center gap-2"):
                             range_toggle = ui.toggle(["1h", "6h", "12h", "24h"], value="6h").props(
                                 "dense no-caps")
