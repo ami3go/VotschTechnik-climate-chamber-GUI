@@ -7,6 +7,7 @@ G07_STRESS=1, including on the dedicated Windows CI job.
 from __future__ import annotations
 
 import errno
+from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 import os
@@ -200,6 +201,21 @@ class RecorderTests(unittest.TestCase):
         self.sink.emit(self.sample(6, 2))
         self.assertEqual([r["sample_index"] for r in self.store.plot_samples(self.chamber, self.run)],
                          [1, 2])
+
+    def test_concurrent_idempotent_replays_serialize_to_one_event(self):
+        # SQLite BEGIN IMMEDIATE serializes concurrent EventSink writes.
+        # A repeated delivery cannot duplicate event indices or samples.
+        self.sink.emit(self.evt(1, "PREPARED"))
+        self.sink.emit(self.evt(2, "START_INTENT"))
+        event = self.evt(3, "SETPOINT_INTENT", temperature_c=25.0)
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            list(pool.map(self.sink.emit, [event] * 12))
+        run = self.store.get_run(self.chamber, self.run)
+        self.assertEqual(run["event_count"], 3)
+        self.assertEqual(run["sample_count"], 0)
+        self.assertEqual(len(self.store.list_events(self.chamber, self.run)), 3)
+        with self.assertRaises(RunIntegrityError):
+            self.sink.emit(self.evt(3, "SETPOINT_INTENT", temperature_c=30.0))
 
     def test_recovery_prepared_no_commands_is_interrupted(self):
         self.sink.emit(self.evt(1, "PREPARED"))
