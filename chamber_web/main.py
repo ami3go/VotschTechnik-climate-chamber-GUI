@@ -24,7 +24,7 @@ from .bootstrap import create_demo_control_services
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
 from .security.nicegui import (active_tokens, cookie_secret, current_actor, deployment_policy,
                                get_security, logout, require_authenticated_page)
-from .security.auth import Role
+from .security.auth import AuthenticationError, AuthorizationError, Role, SecurityProfile
 from .ui_pages import (NavigationContext, install_navigation_resolver,
                        register_pages, render_navigation)
 from .ui_state import project_capabilities, project_telemetry, safe_view
@@ -585,6 +585,41 @@ def admin_page() -> None:
                 f"{data.last_command.state.value} · {data.last_command.action} · "
                 f"{data.last_command.message}")
 
+    async def set_user_pin() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        try:
+            session, csrf = active_tokens()
+            await asyncio.to_thread(
+                get_security().configure_user_pin, session, csrf,
+                confirm_password.value, pin_account.value, user_pin.value)
+        except (AuthenticationError, AuthorizationError, ValueError):
+            ui.notify("PIN enrollment denied. Check administrator password and account.",
+                      color="negative")
+            return
+        confirm_password.value = ""
+        user_pin.value = ""
+        ui.notify("PIN enrolled. Sessions for that account were revoked.", color="positive")
+        if pin_account.value.casefold() == actor.username.casefold():
+            logout()
+
+    async def apply_security_profile() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        try:
+            session, csrf = active_tokens()
+            await asyncio.to_thread(
+                get_security().set_security_profile, session, csrf,
+                confirm_password.value, SecurityProfile(profile_select.value))
+        except (AuthenticationError, AuthorizationError, ValueError):
+            ui.notify("Security profile change denied. Verify password and PIN setup.",
+                      color="negative")
+            return
+        confirm_password.value = ""
+        ui.notify("Security profile saved. All sessions must sign in again.",
+                  color="positive")
+        logout()
+
     with ui.row().classes("app-shell no-wrap"):
         with ui.column().classes("sidebar gap-1"):
             render_navigation("/admin")
@@ -657,6 +692,58 @@ def admin_page() -> None:
                                       on_click=confirm_reconciliation).props(
                                           "color=deep-orange")
 
+                if actor.role is Role.ADMIN:
+                    with ui.column().classes("panel gap-3"):
+                        _panel_title("security", "Security Profiles")
+                        ui.label(
+                            "Security profile controls authentication and session lifetime; "
+                            "it never disables controller safety, STOP fencing, audit or "
+                            "network listener restrictions."
+                        ).classes("text-sm")
+                        active_profile = get_security().get_security_profile()
+                        ui.label("Active profile: " + active_profile.value).classes(
+                            "font-bold")
+                        profile_select = ui.select({
+                            "general": "General — existing G08 security (30 min / 8 h)",
+                            "isolated_lan": "Isolated LAN — PIN, no session timeouts",
+                            "large_network": "Large network — password, 1 h / 12 h",
+                        }, value=active_profile.value, label="Security profile").classes(
+                            "w-full")
+                        ui.label(
+                            "Isolated LAN is intended for a physically controlled single-PC "
+                            "installation. PIN-only access is weaker; manually lock the "
+                            "workstation when unattended. The server cannot guarantee "
+                            "browser-cookie persistence after storage clearing."
+                        ).classes("text-xs text-orange-9")
+                        pin_account = ui.input(
+                            "Account to enroll for PIN login",
+                            value=actor.username).classes("w-full")
+                        user_pin = ui.input("New 6–12 digit PIN", password=True).props(
+                            "autocomplete=off inputmode=numeric").classes("w-full")
+                        confirm_password = ui.input(
+                            "Current administrator password (required to apply changes)",
+                            password=True).props(
+                                "autocomplete=current-password").classes("w-full")
+                        with ui.row().classes("control-row wrap"):
+                            ui.button("Enroll account PIN", icon="pin",
+                                      on_click=set_user_pin).props("outline no-caps")
+                            ui.button("Apply security profile", icon="verified_user",
+                                      on_click=lambda: security_confirm.open()).props(
+                                          "unelevated no-caps")
+                        with ui.dialog() as security_confirm:
+                            with ui.card():
+                                ui.label("Confirm security profile change").classes(
+                                    "font-bold")
+                                ui.label("All users will be logged out immediately. "
+                                         "Switching to PIN mode reduces sign-in security "
+                                         "but never authorizes physical chamber operations.")
+                                with ui.row():
+                                    ui.button("Cancel", on_click=security_confirm.close)
+                                    async def confirm_profile_change():
+                                        security_confirm.close()
+                                        await apply_security_profile()
+                                    ui.button("Confirm", on_click=confirm_profile_change)
+
     ui.timer(1.0, refresh_lease, immediate=False)
     refresh_lease()
 
@@ -677,7 +764,10 @@ def run() -> None:
            host=deployment_policy.bind_host, port=deployment_policy.port,
            reload=False, show=False, storage_secret=cookie_secret(),
            session_middleware_kwargs={
-               "same_site": "strict", "max_age": 28800,
+               "same_site": "strict",
+               # The DB enforces General/Large timeouts. A persistent browser
+               # cookie allows isolated workstation sessions to remain logged in.
+               "max_age": 10 * 365 * 24 * 3600,
                "https_only": deployment_policy.is_lan,
            }, **options)
 

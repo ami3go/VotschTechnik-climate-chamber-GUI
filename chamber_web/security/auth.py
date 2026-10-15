@@ -1,4 +1,4 @@
-"""Offline identities, short-lived opaque server-side sessions, durable audit.
+"""Offline identities, selectable session security policy, durable audit.
 
 No browser-supplied role is trusted. No default account or password exists.
 The SQLite database and NiceGUI cookie signing secret are deployment-local.
@@ -27,6 +27,12 @@ class AuthenticationError(Exception):
 
 class AuthorizationError(Exception):
     """Authenticated principal lacks a required permission."""
+
+
+class SecurityProfile(str, Enum):
+    GENERAL = "general"
+    ISOLATED_LAN = "isolated_lan"
+    LARGE_NETWORK = "large_network"
 
 
 class Role(str, Enum):
@@ -186,6 +192,11 @@ class SecurityStore(AccountOperations):
                     last_seen REAL NOT NULL,
                     revoked INTEGER NOT NULL DEFAULT 0 CHECK(revoked IN (0,1))
                 );
+                CREATE TABLE IF NOT EXISTS security_policy (
+                    id INTEGER PRIMARY KEY CHECK(id=1),
+                    profile TEXT NOT NULL CHECK(
+                        profile IN ('general','isolated_lan','large_network'))
+                );
                 CREATE TABLE IF NOT EXISTS login_failures (
                     username TEXT PRIMARY KEY COLLATE NOCASE,
                     attempts INTEGER NOT NULL,
@@ -214,6 +225,12 @@ class SecurityStore(AccountOperations):
                     detail TEXT NOT NULL
                 );
             """)
+            # Add a separate salted PIN verifier without modifying legacy password hashes.
+            columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
+            if "pin_hash" not in columns:
+                db.execute("ALTER TABLE users ADD COLUMN pin_hash TEXT")
+            db.execute("INSERT OR IGNORE INTO security_policy(id,profile)"
+                       " VALUES(1,'general')")
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, 1):
                 raise RuntimeError("Unsupported security schema; restore an approved backup")
@@ -251,6 +268,128 @@ class SecurityStore(AccountOperations):
             client_attempts=number("CHAMBER_LOGIN_PEER_ATTEMPTS", 30),
             audit_max_rows=number("CHAMBER_AUDIT_MAX_ROWS", 10000),
         )
+
+    @staticmethod
+    def _profile_in(db: sqlite3.Connection) -> SecurityProfile:
+        row = db.execute("SELECT profile FROM security_policy WHERE id=1").fetchone()
+        try:
+            return SecurityProfile(row[0] if row is not None else "")
+        except ValueError as exc:
+            raise RuntimeError("Security profile invalid; startup/operation refused") from exc
+
+    def get_security_profile(self) -> SecurityProfile:
+        """Read the authoritative database setting, not browser or environment input."""
+        db = self._db()
+        try:
+            return self._profile_in(db)
+        finally:
+            db.close()
+
+    def _session_expired(self, db: sqlite3.Connection, created: float,
+                         last_seen: float, now: float) -> bool:
+        # A backwards clock jump remains invalid in every mode. The isolated
+        # workstation mode has NO idle or absolute server-side timeout.
+        if now < created - 10:
+            return True
+        profile = self._profile_in(db)
+        if profile is SecurityProfile.ISOLATED_LAN:
+            return False
+        idle, absolute = ((3600, 43200) if profile is SecurityProfile.LARGE_NETWORK
+                          else (self.idle_timeout_s, self.absolute_timeout_s))
+        return now - last_seen >= idle or now - created >= absolute
+
+    @staticmethod
+    def _validate_pin(pin: str) -> bytes:
+        if not isinstance(pin, str) or re.fullmatch(r"[0-9]{6,12}", pin) is None:
+            raise ValueError("PIN must contain 6–12 ASCII digits")
+        return pin.encode("ascii")
+
+    def _confirm_admin_password(self, admin: Actor, password: str) -> str:
+        """Verify primary password before allowing weaker profile or PIN enrollment."""
+        db = self._db()
+        try:
+            row = db.execute("SELECT password_hash FROM users WHERE id=? AND enabled=1",
+                             (admin.user_id,)).fetchone()
+        finally:
+            db.close()
+        if not _LOGIN_KDF_SLOTS.acquire(timeout=5):
+            raise AuthorizationError("Administrator password verification unavailable")
+        try:
+            verified = _verify_password(password, row[0] if row else None)
+        finally:
+            _LOGIN_KDF_SLOTS.release()
+        if not verified:
+            self.audit(admin, "security.reauthenticate", "DENIED")
+            raise AuthorizationError("Current administrator password required")
+        return row[0]
+
+    def configure_user_pin(self, admin_session: str, csrf: str,
+                           admin_password: str, username: str, pin: str) -> None:
+        """Explicit administrator-only enrollment of one account's hashed PIN."""
+        admin = self.authenticate(admin_session, csrf=csrf, mutation=True)
+        if admin.role is not Role.ADMIN:
+            raise AuthorizationError("Administrator required")
+        self._validate_username(username)
+        pin_hash = _hash_password(self._validate_pin(pin))
+        confirmed_hash = self._confirm_admin_password(admin, admin_password)
+        db = self._db()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_current_admin(db, admin_session, admin)
+            current = db.execute("SELECT password_hash FROM users WHERE id=?",
+                                 (admin.user_id,)).fetchone()
+            if current is None or current[0] != confirmed_hash:
+                raise AuthorizationError("Administrator credentials changed")
+            target = db.execute("SELECT id FROM users WHERE username=? AND enabled=1",
+                                (username,)).fetchone()
+            if target is None:
+                raise ValueError("No enabled account with that username")
+            db.execute("UPDATE users SET pin_hash=? WHERE id=?", (pin_hash, target[0]))
+            db.execute("UPDATE sessions SET revoked=1 WHERE user_id=?", (target[0],))
+            self._audit(db, admin, "security.pin.set", "SUCCESS", detail=username)
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def set_security_profile(self, admin_session: str, csrf: str,
+                             admin_password: str, profile: SecurityProfile) -> None:
+        """Persist an explicit mode change; revoke sessions for immediate re-login."""
+        if not isinstance(profile, SecurityProfile):
+            raise ValueError("Invalid security profile")
+        admin = self.authenticate(admin_session, csrf=csrf, mutation=True)
+        if admin.role is not Role.ADMIN:
+            raise AuthorizationError("Administrator required")
+        confirmed_hash = self._confirm_admin_password(admin, admin_password)
+        db = self._db()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_current_admin(db, admin_session, admin)
+            current = db.execute("SELECT password_hash FROM users WHERE id=?",
+                                 (admin.user_id,)).fetchone()
+            if current is None or current[0] != confirmed_hash:
+                raise AuthorizationError("Administrator credentials changed")
+            if profile is SecurityProfile.ISOLATED_LAN:
+                # Never lock out every administrator when PIN-only login is enabled.
+                enrolled = db.execute(
+                    "SELECT 1 FROM users WHERE role='ADMIN' AND enabled=1"
+                    " AND pin_hash IS NOT NULL LIMIT 1").fetchone()
+                if enrolled is None:
+                    raise AuthorizationError("Enroll an administrator PIN first")
+            old_profile = self._profile_in(db)
+            db.execute("UPDATE security_policy SET profile=? WHERE id=1",
+                       (profile.value,))
+            db.execute("UPDATE sessions SET revoked=1")
+            self._audit(db, admin, "security.profile.change", "SUCCESS",
+                        detail=f"{old_profile.value} -> {profile.value}")
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
     def _db(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.database, timeout=10, isolation_level=None)
@@ -323,7 +462,8 @@ class SecurityStore(AccountOperations):
             raise ValueError("Username must be 3–64 ASCII letters, digits, _ . or -")
 
     def login(self, username: str, password: str, *,
-              client_id: str | None = None) -> SessionTokens:
+              client_id: str | None = None, use_pin: bool = False,
+              offline_primary_password: bool = False) -> SessionTokens:
         now = self.clock()
         if not isinstance(username, str) or len(username) > 64:
             raise AuthenticationError("Invalid username or password")
@@ -336,6 +476,15 @@ class SecurityStore(AccountOperations):
         # traffic must not hold the audit/STOP intent database lock.
         db = self._db()
         try:
+            profile_at_start = self._profile_in(db)
+            # Explicit trusted local CLI recovery may verify the stronger
+            # primary password even while the GUI requires PIN-only login.
+            # The NiceGUI browser handler never supplies this override.
+            if offline_primary_password and use_pin:
+                raise AuthenticationError("Invalid offline recovery authentication mode")
+            if (not offline_primary_password and
+                    use_pin != (profile_at_start is SecurityProfile.ISOLATED_LAN)):
+                raise AuthenticationError("Invalid credentials for current security profile")
             if client_hash is not None:
                 attempts = db.execute(
                     "SELECT attempts,window_end FROM login_clients"
@@ -344,13 +493,17 @@ class SecurityStore(AccountOperations):
                 if attempts and attempts[0] >= self.client_attempts and attempts[1] > now:
                     raise AuthenticationError("Invalid username or password")
             candidate = db.execute(
-                "SELECT id,username,password_hash,enabled FROM users WHERE username=?",
+                "SELECT id,username,password_hash,enabled,pin_hash FROM users WHERE username=?",
                 (username,),
             ).fetchone()
             if not _LOGIN_KDF_SLOTS.acquire(timeout=5):
                 raise AuthenticationError("Invalid username or password")
             try:
-                valid = _verify_password(password, candidate[2] if candidate else None)
+                valid = _verify_password(
+                    password, candidate[4 if use_pin else 2] if candidate else None)
+                if use_pin and (not isinstance(password, str) or
+                                re.fullmatch(r"[0-9]{6,12}", password) is None):
+                    valid = False
             finally:
                 _LOGIN_KDF_SLOTS.release()
             with self._lock:
@@ -358,7 +511,7 @@ class SecurityStore(AccountOperations):
                 # Re-read after locking: account may have been disabled, or
                 # password changed, while the hash was being computed.
                 row = db.execute(
-                    "SELECT id,username,password_hash,enabled,role FROM users"
+                    "SELECT id,username,password_hash,enabled,role,pin_hash FROM users"
                     " WHERE username=?", (username,),
                 ).fetchone()
                 fail = db.execute(
@@ -377,7 +530,9 @@ class SecurityStore(AccountOperations):
                     peer_fail and peer_fail[0] >= self.client_attempts
                     and peer_fail[1] > now)
                 current = bool(candidate and row and candidate[2] == row[2]
-                               and candidate[0] == row[0] and row[3])
+                               and candidate[4] == row[5] and
+                               candidate[0] == row[0] and row[3] and
+                               self._profile_in(db) is profile_at_start)
                 if locked or peer_locked or not valid or not current:
                     attempts = fail[0] if locked else (
                         fail[0] + 1 if fail and fail[1] > now else 1)
@@ -459,8 +614,7 @@ class SecurityStore(AccountOperations):
                 (_digest(session),),
             ).fetchone()
             if not row or row[3] or not row[7] or (
-                now - row[1] >= self.absolute_timeout_s or
-                now - row[2] >= self.idle_timeout_s or now < row[1] - 10
+                self._session_expired(db, row[1], row[2], now)
             ):
                 db.commit()
                 raise AuthenticationError("Session invalid or expired")
@@ -518,8 +672,7 @@ class SecurityStore(AccountOperations):
         now = self.clock()
         if (row is None or row[0] != actor.user_id or not row[1] or
                 row[2] != Role.ADMIN.value or row[3] or
-                now - row[4] >= self.absolute_timeout_s or
-                now - row[5] >= self.idle_timeout_s):
+                self._session_expired(db, row[4], row[5], now)):
             raise AuthorizationError("Administrator session no longer authorized")
 
     def create_user(self, admin_session: str, csrf: str, username: str,

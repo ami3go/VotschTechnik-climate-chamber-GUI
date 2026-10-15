@@ -32,6 +32,7 @@ on:
 jobs:
   model-and-import:
     runs-on: windows-latest
+    timeout-minutes: 25  # bounded watchdog for Windows UI/security test matrix
     strategy:
       matrix:
         python-version: ["3.10", "3.12"]

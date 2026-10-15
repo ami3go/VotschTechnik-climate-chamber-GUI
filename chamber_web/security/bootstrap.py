@@ -51,7 +51,7 @@ def interactive_recovery(*, issue: bool = False, directory: Path | None = None) 
     try:
         if issue:
             password = getpass.getpass("Current administrator password: ")
-            session = store.login(username, password)
+            session = store.login(username, password, offline_primary_password=True)
             try:
                 token = store.issue_recovery_token(session.session, session.csrf)
             finally:
