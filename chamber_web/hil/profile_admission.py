@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass, fields
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -86,9 +86,9 @@ class H02LiveChecks:
             raise AdmissionDenied("Physical admission requires all independent live checks")
 
 
-def _sha(value: Any, name: str) -> str:
-    if not isinstance(value, str) or re.fullmatch("[0-9a-f]{64}", value) is None:
-        raise AdmissionDenied("Invalid SHA-256 or commit identifier: " + name)
+def _sha(value: Any, name: str, size: int = 64) -> str:
+    if not isinstance(value, str) or re.fullmatch('[0-9a-f]{' + str(size) + '}', value) is None:
+        raise AdmissionDenied('Invalid SHA-256/commit identifier: ' + name)
     return value
 
 
@@ -157,8 +157,8 @@ def verify_signed_permit(
         _nonempty(data[name], name)
     validate_chamber_id(data["chamber_id"])
     for name in ("profile_revision_sha256", "gui_commit", "driver_commit"):
-        _sha(data[name], name)
-    limits = H02WatchdogLimits.from_dict(data["watchdog"])
+        _sha(data[name], name, 40 if name.endswith("_commit") else 64)
+    H02WatchdogLimits.from_dict(data["watchdog"])
     lower, upper = data["temperature_min_c"], data["temperature_max_c"]
     if (type(lower) not in (int, float) or type(upper) not in (int, float) or
         not math.isfinite(lower) or not math.isfinite(upper) or lower >= upper):
@@ -169,7 +169,7 @@ def verify_signed_permit(
     if current.tzinfo is None or current.utcoffset().total_seconds() != 0:
         raise AdmissionDenied("Current time must be UTC")
     if end <= start or not start <= current <= end or end - start > (
-        __import__("datetime").timedelta(days=14)
+        timedelta(days=14)
     ):
         raise AdmissionDenied("H02 site permit expired, premature or overlong")
     return data
@@ -207,8 +207,8 @@ def preflight_physical_profile(
         raise AdmissionDenied("Physical chamber identity mismatch")
     if (profile_id != data["profile_id"] or
         _sha(profile_sha256, "profile") != data["profile_revision_sha256"] or
-        _sha(gui_commit, "GUI") != data["gui_commit"] or
-        _sha(driver_commit, "driver") != data["driver_commit"] or
+        _sha(gui_commit, "GUI", 40) != data["gui_commit"] or
+        _sha(driver_commit, "driver", 40) != data["driver_commit"] or
         operator != data["operator"] or witness != data["witness"]):
         raise AdmissionDenied("Physical run identity/version/operator mismatch")
     if has_outputs_or_gradient_mutations:
