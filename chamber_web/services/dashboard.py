@@ -69,6 +69,11 @@ class DashboardService:
         self._poll_lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
 
+    @property
+    def manager(self) -> ChamberManager:
+        """Expose the single manager to the server composition root only."""
+        return self._manager
+
     def _read(self):
         return (self._manager.status(self.chamber_id),
                 self._manager.capabilities(self.chamber_id))

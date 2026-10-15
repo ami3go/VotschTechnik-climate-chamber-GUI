@@ -1,4 +1,5 @@
 """G03-C/G08-min NiceGUI browser-session integration (simulated backend only)."""
+import asyncio
 from typing import Callable
 
 import pytest
@@ -64,7 +65,9 @@ async def test_profiles_page_requires_login_and_persists_between_sessions(
     await user.should_see("New Temperature Profile")
     await user.should_see("Immutable Revision History")
     await user.should_see("Spreadsheet-safe CSV")
-    await user.should_see("No execution controls")
+    await user.should_see("Saved revisions run only against the simulated chamber")
+    await user.should_see("Profile Run")
+    await user.should_see("No profile run since server start")
 
     viewer = create_user()
     await viewer.open("/login")
@@ -109,3 +112,53 @@ async def test_revoked_profile_page_cannot_be_reentered(
     store.logout(browser_sessions[0])
     await user.open("/profiles")
     await user.should_see("sign in")
+
+
+async def test_operator_runs_saved_revision_and_stops_it(
+    create_user: Callable[[], User], monkeypatch, tmp_path,
+) -> None:
+    """Simulated FakeBackend only: the run is server-owned and STOP is verified."""
+    from nicegui import ui
+    from chamber_web.security import nicegui as security_ui
+    from chamber_web.pages.profiles import (get_profile_editor_service,
+                                            get_profile_execution_service)
+
+    monkeypatch.setenv("CHAMBER_PROFILE_DB", str(tmp_path / "profiles.sqlite3"))
+    get_profile_editor_service.cache_clear()
+    store = SecurityStore(tmp_path / "security")
+    store.bootstrap_admin("test_admin", "StrongAdminPassword#1")
+    monkeypatch.setattr(security_ui, "_store", store)
+    editor = get_profile_editor_service()
+    draft = editor.edit_step(editor.new_draft(), 0, "dwell_s", "0")
+    saved = editor.save(editor.set_metadata(draft, "name", "UI run profile"))
+
+    user = create_user()
+    await user.open("/login")
+    user.find("Username").type("test_admin")
+    user.find("Password").type("StrongAdminPassword#1")
+    user.find("Sign in").click()
+    await user.should_see("SIMULATION")
+    await user.open("/profiles")
+    await user.should_see("Profile Run")
+    user.find(ui.select).elements.pop().value = saved.profile_id
+    user.find("Load").click()
+    await user.should_see("Loaded latest persisted revision")
+    user.find("Run Loaded Revision").click()
+    await user.should_see("Started revision 1 in simulation", retries=50)
+    runner = get_profile_execution_service().runner
+    assert runner is not None and runner.snapshot.profile_name == "UI run profile"
+    await user.should_see("UI run profile rev 1", retries=50)
+
+    user.find("Stop Run").click()
+    # STOP runs off the event loop after durable audit writes; Windows CI
+    # fsync latency can exceed NiceGUI's default ~0.3 s should_see window.
+    for _ in range(200):
+        if runner.state is not None and runner.state.value in (
+            "CANCELLED", "FAULT", "UNKNOWN",
+        ):
+            break
+        await asyncio.sleep(0.05)
+    assert runner.state.value == "CANCELLED"
+    await user.should_see("STOP requested", retries=50)
+    await user.should_see("CANCELLED", retries=50)
+    get_profile_editor_service.cache_clear()

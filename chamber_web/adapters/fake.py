@@ -1,6 +1,8 @@
 """Deterministic, explicitly simulated backend; no sockets or hardware."""
 from __future__ import annotations
 
+import math
+import time
 from datetime import datetime, timezone
 
 from chamber_web.domain.chamber import (
@@ -12,7 +14,14 @@ from chamber_web.domain.chamber import (
 class FakeBackend:
     # Safe pre-connect marker: never opens a physical connection.
     simulation_only = True
-    def __init__(self, chamber_id: str, *, minimum: float = -40, maximum: float = 130):
+    def __init__(self, chamber_id: str, *, minimum: float = -40, maximum: float = 130,
+                 slew_c_per_s: float = 0.0):
+        if (isinstance(slew_c_per_s, bool) or
+                not isinstance(slew_c_per_s, (int, float)) or
+                not math.isfinite(slew_c_per_s) or not 0 <= slew_c_per_s <= 10):
+            raise ValueError("Simulated slew must be finite, 0..10 °C/s")
+        self._slew = float(slew_c_per_s)
+        self._slewed_at = time.monotonic()
         self._identity = ChamberIdentity(chamber_id, "fake", "SIMULATION", "Fake", None, True)
         self._caps = ChamberCapabilities(
             minimum, maximum, True, True, True,
@@ -42,7 +51,17 @@ class FakeBackend:
     def capabilities(self) -> ChamberCapabilities:
         return self._caps
 
+    def _advance_simulation(self) -> None:
+        now = time.monotonic()
+        elapsed, self._slewed_at = now - self._slewed_at, now
+        if self._slew and self._running and self._connected:
+            distance = self._target - self._measured
+            change = self._slew * max(0.0, elapsed)
+            self._measured = (self._target if abs(distance) <= change else
+                              self._measured + math.copysign(change, distance))
+
     def read_status(self) -> ChamberSnapshot:
+        self._advance_simulation()
         return ChamberSnapshot(
             self._identity, self._measured if self._connected else None,
             self._target if self._connected else None,
@@ -53,6 +72,7 @@ class FakeBackend:
         )
 
     def set_temperature(self, target_c: float) -> None:
+        self._advance_simulation()
         if not self._connected:
             raise UnsupportedCapability("Fake backend is not connected")
         self._target = finite_temperature(
@@ -60,12 +80,14 @@ class FakeBackend:
         )
 
     def start(self) -> None:
+        self._advance_simulation()
         if not self._connected:
             raise UnsupportedCapability("Fake backend is not connected")
         self._running = True
         self._digital_outputs[1] = True
 
     def stop(self) -> None:
+        self._advance_simulation()
         self._running = False
         self._digital_outputs[1] = False
 
@@ -75,6 +97,7 @@ class FakeBackend:
         return self._digital_outputs[number]
 
     def set_digital_output(self, number: int, state: bool) -> None:
+        self._advance_simulation()
         if not self._connected or number not in self._digital_outputs or type(state) is not bool:
             raise UnsupportedCapability("Digital output is unavailable")
         if number == 1:
