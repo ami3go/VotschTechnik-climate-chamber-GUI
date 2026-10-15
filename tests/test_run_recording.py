@@ -352,6 +352,18 @@ class RecorderTests(unittest.TestCase):
             RunStore(self.temp.name)
         self.assertFalse(self.store.database.exists())
 
+    def test_empty_artifact_directory_is_valid_fresh_install(self):
+        # An empty precreated directory is not evidence of a prior recorded
+        # run. Clearing this test's unused PREPARED run directory models the
+        # installer creating directories before first-ever recorder startup.
+        run_path = self.store._directory(self.chamber, self.run)
+        run_path.rmdir()
+        run_path.parent.rmdir()
+        run_path.parent.parent.rmdir()
+        self.store.database.unlink()
+        RunStore(self.temp.name)
+        self.assertTrue(self.store.database.exists())
+
     def test_missing_sqlite_with_sidecar_is_not_reset(self):
         # A former SQLite WAL/journal can survive independently of run files.
         # This must not be silently discarded by sqlite3.connect().
