@@ -80,6 +80,7 @@ def _server_navigation_context() -> NavigationContext:
         role=actor.role.value if actor else None,
         permitted_routes=frozenset({"/", "/profiles", "/history", "/logs", "/settings"})
         if actor else frozenset(),
+        physical_hil=_HIL is not None,
     )
 
 

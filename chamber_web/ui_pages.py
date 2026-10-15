@@ -35,12 +35,18 @@ class NavigationContext:
     permitted_routes: frozenset[str] = frozenset(
         {"/", "/profiles", "/history", "/logs", "/settings"}
     )
+    # Set only by the server composition root from its launch-time HIL authorization.
+    physical_hil: bool = False
+
+    @property
+    def mode_label(self) -> str:
+        return "supervised physical HIL" if self.physical_hil else "simulation only"
 
     @property
     def label(self) -> str:
         if not self.authenticated:
             return "Access: unauthenticated · read-only"
-        return f"Role: {self.role or 'unverified'} · simulation only"
+        return f"Role: {self.role or 'unverified'} · {self.mode_label}"
 
 
 # Only Python composition/bootstrap can set this resolver; no UI handler may modify it.
@@ -82,9 +88,11 @@ def render_navigation(active: str, *, context: NavigationContext | None = None) 
             f'flat no-caps align=left aria-label="{title}" title="{title}"'
         ).classes("nav-active" if destination == active else ""):
             ui.label(title).classes("nav-text")
-    ui.label("Climate Chamber | G02-B\nServer-side simulation only").classes(
-        "side-note whitespace-pre-line"
-    ).props('aria-label="Simulated chamber status"')
+    ui.label("Climate Chamber | G02-B\n" + (
+        "Supervised physical HIL" if context.physical_hil else "Server-side simulation only"
+    )).classes("side-note whitespace-pre-line").props(
+        'aria-label="Physical chamber status"' if context.physical_hil
+        else 'aria-label="Simulated chamber status"')
     ui.label(context.label).classes("side-note access-label")
 
 

@@ -124,6 +124,17 @@ class HilConfigurationTests(unittest.TestCase):
                 hil_authorization_from_env(env)
 
 
+class HilNavigationLabelTests(unittest.TestCase):
+    def test_sidebar_mode_follows_server_hil_flag(self):
+        from chamber_web.ui_pages import NavigationContext
+
+        self.assertEqual(NavigationContext(authenticated=True, role="ADMIN").label,
+                         "Role: ADMIN · simulation only")
+        self.assertEqual(
+            NavigationContext(authenticated=True, role="ADMIN", physical_hil=True).label,
+            "Role: ADMIN · supervised physical HIL")
+
+
 class VotschHilBackendTests(unittest.TestCase):
     def setUp(self):
         self.hil = hil_authorization_from_env(_env())
