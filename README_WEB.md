@@ -77,6 +77,44 @@ chamber gradient, so **Set Target** is confirmed only after the ramp settles.
 Profile execution remains simulation-only. Web STOP is not an emergency stop;
 the chamber's own controls and emergency stop remain primary.
 
+### Real-hardware tests (opt-in)
+
+`tests/hardware/` holds acceptance tests that drive the physical chamber. They
+are always collected but **skipped** unless the complete `CHAMBER_HIL_*`
+authorization above is set **and** `CHAMBER_HIL_RUN_TESTS=1`; a partial or
+invalid configuration aborts the run. CI never runs them.
+
+```bash
+export CHAMBER_HIL_ADDRESS=192.168.0.11 CHAMBER_HIL_EXPECTED_SERIAL=58566207770010 \
+       CHAMBER_HIL_TEMP_MIN_C=20 CHAMBER_HIL_TEMP_MAX_C=30 CHAMBER_HIL_ACK=SUPERVISED-PHYSICAL-HIL
+CHAMBER_HIL_RUN_TESTS=1 CHAMBER_HIL_EVIDENCE_DIR=hil-evidence \
+    python -m pytest -v tests/hardware --junitxml=hil-evidence/junit.xml
+```
+
+Coverage, read-only first: identity/serial/gradients; telemetry freshness and
+latency; out-of-envelope targets never written; commands without the operator
+lease refused; ramped setpoint round trip; START → RUNNING → verified STOP;
+**STOP during a running setpoint ramp**; and claim/set/start/stop through the
+real NiceGUI server in Chromium. Before the first test the chamber must be
+STOPPED inside the envelope; every test ends with STOP; at the end STOP is
+re-checked and the original setpoint restored over an independent connection.
+The tests share the real device lock, so they refuse to run while a HIL web
+server is connected. Tunables: `CHAMBER_HIL_TEST_STEP_C` (default 1.0),
+`CHAMBER_HIL_TEST_RUN_S` (20), `CHAMBER_HIL_TEST_PORT` (8095).
+
+### Soak / endurance run
+
+```bash
+python scripts/hil_soak.py --evidence hil-soak   # ~28 min: 25, 26, 24 °C, STOP, restart at 24 °C
+python scripts/hil_soak.py --evidence hil-soak --plan 25:1800 --restart 24:60
+```
+
+Runs locally (no internet) through the same G04/G08/G05 services as the web
+server, logging every 5 s to `samples.jsonl`/`timeline.jsonl` and writing
+`summary.json`. A watchdog STOPs and aborts on any error, serial change,
+non-GOOD telemetry for more than 15 s, measured temperature beyond the
+envelope ±3 °C, SIGINT/SIGTERM or the `--deadline` (default 40 min).
+
 ## Verification
 
 ```bash

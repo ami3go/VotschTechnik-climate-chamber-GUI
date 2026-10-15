@@ -231,17 +231,20 @@ def dashboard() -> None:
             with ui.row().classes("topbar"):
                 with ui.column().classes("gap-0"):
                     ui.label("Climate Chamber").classes("top-title")
-                    ui.label(f"Signed in: {current_actor().username} ({current_actor().role.value})")
-                    ui.label("Test Control Platform").classes("top-subtitle")
-                with ui.column().classes("items-end gap-0"):
-                    backend_label = ui.label(
-                        "● SIMULATION · UNKNOWN" if _HIL is None else "● PHYSICAL HIL · UNKNOWN"
-                    ).classes("demo-status")
-                    backend_id_label = ui.label(
-                        f"Backend: {'fake' if _HIL is None else 'votsch'} · {service.chamber_id}"
-                    ).classes("text-xs text-grey-4")
-                    clock_label = ui.label("").classes("text-xs text-grey-4")
-                    ui.button("Sign out", icon="logout", on_click=logout).props("flat")
+                    ui.label(
+                        "Test Control Platform · "
+                        f"Signed in: {current_actor().username} ({current_actor().role.value})"
+                    ).classes("top-subtitle")
+                with ui.row().classes("items-center no-wrap gap-3"):
+                    with ui.column().classes("items-end gap-0"):
+                        backend_label = ui.label(
+                            "● SIMULATION · UNKNOWN" if _HIL is None else "● PHYSICAL HIL · UNKNOWN"
+                        ).classes("demo-status")
+                        backend_id_label = ui.label(
+                            f"Backend: {'fake' if _HIL is None else 'votsch'} · {service.chamber_id}"
+                        ).classes("text-xs text-grey-4")
+                        clock_label = ui.label("").classes("text-xs text-grey-4")
+                    ui.button("Sign out", icon="logout", on_click=logout).props("flat dense")
 
             with ui.column().classes("dashboard gap-0").props('id="dashboard-content"'):
                 ui.label(

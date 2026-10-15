@@ -15,6 +15,9 @@ import tempfile
 from pathlib import Path
 
 _ISOLATED_HOME = tempfile.mkdtemp(prefix="chamber-web-test-home-")
+# Captured before isolation: opt-in hardware tests share the REAL cross-process
+# device lock so they can never run concurrently with a live HIL server.
+REAL_HOME = str(Path.home())
 
 
 def _default_playwright_browsers() -> str:
@@ -31,6 +34,7 @@ def _default_playwright_browsers() -> str:
 def pytest_configure(config) -> None:
     # Keep already-installed browsers reachable; only application state moves.
     os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", _default_playwright_browsers())
+    os.environ.setdefault("CHAMBER_TEST_REAL_HOME", REAL_HOME)
     os.environ["HOME"] = _ISOLATED_HOME
     os.environ["USERPROFILE"] = _ISOLATED_HOME
 

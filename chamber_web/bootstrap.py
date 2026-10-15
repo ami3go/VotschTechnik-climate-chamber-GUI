@@ -17,7 +17,8 @@ def create_demo_dashboard_service() -> DashboardService:
     return DashboardService(manager, config.chamber_id, disconnect_on_close=True)
 
 
-def create_demo_control_services(security, hil=None, *, hil_driver_factory=None):
+def create_demo_control_services(security, hil=None, *, hil_driver_factory=None,
+                                 lease_directory=None):
     """Composition root for G05: one device and G08-min authority.
 
     Default is one FakeBackend. Only an explicit launch-time ``HilAuthorization``
@@ -40,7 +41,7 @@ def create_demo_control_services(security, hil=None, *, hil_driver_factory=None)
                 raise ChamberSafetyError("Unexpected chamber configuration for HIL")
             return VotschBackend(cfg.chamber_id, cfg.address, hil=hil,
                                  hil_driver_factory=hil_driver_factory)
-    manager = ChamberManager([config], backend_factory=factory)
+    manager = ChamberManager([config], backend_factory=factory, lease_directory=lease_directory)
     manager.connect(config.chamber_id)
     dashboard = DashboardService(manager, config.chamber_id, disconnect_on_close=True)
     manual = ManualControlService(
