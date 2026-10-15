@@ -17,6 +17,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable
 
+from .account_ops import AccountOperations
+from .audit_integrity import AuditLedger
+
 
 class AuthenticationError(Exception):
     """Anonymous, expired, revoked, or invalid credentials."""
@@ -51,16 +54,18 @@ _SCRYPT_N = 1 << 15
 _SCRYPT_R = 8
 _SCRYPT_P = 1
 _DUMMY_SALT = b"no-user-salt-16!"
+# Limit simultaneous memory-hard login hashing under malicious concurrency.
+_LOGIN_KDF_SLOTS = threading.BoundedSemaphore(2)
 _DUMMY_HASH = hashlib.scrypt(b"no-such-user-password", salt=_DUMMY_SALT,
                              n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32, maxmem=64 * 1024 * 1024)
 
 
-def _password_bytes(password: str) -> bytes:
+def _password_bytes(password: str, *, min_bytes: int = 12) -> bytes:
     if not isinstance(password, str):
         raise ValueError("Invalid password type")
     raw = password.encode("utf-8")
-    if not 12 <= len(raw) <= 1024:
-        raise ValueError("Password must be 12–1024 UTF-8 bytes")
+    if not min_bytes <= len(raw) <= 1024:
+        raise ValueError(f"Password must be {min_bytes}–1024 UTF-8 bytes")
     return raw
 
 
@@ -94,7 +99,7 @@ def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-class SecurityStore:
+class SecurityStore(AccountOperations):
     """Process- and thread-safe SQLite identity authority.
 
     Uses a fresh connection per transaction so concurrent browser clients, and
@@ -105,17 +110,59 @@ class SecurityStore:
     def __init__(self, directory: Path | None = None, *,
                  clock: Callable[[], float] = time.time,
                  idle_timeout_s: int = 1800,
-                 absolute_timeout_s: int = 28800):
+                 absolute_timeout_s: int = 28800,
+                 password_min_bytes: int = 12,
+                 lockout_attempts: int = 5,
+                 lockout_seconds: int = 900,
+                 client_attempts: int = 30,
+                 audit_max_rows: int = 10000):
         if idle_timeout_s <= 0 or absolute_timeout_s <= 0:
             raise ValueError("Session lifetimes must be positive")
+        if not 12 <= password_min_bytes <= 128:
+            raise ValueError("Password minimum must be 12–128 UTF-8 bytes")
+        if not 3 <= lockout_attempts <= 20 or not 30 <= lockout_seconds <= 86400:
+            raise ValueError("Invalid account lockout policy")
+        if not 5 <= client_attempts <= 100:
+            raise ValueError("Invalid client throttling policy")
         self.directory = Path(directory or (Path.home() / ".chamber_web" / "security"))
         self.directory.mkdir(parents=True, exist_ok=True)
         if __import__("os").name != "nt":
             self.directory.chmod(0o700)
         self.database = self.directory / "security.sqlite3"
+        # An established deployment must never silently become a new,
+        # unbootstrapped identity authority because its DB was removed.
+        # The audit/backup keys are independent local persistence markers.
+        # Loss of both DB and keys still needs external inventory/ACL controls.
+        if not self.database.exists() and any(
+            (self.directory / key).exists()
+            or (self.directory / key).is_symlink()
+            for key in ("audit_hmac_key", "backup_signing_key")
+        ):
+            raise RuntimeError(
+                "Existing security credentials found but database is missing; "
+                "restore an approved backup"
+            )
+        # Create a new SQLite file private from its FIRST byte; chmod after
+        # schema initialization alone leaves a credential disclosure window.
+        if not self.database.exists():
+            try:
+                descriptor = __import__("os").open(
+                    self.database, __import__("os").O_CREAT |
+                    __import__("os").O_EXCL | __import__("os").O_WRONLY, 0o600)
+            except FileExistsError:
+                pass
+            else:
+                __import__("os").close(descriptor)
+        if self.database.is_symlink():
+            raise PermissionError("Security database cannot be a symlink")
         self.clock = clock
         self.idle_timeout_s = idle_timeout_s
         self.absolute_timeout_s = absolute_timeout_s
+        self.password_min_bytes = password_min_bytes
+        self.lockout_attempts = lockout_attempts
+        self.lockout_seconds = lockout_seconds
+        self.client_attempts = client_attempts
+        self._audit_ledger = AuditLedger(self.directory, max_rows=audit_max_rows)
         self._lock = threading.RLock()
         db = self._db()
         try:
@@ -144,6 +191,17 @@ class SecurityStore:
                     attempts INTEGER NOT NULL,
                     lock_until REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS recovery_tokens (
+                    token_hash TEXT PRIMARY KEY,
+                    created_at REAL NOT NULL,
+                    expires_at REAL NOT NULL,
+                    issued_by INTEGER NOT NULL REFERENCES users(id)
+                );
+                CREATE TABLE IF NOT EXISTS login_clients (
+                    client_hash TEXT PRIMARY KEY,
+                    attempts INTEGER NOT NULL,
+                    window_end REAL NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS audit (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     at_utc REAL NOT NULL,
@@ -156,10 +214,43 @@ class SecurityStore:
                     detail TEXT NOT NULL
                 );
             """)
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version not in (0, 1):
+                raise RuntimeError("Unsupported security schema; restore an approved backup")
+            self._audit_ledger.initialize(db)
+            if version == 0:
+                db.execute("PRAGMA user_version=1")
         finally:
             db.close()
         if __import__("os").name != "nt":
             self.database.chmod(0o600)
+
+    @classmethod
+    def from_environment(cls, directory: Path | None = None) -> "SecurityStore":
+        """Single validated offline policy for interactive CLI and NiceGUI.
+
+        Never apply arbitrary browser-supplied security-policy values.
+        Invalid values are startup errors, not silently ignored defaults.
+        """
+        import os
+
+        def number(name: str, default: int) -> int:
+            raw = os.environ.get(name, str(default))
+            try:
+                return int(raw)
+            except ValueError as exc:
+                raise ValueError("Invalid security configuration: " + name) from exc
+
+        return cls(
+            directory,
+            idle_timeout_s=number("CHAMBER_SESSION_IDLE_SECONDS", 1800),
+            absolute_timeout_s=number("CHAMBER_SESSION_ABSOLUTE_SECONDS", 28800),
+            password_min_bytes=number("CHAMBER_PASSWORD_MIN_BYTES", 12),
+            lockout_attempts=number("CHAMBER_LOGIN_LOCKOUT_ATTEMPTS", 5),
+            lockout_seconds=number("CHAMBER_LOGIN_LOCKOUT_SECONDS", 900),
+            client_attempts=number("CHAMBER_LOGIN_PEER_ATTEMPTS", 30),
+            audit_max_rows=number("CHAMBER_AUDIT_MAX_ROWS", 10000),
+        )
 
     def _db(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.database, timeout=10, isolation_level=None)
@@ -170,13 +261,20 @@ class SecurityStore:
 
     def _audit(self, db: sqlite3.Connection, actor: Actor | None, action: str,
                outcome: str, chamber_id: str | None = None, detail: str = "") -> None:
-        db.execute(
+        # Avoid persisting bearer tokens and passwords accidentally supplied
+        # by an integration caller as free-form diagnostic details.
+        redacted = re.sub(
+            r"(?i)(password|token|csrf|secret|authorization)\s*[:=]\s*[^\s,;]+",
+            r"\1=[REDACTED]", str(detail),
+        )
+        cursor = db.execute(
             "INSERT INTO audit(at_utc,user_id,username,role,action,outcome,chamber_id,detail)"
             " VALUES(?,?,?,?,?,?,?,?)",
             (self.clock(), actor.user_id if actor else None,
              actor.username if actor else None, actor.role.value if actor else None,
-             action[:80], outcome[:40], chamber_id, detail[:300]),
+             action[:80], outcome[:40], chamber_id, redacted[:300]),
         )
+        self._audit_ledger.append(db, cursor.lastrowid)
 
     def audit(self, actor: Actor | None, action: str, outcome: str,
               chamber_id: str | None = None, detail: str = "") -> None:
@@ -198,7 +296,7 @@ class SecurityStore:
     def bootstrap_admin(self, username: str, password: str) -> None:
         """Trusted LOCAL CLI only; atomic one-time initialization, never an HTTP route."""
         self._validate_username(username)
-        encoded = _password_bytes(password)
+        encoded = _password_bytes(password, min_bytes=self.password_min_bytes)
         password_hash = _hash_password(encoded)
         db = self._db()
         try:
@@ -224,19 +322,37 @@ class SecurityStore:
         if not isinstance(username, str) or not _USERNAME.fullmatch(username):
             raise ValueError("Username must be 3–64 ASCII letters, digits, _ . or -")
 
-    def login(self, username: str, password: str) -> SessionTokens:
+    def login(self, username: str, password: str, *,
+              client_id: str | None = None) -> SessionTokens:
         now = self.clock()
         if not isinstance(username, str) or len(username) > 64:
             raise AuthenticationError("Invalid username or password")
+        # Client addresses are trusted only when supplied by the ASGI peer,
+        # never X-Forwarded-For or a value supplied by a browser.
+        client_hash = (_digest(client_id) if isinstance(client_id, str)
+                       and 1 <= len(client_id) <= 128 else None)
+
         # Expensive scrypt occurs outside the SQLite write transaction. Login
         # traffic must not hold the audit/STOP intent database lock.
         db = self._db()
         try:
+            if client_hash is not None:
+                attempts = db.execute(
+                    "SELECT attempts,window_end FROM login_clients"
+                    " WHERE client_hash=?", (client_hash,),
+                ).fetchone()
+                if attempts and attempts[0] >= self.client_attempts and attempts[1] > now:
+                    raise AuthenticationError("Invalid username or password")
             candidate = db.execute(
                 "SELECT id,username,password_hash,enabled FROM users WHERE username=?",
                 (username,),
             ).fetchone()
-            valid = _verify_password(password, candidate[2] if candidate else None)
+            if not _LOGIN_KDF_SLOTS.acquire(timeout=5):
+                raise AuthenticationError("Invalid username or password")
+            try:
+                valid = _verify_password(password, candidate[2] if candidate else None)
+            finally:
+                _LOGIN_KDF_SLOTS.release()
             with self._lock:
                 db.execute("BEGIN IMMEDIATE")
                 # Re-read after locking: account may have been disabled, or
@@ -249,25 +365,70 @@ class SecurityStore:
                     "SELECT attempts,lock_until FROM login_failures WHERE username=?",
                     (username,),
                 ).fetchone()
-                locked = bool(fail and fail[0] >= 5 and fail[1] > now)
+                locked = bool(fail and fail[0] >= self.lockout_attempts and fail[1] > now)
+                # A pre-KDF peer check is only an optimization. Recheck while
+                # holding SQLite write serialization to close concurrent
+                # brute-force attempts racing the threshold.
+                peer_fail = db.execute(
+                    "SELECT attempts,window_end FROM login_clients"
+                    " WHERE client_hash=?", (client_hash,),
+                ).fetchone() if client_hash is not None else None
+                peer_locked = bool(
+                    peer_fail and peer_fail[0] >= self.client_attempts
+                    and peer_fail[1] > now)
                 current = bool(candidate and row and candidate[2] == row[2]
                                and candidate[0] == row[0] and row[3])
-                if locked or not valid or not current:
-                    attempts = fail[0] + 1 if fail and fail[1] > now else 1
-                    # Track a sliding 15-minute failure window. Only the
-                    # fifth failed attempt activates account lockout.
-                    until = now + 900
-                    db.execute(
-                        "INSERT INTO login_failures(username,attempts,lock_until) VALUES(?,?,?)"
-                        " ON CONFLICT(username) DO UPDATE SET attempts=excluded.attempts,"
-                        " lock_until=excluded.lock_until",
-                        (username, attempts, until),
-                    )
+                if locked or peer_locked or not valid or not current:
+                    attempts = fail[0] if locked else (
+                        fail[0] + 1 if fail and fail[1] > now else 1)
+                    # Attempts during lockout may not prolong the lockout.
+                    until = fail[1] if locked else now + self.lockout_seconds
+                    # Unknown usernames do not create unbounded SQL rows;
+                    # the peer rate limiter still counts their failed login.
+                    if row is not None:
+                        db.execute(
+                            "INSERT INTO login_failures(username,attempts,lock_until)"
+                            " VALUES(?,?,?) ON CONFLICT(username)"
+                            " DO UPDATE SET attempts=excluded.attempts,"
+                            " lock_until=excluded.lock_until",
+                            (username, attempts, until),
+                        )
+                    if client_hash is not None:
+                        row_client = db.execute(
+                            "SELECT attempts,window_end FROM login_clients"
+                            " WHERE client_hash=?", (client_hash,),
+                        ).fetchone()
+                        count = (row_client[0] if peer_locked else
+                                 row_client[0] + 1 if row_client and
+                                 row_client[1] > now else 1)
+                        db.execute(
+                            "INSERT INTO login_clients(client_hash,attempts,window_end)"
+                            " VALUES(?,?,?) ON CONFLICT(client_hash)"
+                            " DO UPDATE SET attempts=excluded.attempts,"
+                            " window_end=excluded.window_end",
+                            (client_hash, count,
+                             row_client[1] if peer_locked else
+                             now + self.lockout_seconds),
+                        )
+                        # Bound retained client throttles even if a malicious
+                        # client rotates source IPs (notably IPv6 privacy IPs).
+                        db.execute("DELETE FROM login_clients WHERE window_end<=?",
+                                   (now,))
+                        total = db.execute(
+                            "SELECT count(*) FROM login_clients").fetchone()[0]
+                        if total > 4096:
+                            db.execute("DELETE FROM login_clients WHERE client_hash IN"
+                                       " (SELECT client_hash FROM login_clients"
+                                       " ORDER BY window_end LIMIT ?)",
+                                       (total - 4096,))
                     self._audit(db, None, "login", "DENIED",
                                 detail="invalid credentials or lockout")
                     db.commit()
                     raise AuthenticationError("Invalid username or password")
                 db.execute("DELETE FROM login_failures WHERE username=?", (username,))
+                if client_hash is not None:
+                    db.execute("DELETE FROM login_clients WHERE client_hash=?",
+                               (client_hash,))
                 tokens = SessionTokens(secrets.token_urlsafe(32), secrets.token_urlsafe(32))
                 db.execute(
                     "INSERT INTO sessions(token_hash,user_id,csrf_hash,created_at,last_seen)"
@@ -368,7 +529,7 @@ class SecurityStore:
             self.audit(admin, "user.create", "DENIED")
             raise AuthorizationError("Administrator required")
         self._validate_username(username)
-        pw = _hash_password(_password_bytes(password))
+        pw = _hash_password(_password_bytes(password, min_bytes=self.password_min_bytes))
         if not isinstance(role, Role):
             raise ValueError("Invalid role")
         db = self._db()
@@ -443,6 +604,20 @@ class SecurityStore:
             if isinstance(exc, AuthorizationError):
                 self.audit(admin, "user.admin", "DENIED",
                            detail="stale or unauthorized administrator")
+            raise
+        finally:
+            db.close()
+
+    def verify_audit_integrity(self) -> int:
+        """Verify local HMAC chain; fail closed on missing or modified rows."""
+        db = self._db()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            result = self._audit_ledger.verify(db)
+            db.commit()
+            return result
+        except BaseException:
+            db.rollback()
             raise
         finally:
             db.close()

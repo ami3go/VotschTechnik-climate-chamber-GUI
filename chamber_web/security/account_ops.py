@@ -1,0 +1,145 @@
+"""Account maintenance on the SAME SecurityStore and SQLite authority as G08-min.
+
+Recovery tokens are offline, one-use, independently random credentials. They
+are never sent over the application HTTP/WS surface or stored in plaintext.
+"""
+from __future__ import annotations
+
+import secrets
+
+
+class AccountOperations:
+    """Mixin: requires SecurityStore._db, _audit, authenticate and admin fence."""
+
+    def change_password(self, session: str, csrf: str,
+                        old_password: str, new_password: str) -> None:
+        from .auth import (AuthenticationError, _digest, _hash_password,
+                           _password_bytes, _verify_password)
+        actor = self.authenticate(session, csrf=csrf, mutation=True)
+        pw = _hash_password(_password_bytes(
+            new_password, min_bytes=self.password_min_bytes))
+        db = self._db()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT u.password_hash,s.revoked,s.created_at,s.last_seen"
+                " FROM users u JOIN sessions s ON u.id=s.user_id"
+                " WHERE s.token_hash=? AND u.id=? AND u.enabled=1",
+                (_digest(session), actor.user_id),
+            ).fetchone()
+            now = self.clock()
+            if (not row or row[1] or now - row[2] >= self.absolute_timeout_s
+                    or now - row[3] >= self.idle_timeout_s or
+                    not _verify_password(old_password, row[0])):
+                self._audit(db, actor, "user.password", "DENIED")
+                db.commit()
+                raise AuthenticationError("Current password or session invalid")
+            db.execute("UPDATE users SET password_hash=? WHERE id=?",
+                       (pw, actor.user_id))
+            db.execute("UPDATE sessions SET revoked=1 WHERE user_id=?",
+                       (actor.user_id,))
+            db.execute("DELETE FROM login_failures WHERE username=?",
+                       (actor.username,))
+            self._audit(db, actor, "user.password", "SUCCESS")
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def revoke_sessions(self, admin_session: str, csrf: str,
+                        username: str) -> None:
+        from .auth import AuthorizationError, Role
+        actor = self.authenticate(admin_session, csrf=csrf, mutation=True)
+        if actor.role is not Role.ADMIN:
+            self.audit(actor, "session.revoke", "DENIED")
+            raise AuthorizationError("Administrator required")
+        db = self._db()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_current_admin(db, admin_session, actor)
+            row = db.execute("SELECT id FROM users WHERE username=?",
+                             (username,)).fetchone()
+            if row is None:
+                raise ValueError("Unknown account")
+            db.execute("UPDATE sessions SET revoked=1 WHERE user_id=?",
+                       (row[0],))
+            self._audit(db, actor, "session.revoke", "SUCCESS", detail=username)
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def issue_recovery_token(self, admin_session: str, csrf: str,
+                             lifetime_s: int = 30 * 86400) -> str:
+        from .auth import AuthorizationError, Role, _digest
+        if not 60 <= lifetime_s <= 365 * 86400:
+            raise ValueError("Recovery lifetime outside permitted range")
+        actor = self.authenticate(admin_session, csrf=csrf, mutation=True)
+        if actor.role is not Role.ADMIN:
+            self.audit(actor, "recovery.issue", "DENIED")
+            raise AuthorizationError("Administrator required")
+        token = secrets.token_urlsafe(48)
+        db = self._db()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_current_admin(db, admin_session, actor)
+            now = self.clock()
+            # Issuance invalidates all older tokens: only most recent offline
+            # credential remains usable; never add it to program logs.
+            db.execute("DELETE FROM recovery_tokens")
+            db.execute(
+                "INSERT INTO recovery_tokens(token_hash,created_at,expires_at,"
+                "issued_by) VALUES(?,?,?,?)",
+                (_digest(token), now, now + lifetime_s, actor.user_id),
+            )
+            self._audit(db, actor, "recovery.issue", "SUCCESS")
+            db.commit()
+            return token
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def recover_admin_offline(self, token: str, username: str,
+                              new_password: str) -> None:
+        """ONLY from interactive trusted host CLI; not an HTTP/WS route."""
+        from .auth import (AuthenticationError, Actor, Role, _digest,
+                           _hash_password, _password_bytes)
+        if not isinstance(token, str) or not 32 <= len(token) <= 256:
+            raise AuthenticationError("Invalid recovery credential")
+        pw = _hash_password(_password_bytes(
+            new_password, min_bytes=self.password_min_bytes))
+        db = self._db()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            now = self.clock()
+            record = db.execute(
+                "SELECT expires_at FROM recovery_tokens WHERE token_hash=?",
+                (_digest(token),),
+            ).fetchone()
+            user = db.execute("SELECT id,username FROM users WHERE username=?"
+                              " AND role='ADMIN' AND enabled=1", (username,)).fetchone()
+            if not record or record[0] <= now or not user:
+                self._audit(db, None, "recovery.use", "DENIED")
+                db.commit()
+                raise AuthenticationError("Invalid or expired recovery credential")
+            db.execute("DELETE FROM recovery_tokens")
+            db.execute("UPDATE users SET password_hash=? WHERE id=?",
+                       (pw, user[0]))
+            db.execute("UPDATE sessions SET revoked=1 WHERE user_id=?",
+                       (user[0],))
+            db.execute("DELETE FROM login_failures WHERE username=?",
+                       (username,))
+            self._audit(db, Actor(user[0], user[1], Role.ADMIN),
+                        "recovery.use", "SUCCESS")
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()

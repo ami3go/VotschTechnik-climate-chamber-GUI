@@ -221,6 +221,8 @@ def frozen_self_test(*, required_modules: tuple[str, ...] = ()) -> int:
 
 
 def serve(*, port: int) -> int:
+    if os.environ.get("CHAMBER_NETWORK_MODE", "localhost") != "localhost":
+        raise RuntimeError("W01 frozen portable simulator refuses LAN deployment")
     if os.name != "nt":
         raise RuntimeError("The W01 frozen server is Windows-only")
     if not 1024 <= port <= 65535:
@@ -284,13 +286,50 @@ def server_main() -> int:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--bootstrap-admin", action="store_true",
-                        help="Interactive, offline first administrator; no web provisioning")
+                        help="Interactive offline first administrator")
+    parser.add_argument("--issue-recovery-token", action="store_true")
+    parser.add_argument("--recover-admin", action="store_true")
+    parser.add_argument("--backup-security", type=Path)
+    parser.add_argument("--verify-security", type=Path)
+    parser.add_argument("--stage-restore-security", type=Path)
+    parser.add_argument("--restore-directory", type=Path)
     parser.add_argument("--require-module", action="append", default=[])
     args = parser.parse_args()
     try:
+        modes = (args.bootstrap_admin, args.issue_recovery_token,
+                 args.recover_admin, args.backup_security is not None,
+                 args.verify_security is not None,
+                 args.stage_restore_security is not None, args.self_test)
+        if sum(bool(mode) for mode in modes) > 1:
+            raise ValueError("Choose only one server operation")
         if args.bootstrap_admin:
             from chamber_web.security.bootstrap import interactive_bootstrap
             return interactive_bootstrap()
+        if args.issue_recovery_token or args.recover_admin:
+            from chamber_web.security.bootstrap import interactive_recovery
+            return interactive_recovery(issue=args.issue_recovery_token)
+        if args.backup_security or args.verify_security or args.stage_restore_security:
+            if not sys.stdin.isatty():
+                raise RuntimeError("Security backup/restore requires a local terminal")
+            from chamber_web.security.paths import security_directory
+            from chamber_web.security.backup import (
+                backup_security_database, verify_security_backup,
+                stage_security_restore,
+            )
+            root = security_directory()
+            if args.backup_security:
+                output, manifest = backup_security_database(root, args.backup_security)
+                print("Security backup and signed manifest:", output, manifest)
+            elif args.verify_security:
+                verify_security_backup(root, args.verify_security)
+                print("Security backup verified")
+            else:
+                if args.restore_directory is None:
+                    raise ValueError("--restore-directory required")
+                output = stage_security_restore(
+                    root, args.stage_restore_security, args.restore_directory)
+                print("Staged restore with all sessions revoked:", output)
+            return 0
         if args.self_test:
             return frozen_self_test(required_modules=tuple(args.require_module))
         return serve(port=args.port)

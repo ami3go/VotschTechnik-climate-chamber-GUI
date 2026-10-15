@@ -14,3 +14,22 @@ def create_demo_dashboard_service() -> DashboardService:
     manager = ChamberManager([config], backend_factory=make_backend)
     manager.connect(config.chamber_id)  # connects in-memory FakeBackend only
     return DashboardService(manager, config.chamber_id, disconnect_on_close=True)
+
+
+def create_demo_control_services(security):
+    """Composition root for G05: always one FakeBackend and G08-min authority.
+
+    This has no browser/config/env selection for a real backend. Neither a
+    physical address nor a manufacturer driver can be supplied through UI.
+    """
+    from chamber_web.security.guards import AuthorizedChamber
+    from chamber_web.services.manual_control import ManualControlService
+
+    config = ChamberConfig("demo-chamber", "fake")
+    manager = ChamberManager([config], backend_factory=make_backend)
+    manager.connect(config.chamber_id)
+    dashboard = DashboardService(manager, config.chamber_id, disconnect_on_close=True)
+    manual = ManualControlService(
+        manager, dashboard, AuthorizedChamber(manager, security), security,
+        config.chamber_id)
+    return dashboard, manual

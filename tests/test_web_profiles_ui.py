@@ -1,6 +1,27 @@
 """G03-C/G08-min NiceGUI browser-session integration (simulated backend only)."""
 from typing import Callable
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _trusted_loopback_test_client(monkeypatch):
+    """Exercise NiceGUI pages using the same Host and peer as the W01 loopback server.
+
+    Only the in-process NiceGUI test client is adjusted. Production ASGI Host,
+    Origin and client-address validation remains untouched and fail-closed.
+    """
+    from nicegui.testing.user import User
+
+    original_open = User.open
+
+    async def open_with_localhost(self, path, *, clear_forward_history=True):
+        self.http_client.base_url = "http://127.0.0.1:8080"
+        return await original_open(self, path,
+                                   clear_forward_history=clear_forward_history)
+
+    monkeypatch.setattr(User, "open", open_with_localhost)
+
 from nicegui.testing import User
 
 from chamber_web.security.auth import Role, SecurityStore

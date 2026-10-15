@@ -65,6 +65,7 @@ class AuthorizedChamber:
         # Single server-owned facade; never give its token registry to browsers.
         self._token_lock = threading.RLock()
         self._token_owner: dict[str, int] = {}
+        self._token_names: dict[str, str] = {}
 
     def authorize(self, session: str | None, csrf: str | None,
                   permission: Permission, *, chamber_id: str | None = None) -> Actor:
@@ -113,12 +114,87 @@ class AuthorizedChamber:
         if command == "claim_operator":
             with self._token_lock:
                 self._token_owner[result] = actor.user_id
+                self._token_names[result] = actor.username
         elif command == "release_operator":
             with self._token_lock:
                 self._token_owner.pop(token, None)
+                self._token_names.pop(token, None)
         self._security.audit(actor, "chamber." + command, "SUCCESS", chamber_id)
         return result
 
     def stop(self, session: str | None, csrf: str | None, chamber_id: str) -> None:
         # Intentionally NO operator_token. STOP is role-checked but lease-independent.
         self.execute(session, csrf, chamber_id, "stop")
+
+    def ownership_view(self, session: str | None, chamber_id: str) -> tuple[str | None, bool]:
+        """Read-only, no owner tokens leave this server-owned facade."""
+        actor = self._security.authenticate(session, touch=False)
+        require_permission(actor, Permission.READ)
+        self._manager.get(chamber_id)  # reject stale/wrong device before reading owner
+        with self._token_lock:
+            for token, owner_id in self._token_owner.items():
+                return self._token_names.get(token), owner_id == actor.user_id
+        return None, False
+
+    def execute_owned(self, session: str | None, csrf: str | None,
+                      chamber_id: str, command: str, *args: Any) -> Any:
+        """Bind manual START/setpoint/release to the server-held user lease.
+
+        Neither the browser nor ManualControlService handles G04 bearer tokens.
+        Each dispatch reauthenticates, checks ownership, audits, then uses the
+        G04 operator_generation fence. Other commands cannot use this method.
+        """
+        if command not in ("start", "set_temperature", "release_operator"):
+            raise AuthorizationError("Unsupported owned chamber command")
+        actor = self.authorize(session, csrf, Permission.CHAMBER_CONTROL,
+                               chamber_id=chamber_id)
+        with self._token_lock:
+            token = next((key for key, user_id in self._token_owner.items()
+                          if user_id == actor.user_id), None)
+        if token is None:
+            self._security.audit(actor, "chamber." + command, "DENIED",
+                                 chamber_id, "No operator lease held by this user")
+            raise AuthorizationError("Claim the operator lease first")
+        if command == "release_operator":
+            return self.execute(session, csrf, chamber_id, command, token)
+        return self.execute(session, csrf, chamber_id, command, *args,
+                            operator_token=token)
+
+    def handover_to_admin(self, session: str | None, csrf: str | None,
+                          chamber_id: str) -> None:
+        """Explicit ADMIN takeover of the existing manual lease.
+
+        There is no silent release, timeout-based takeover, or auto-restart.
+        A partially failed handover leaves control unclaimed; an operator must
+        explicitly reclaim it. STOP never waits on this token-registry lock.
+        """
+        actor = self.authorize(session, csrf, Permission.SETTINGS,
+                               chamber_id=chamber_id)
+        self._manager.get(chamber_id)
+        self._security.audit(actor, "chamber.handover", "INTENT", chamber_id)
+        try:
+            with self._token_lock:
+                if len(self._token_owner) != 1:
+                    raise AuthorizationError("No known lease to hand over; reconcile manually")
+                token, user_id = next(iter(self._token_owner.items()))
+                if user_id == actor.user_id:
+                    raise AuthorizationError("Administrator already owns the lease")
+                # Recheck the live G08 session after waiting for the lease lock.
+                # A revoked/expired administrator cannot continue a takeover.
+                self.authorize(session, csrf, Permission.SETTINGS,
+                               chamber_id=chamber_id)
+                self._manager.release_operator(chamber_id, token)
+                self._token_owner.pop(token)
+                self._token_names.pop(token, None)
+                # Release and claim are separate G04 generation transitions.
+                # Recheck again so a mid-handover revocation cannot claim it.
+                self.authorize(session, csrf, Permission.SETTINGS,
+                               chamber_id=chamber_id)
+                replacement = self._manager.claim_operator(chamber_id, actor.username)
+                self._token_owner[replacement] = actor.user_id
+                self._token_names[replacement] = actor.username
+        except BaseException as exc:
+            self._security.audit(actor, "chamber.handover", "FAILED",
+                                 chamber_id, type(exc).__name__)
+            raise
+        self._security.audit(actor, "chamber.handover", "SUCCESS", chamber_id)

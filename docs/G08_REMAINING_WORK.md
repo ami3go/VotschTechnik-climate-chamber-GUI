@@ -38,3 +38,22 @@ PR #29 includes account lifecycle/recovery, application/transport security, audi
 - GUI services never issue vendor protocol commands: the vendor-specific adapter must rely exclusively on the external Vötsch Python driver. Do not change the driver in G08.
 
 **Release status:** software G08 candidate / review and CI pending; production LAN and real hardware operation **NOT APPROVED**.
+
+## Verified integration follow-up — 2026-10-14
+
+- [x] Existing G08 PR #29 synchronized with `main` `4be73ed` by an explicit two-parent reconciliation commit `cd59d5e`; GitHub reported 0 commits behind and clean mergeability after reconciliation.
+- [x] Retained H01 #32, cross-platform setup #33, G03-C/G04/G06 and G08-min #25; did not fabricate acceptance of still-open G05 #28 or G07-A #27.
+- [x] Repaired the missing G02-B NiceGUI loopback test-client setting responsible for the Windows 3.10/3.12 HTTP 403 in [run 38457405604](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38457405604), without relaxing application Host validation.
+- [x] Added an adversarial regression detecting audit tail-row and HMAC-row deletion through SQLite's allocation watermark.
+- [ ] Obtain passing **final-commit** Windows 3.10/3.12 NiceGUI/security, H01 web/GUI and W01 frozen CI.
+- [ ] Independent security review and closure of HIGH code-level findings: off-device audit anchoring, signed-backup rollback protection, LAN/Windows credential ACLs, actual cookie/WS revocation/fixation behavior.
+- [ ] Obtain required external approval, then merge PR #29. Do not mistake this AI-assisted assessment for the approval.
+- [ ] W02 offline Win10/11 certification, trusted service lifecycle and actual LAN/physical HIL/site authorization — release gates remain **NO-GO**.
+
+The newly added SQLite tail check is a **partial hardening**, not a closure of the HIGH audit anchor requirement. Web STOP remains an audited ordinary control command, not an emergency stop. Physical Vötsch connectivity stays disabled.
+
+### Recovery/tamper regression follow-up
+
+The existing G08 security authority now rejects (a) a missing SQLite identity DB with surviving audit/backup keys and (b) removal of an established HMAC checkpoint while its key remains. Positive G08-min legacy migration and negative tampering/reboot tests are included. Check final-head Windows CI on both supported Python versions before marking these software defects resolved. Complete loss of both database **and** trust keys is not recoverable or attestable without operator-controlled off-device key escrow and monotonic external evidence.
+
+- [ ] Confirm the fix for the concurrent-first-start Windows regression from [run 38618249624](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38618249624): key plus audit-checkpoint setup is serialized via SQLite; six-worker and original simultaneous-bootstrap regressions must both pass on final head. This is a startup availability fix, not relaxed audit verification.
