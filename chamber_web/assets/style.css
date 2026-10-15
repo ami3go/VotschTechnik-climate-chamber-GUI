@@ -26,7 +26,19 @@ body{background:var(--bg);color:var(--ink);font-family:Inter,Arial,sans-serif;}
 .profile-intro{background:#e9f3ff;border-radius:6px;padding:11px 14px;font-size:12px}
 .profile-row{display:grid;grid-template-columns:28px 1.4fr 75px 68px 86px;gap:4px;align-items:center;font-size:12px;padding:8px 7px;border-bottom:1px solid #e7ebf0}
 .profile-row.header{background:#f2f6f9;font-weight:700}.profile-row.active-step{background:#dcecff;font-weight:600}
-.controls-line{display:grid;grid-template-columns:145px 1fr 140px;gap:13px;width:100%;align-items:center;margin-top:10px}
+.control-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.control-section{padding:12px;min-width:0}.control-section+.control-section{border-left:1px solid var(--line)}
+.section-title{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#54677d}
+.control-row{display:flex;flex-wrap:nowrap;align-items:center;gap:8px;width:100%}
+.control-row>.control-field{flex:1 1 0;min-width:0}
+.control-row>.control-button{flex:1 1 0;min-width:0;min-height:36px;font-size:12px!important;text-transform:none!important}
+.control-row>.control-field+.control-button{flex:0 0 auto;min-width:120px}
+.control-row.wrap{flex-wrap:wrap}.control-row.wrap>.control-button{flex:1 1 auto}
+.control-button .q-btn__content{flex-wrap:nowrap;white-space:nowrap}
+.control-grid+.control-status,.metric-row+.control-grid{margin-top:0}
+.panel .metric-row{margin:4px 0 8px}
+.control-status{width:100%;padding:10px 12px 0}
+.outcome-line{font-size:13px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
 .chart-panel{margin-top:12px}.chart-box{height:235px;width:100%}
 .edit-scroll{overflow-x:auto;width:100%}
 .edit-row{display:grid;grid-template-columns:23px 39px 76px 70px 84px 87px minmax(128px,1fr) 35px;gap:4px;align-items:center;min-width:650px;padding:3px 4px;border-bottom:1px solid #e5ebf1}
@@ -39,8 +51,8 @@ body{background:var(--bg);color:var(--ink);font-family:Inter,Arial,sans-serif;}
 .demo-banner{background:#fff4de;color:#6d4510;border:1px solid #f2d6a8;padding:9px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;font-weight:600}
 .q-btn{text-transform:none}
 @media(max-width:1300px){.bottom-grid{grid-template-columns:1fr 1fr}.editor-panel{grid-column:1/-1}}
-@media(max-width:970px){.top-grid,.bottom-grid{grid-template-columns:1fr}.editor-panel{grid-column:auto}.sidebar{width:76px;min-width:76px}.sidebar .nav-text,.sidebar .brand,.sidebar .side-note{display:none}.sidebar .q-btn{font-size:0}.sidebar .q-btn .q-icon{font-size:22px}.topbar{padding:10px 13px}}
-@media(max-width:580px){.metric-value{font-size:20px}.metric{padding:5px}.controls-line{grid-template-columns:105px 1fr 110px;gap:6px}.profile-row{grid-template-columns:21px 1fr 53px 46px 75px;font-size:10px}.panel{padding:9px}.top-title{font-size:19px}}
+@media(max-width:970px){.control-grid{grid-template-columns:1fr}.control-section+.control-section{border-left:0;border-top:1px solid var(--line)}.top-grid,.bottom-grid{grid-template-columns:1fr}.editor-panel{grid-column:auto}.sidebar{width:76px;min-width:76px}.sidebar .nav-text,.sidebar .brand,.sidebar .side-note{display:none}.sidebar .q-btn{font-size:0}.sidebar .q-btn .q-icon{font-size:22px}.topbar{padding:10px 13px}}
+@media(max-width:580px){.metric-value{font-size:20px}.metric{padding:5px}.profile-row{grid-template-columns:21px 1fr 53px 46px 75px;font-size:10px}.panel{padding:9px}.top-title{font-size:19px}}
 
 /* G02-B: consistent keyboard focus and responsive service-backed pages. */
 .sidebar .q-btn:focus-visible,.dashboard .q-btn:focus-visible,.dashboard .q-field:focus-within{outline:3px solid #f5922e;outline-offset:2px}
@@ -54,7 +66,6 @@ body{background:var(--bg);color:var(--ink);font-family:Inter,Arial,sans-serif;}
  .dashboard{padding:8px}
  .metric-row{grid-template-columns:1fr}
  .metric{border-right:0;border-bottom:1px solid var(--line)}
- .controls-line{grid-template-columns:1fr}
  .topbar{flex-wrap:wrap}
  .settings-key,.settings-value{min-width:0;width:100%;flex:auto}
 }

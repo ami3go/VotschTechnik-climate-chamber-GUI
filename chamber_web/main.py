@@ -278,73 +278,89 @@ def dashboard() -> None:
                                 ui.label("Backend reported state").classes("metric-caption")
                                 status_label = ui.label("UNKNOWN").classes("status-pill")
                                 quality_label = ui.label("Awaiting telemetry").classes("text-xs text-grey-7")
-                        ui.separator()
-                        with ui.element("div").classes("controls-line"):
-                            with ui.column().classes("gap-1"):
-                                ui.label("Simulated capability range (not site-certified)" if _HIL is None
-                                         else "HIL software envelope (not site-certified)").classes("text-xs")
-                                limits_label = ui.label("Waiting for backend capabilities")
-                                capability_detail_label = ui.label("Capabilities unverified").classes("text-xs text-orange-9")
-                                ramp_detail_label = ui.label("Gradients/modes unavailable; no ramp writes").classes("text-xs text-grey-7")
-                                with ui.row().classes("items-center gap-2 flex-wrap"):
+                        with ui.dialog() as takeover_dialog:
+                            with ui.card():
+                                ui.label("Transfer operator ownership to this administrator?").classes(
+                                    "font-bold")
+                                ui.label("This fences queued commands from the prior operator. "
+                                         "It does not STOP the chamber or make it safe.")
+                                with ui.row():
+                                    ui.button("Cancel", on_click=takeover_dialog.close)
+                                    ui.button("Confirm takeover",
+                                              on_click=confirm_handover).props(
+                                                  "color=deep-orange")
+                        with ui.dialog() as reconcile_dialog:
+                            with ui.card():
+                                ui.label("Confirm STOP reconciliation").classes("font-bold")
+                                ui.label("Only reconcile after independently checking the "
+                                         "device is stopped. This is not hardware certification.")
+                                with ui.row():
+                                    ui.button("Cancel", on_click=reconcile_dialog.close)
+                                    ui.button("Confirm reconcile",
+                                              on_click=confirm_reconciliation).props(
+                                                  "color=deep-orange")
+                        with ui.element("div").classes("control-grid"):
+                            # Target: what the chamber should do.
+                            with ui.column().classes("control-section gap-2"):
+                                ui.label("Target").classes("section-title")
+                                with ui.row().classes("control-row"):
                                     target_input = ui.number(
                                         "Target °C", value=23.0, step=0.5).props(
-                                            "outlined dense").classes("max-w-40")
+                                            "outlined dense").classes("control-field")
                                     set_button = ui.button(
                                         "Set Target", icon="thermostat",
                                         on_click=lambda: execute_manual("set_temperature")).props(
-                                            "outline no-caps").disable().classes("toolbar-button")
-                                with ui.row().classes("items-center gap-2 flex-wrap"):
+                                            "unelevated color=primary no-caps").disable().classes(
+                                                "control-button")
+                                with ui.row().classes("control-row"):
                                     preset_select = ui.select(
                                         options={}, label="Suggested targets only").props(
-                                            "outlined dense").classes("min-w-40")
+                                            "outlined dense").classes("control-field")
                                     ui.button("Fill target", icon="edit",
-                                              on_click=use_suggestion).props("outline no-caps")
-                                ui.separator()
-                                with ui.dialog() as takeover_dialog:
-                                    with ui.card():
-                                        ui.label("Transfer operator ownership to this administrator?").classes(
-                                            "font-bold")
-                                        ui.label("This fences queued commands from the prior operator. "
-                                                 "It does not STOP the chamber or make it safe.")
-                                        with ui.row():
-                                            ui.button("Cancel", on_click=takeover_dialog.close)
-                                            ui.button("Confirm takeover",
-                                                      on_click=confirm_handover).props(
-                                                          "color=deep-orange")
-                                with ui.dialog() as reconcile_dialog:
-                                    with ui.card():
-                                        ui.label("Confirm STOP reconciliation").classes("font-bold")
-                                        ui.label("Only reconcile after independently checking the "
-                                                 "simulated device is stopped. This is not hardware certification.")
-                                        with ui.row():
-                                            ui.button("Cancel", on_click=reconcile_dialog.close)
-                                            ui.button("Confirm reconcile",
-                                                      on_click=confirm_reconciliation).props(
-                                                          "color=deep-orange")
-                                with ui.row().classes("items-center gap-2 flex-wrap"):
+                                              on_click=use_suggestion).props(
+                                                  "outline no-caps").classes("control-button")
+                                with ui.column().classes("gap-0"):
+                                    ui.label("Simulated capability range (not site-certified)" if _HIL is None
+                                             else "HIL software envelope (not site-certified)").classes(
+                                                 "metric-caption")
+                                    limits_label = ui.label("Waiting for backend capabilities").classes(
+                                        "font-medium")
+                                    ramp_detail_label = ui.label(
+                                        "Gradients/modes unavailable; no ramp writes").classes(
+                                            "text-xs text-grey-7")
+                            # Operator lease: who may command the chamber.
+                            with ui.column().classes("control-section gap-2"):
+                                ui.label("Operator lease").classes("section-title")
+                                lease_label = ui.label("Operator lease: unverified").classes("font-medium")
+                                with ui.row().classes("control-row"):
                                     claim_button = ui.button(
                                         "Claim", icon="lock",
                                         on_click=lambda: execute_manual("claim")).props(
-                                            "outline no-caps").disable()
+                                            "unelevated color=primary no-caps").disable().classes(
+                                                "control-button")
                                     release_button = ui.button(
                                         "Release", icon="lock_open",
                                         on_click=lambda: execute_manual("release")).props(
-                                            "outline no-caps").disable()
+                                            "outline no-caps").disable().classes("control-button")
+                                with ui.row().classes("control-row wrap"):
                                     handover_button = ui.button(
                                         "Admin takeover", icon="swap_horiz",
                                         on_click=takeover_dialog.open).props(
-                                            "outline no-caps").disable()
+                                            "outline no-caps").disable().classes("control-button")
                                     reconcile_button = ui.button(
                                         "Admin reconcile STOP", icon="verified_user",
                                         on_click=reconcile_dialog.open).props(
-                                            "outline no-caps").disable()
-                                lease_label = ui.label("Operator lease: unverified").classes("text-xs")
-                                control_health_label = ui.label("Controller: UNKNOWN").classes("text-xs")
-                                outcome_label = ui.label("IDLE — no manual command").classes("text-xs")
-                                ui.label(
-                                    "Web STOP is a best-effort control command, not an emergency stop."
-                                ).classes("text-xs text-orange-9")
+                                            "outline no-caps").disable().classes("control-button")
+                                control_health_label = ui.label("Controller: UNKNOWN").classes(
+                                    "text-xs text-grey-8")
+                        # Status footer: last outcome and standing safety notes.
+                        with ui.column().classes("control-status gap-1"):
+                            outcome_label = ui.label("IDLE — no manual command").classes("outcome-line")
+                            capability_detail_label = ui.label("Capabilities unverified").classes(
+                                "text-xs text-orange-9")
+                            ui.label(
+                                "Web STOP is a best-effort control command, not an emergency stop."
+                            ).classes("text-xs text-orange-9")
 
 
                     with ui.column().classes("panel"):
