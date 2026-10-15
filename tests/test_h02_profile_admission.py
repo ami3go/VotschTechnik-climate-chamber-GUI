@@ -81,10 +81,15 @@ class PermitSafetyTests(unittest.TestCase):
             trusted_site_public_key=public, live=live, identity=identity,
             profile_id="profile-1", profile_sha256="a"*64, gui_commit="b"*40,
             driver_commit="c"*40, operator="operator-1", witness="witness-2",
-            targets_c=(23.0, 25.0), has_outputs_or_gradient_mutations=False,
+            targets_c=(23.0, 25.0), step_budgets_s=(35.0, 35.0),
+            planned_run_budget_s=100.0, has_outputs_or_gradient_mutations=False,
             now_utc=now,
         )
         self.assertEqual(len(preflight_physical_profile(doc, **kwargs)), 64)
+        with self.assertRaises(AdmissionDenied):
+            preflight_physical_profile(doc, **{**kwargs, "step_budgets_s": (121.0,)})
+        with self.assertRaises(AdmissionDenied):
+            preflight_physical_profile(doc, **{**kwargs, "planned_run_budget_s": 241.0})
         with self.assertRaises(AdmissionDenied):
             preflight_physical_profile(doc, **{**kwargs, "identity": replace(identity, serial_number="OTHER")})
         with self.assertRaises(AdmissionDenied):
