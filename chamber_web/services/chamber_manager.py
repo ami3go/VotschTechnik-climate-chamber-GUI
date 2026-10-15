@@ -80,6 +80,20 @@ class ChamberManager:
         self._check_id(chamber_id)
         self._controller.start(chamber_id, operator_token=operator_token)
 
+    def set_profile_running(self, chamber_id: str, running: bool, *,
+                            operator_token: str | None = None) -> None:
+        self._check_id(chamber_id)
+        self._controller.set_profile_running(
+            chamber_id, running, operator_token=operator_token,
+        )
+
+    def set_digital_output(self, chamber_id: str, number: int, state: bool, *,
+                           operator_token: str | None = None) -> None:
+        self._check_id(chamber_id)
+        self._controller.set_digital_output(
+            chamber_id, number, state, operator_token=operator_token,
+        )
+
     def stop(self, chamber_id: str) -> None:
         self._check_id(chamber_id)
         self._controller.stop(chamber_id)

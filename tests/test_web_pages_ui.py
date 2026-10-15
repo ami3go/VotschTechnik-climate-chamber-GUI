@@ -24,12 +24,15 @@ def _trusted_loopback_test_client(monkeypatch):
 
 
 async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], User], monkeypatch, tmp_path) -> None:
+    from chamber_web import main as application
     from chamber_web.security import nicegui as security_ui
     from chamber_web.security.auth import SecurityStore
 
     store = SecurityStore(tmp_path / "security")
     store.bootstrap_admin("test_admin", "StrongAdminPassword#1")
     monkeypatch.setattr(security_ui, "_store", store)
+    monkeypatch.setattr(application._manual_service, "_security", store)
+    monkeypatch.setattr(application._manual_service._authorized, "_security", store)
     captured = []
     original_login = store.login
 
@@ -52,6 +55,7 @@ async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], Us
         ("/logs", "Persistent Event Logs"),
         ("/settings", "Server Configuration (read-only)"),
         ("/profiles", "Persistent Profiles / Revisions"),
+        ("/admin", "Operator Lease"),
     ):
         await user.open(url)
         await user.should_see(heading)
@@ -73,4 +77,3 @@ async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], Us
     store.logout(captured[0])
     user.find("Search").click()
     await user.should_see("sign in")
-

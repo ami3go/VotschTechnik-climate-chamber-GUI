@@ -177,6 +177,7 @@ def test_web_ui_claim_set_start_stop(hil, evidence, chamber_guard):
             page.get_by_label("Password").fill(ADMIN[1])
             page.get_by_role("button", name="Sign in").click()
             expect(body).to_contain_text("SUPERVISED PHYSICAL HIL", timeout=15000)
+            page.goto(url + "/admin")
             if "STOP/reconciliation required" in body.inner_text():
                 page.get_by_role("button", name="Admin reconcile STOP").click()
                 page.get_by_role("button", name="Confirm reconcile").click()
@@ -184,6 +185,7 @@ def test_web_ui_claim_set_start_stop(hil, evidence, chamber_guard):
             expect(claim).to_be_enabled(timeout=20000)
             claim.click()
             expect(body).to_contain_text("you hold control", timeout=15000)
+            page.goto(url + "/")
             page.get_by_label("Target °C").fill(f"{target:g}")
             page.get_by_role("button", name="Set Target").click()
             expect(body).to_contain_text("CONFIRMED · set_temperature", timeout=90000)

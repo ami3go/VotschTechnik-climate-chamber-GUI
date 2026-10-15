@@ -27,6 +27,7 @@ body{background:var(--bg);color:var(--ink);font-family:Inter,Arial,sans-serif;}
 .profile-row{display:grid;grid-template-columns:28px 1.4fr 75px 68px 86px;gap:4px;align-items:center;font-size:12px;padding:8px 7px;border-bottom:1px solid #e7ebf0}
 .profile-row.header{background:#f2f6f9;font-weight:700}.profile-row.active-step{background:#dcecff;font-weight:600}
 .control-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.control-grid.single-section{grid-template-columns:1fr}
 .control-section{padding:12px;min-width:0}.control-section+.control-section{border-left:1px solid var(--line)}
 .section-title{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#54677d}
 .control-row{display:flex;flex-wrap:nowrap;align-items:center;gap:8px;width:100%}

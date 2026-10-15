@@ -369,6 +369,67 @@ class ChamberController:
                 raise ChamberSafetyError("START result superseded by STOP/FAULT")
             self._state = "RUNNING"
 
+    def set_profile_running(self, chamber_id: str, running: bool, *,
+                            operator_token: str | None = None) -> None:
+        """Set simulated profile operation state without invoking safety STOP.
+
+        Physical callers must continue to use the certified START and latched
+        STOP paths. This method exists only so a simulated profile can contain
+        an OFF dwell followed by a later ON step.
+        """
+        self._check_id(chamber_id)
+        if type(running) is not bool:
+            raise ChamberSafetyError("Profile run state must be boolean")
+        with self._state_lock:
+            self._check_operator(operator_token)
+            caps = self._capabilities
+            identity = self._identity
+            if (identity is None or not identity.is_simulation or caps is None or
+                    not caps.supports_start_stop or not caps.supports_running_readback):
+                raise ChamberSafetyError(
+                    "Per-step chamber run control is simulation-only"
+                )
+        expected = OperationState.RUNNING if running else OperationState.STOPPED
+        operation = self._backend.start if running else self._backend.stop
+        self._submit(
+            "profile_run_on" if running else "profile_run_off",
+            lambda: self._verified_write(operation, running=expected),
+            mutation=True, operator_token=operator_token,
+        )
+        with self._state_lock:
+            if self._stop_latched:
+                raise ChamberSafetyError("Profile run result superseded by STOP/FAULT")
+            self._state = "RUNNING" if running else "VERIFIED_STOPPED"
+
+    def set_digital_output(self, chamber_id: str, number: int, state: bool, *,
+                           operator_token: str | None = None) -> None:
+        """Set and verify one explicitly advertised simulated output."""
+        self._check_id(chamber_id)
+        if type(number) is not int or type(state) is not bool:
+            raise ChamberSafetyError("Digital output number/state invalid")
+        with self._state_lock:
+            self._check_operator(operator_token)
+            identity = self._identity
+            caps = self._capabilities
+            available = {item[0] for item in caps.digital_outputs} if caps else set()
+            if identity is None or not identity.is_simulation:
+                raise ChamberSafetyError("Profile digital outputs are simulation-only")
+            if number == 1 or number not in available:
+                raise ChamberSafetyError("Digital output is not supported/verified")
+
+        def write_and_verify() -> None:
+            self._backend.set_digital_output(number, state)
+            if self._backend.read_digital_output(number) is not state:
+                raise ChamberSafetyError("Digital output readback did not confirm command")
+
+        self._submit(
+            "set_digital_output", write_and_verify,
+            mutation=True, operator_token=operator_token,
+        )
+        with self._state_lock:
+            if self._stop_latched:
+                raise ChamberSafetyError("Digital output result superseded by STOP/FAULT")
+
     def stop(self, chamber_id: str) -> None:
         """STOP bypasses operator ownership; intent is synchronous and fenced."""
         self._check_id(chamber_id)

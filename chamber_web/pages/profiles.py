@@ -15,7 +15,7 @@ from chamber_web.security.auth import AuthenticationError, AuthorizationError, R
 from chamber_web.security.guards import Permission
 from chamber_web.security.nicegui import (current_actor, require_authenticated_page,
                                           require_browser_permission)
-from chamber_web.domain.profile import MAX_BYTES
+from chamber_web.domain.profile import MAX_BYTES, format_digital_outputs
 from chamber_web.persistence.profiles import (
     ProfileConflictError, ProfileNotFoundError, ProfileStore,
 )
@@ -66,18 +66,38 @@ def _grid_columns() -> list[dict]:
         {"field": "dwell_s", "headerName": "Dwell s", "editable": True, "width": 110},
         {"field": "reach_timeout_s", "headerName": "Reach timeout s",
          "editable": True, "width": 160},
+        {"field": "chamber_run", "headerName": "Chamber run", "editable": True,
+         "cellEditor": "agSelectCellEditor",
+         "cellEditorParams": {"values": ["UNCHANGED", "ON", "OFF"]}, "width": 145},
+        {"field": "compressed_air", "headerName": "Compressed air", "editable": True,
+         "cellEditor": "agSelectCellEditor",
+         "cellEditorParams": {"values": ["UNCHANGED", "ON", "OFF"]}, "width": 155},
+        {"field": "dryer", "headerName": "Dryer", "editable": True,
+         "cellEditor": "agSelectCellEditor",
+         "cellEditorParams": {"values": ["UNCHANGED", "ON", "OFF"]}, "width": 125},
+        {"field": "digital_outputs", "headerName": "Other outputs", "editable": True,
+         "headerTooltip": "Use number=ON;number=OFF (outputs 1, 7 and 8 have named columns)",
+         "width": 180},
         {"field": "notes", "headerName": "Description / notes", "editable": True,
          "minWidth": 200, "flex": 1},
     ]
 
 
 def _rows(draft: EditorDraft) -> list[dict]:
-    return [
-        {key: (str(value) if value is not None and key not in ("enabled", "step", "notes")
-               else value if value is not None else "")
-         for key, value in vars(step).items()}
-        for step in draft.profile.steps
-    ]
+    rows = []
+    for step in draft.profile.steps:
+        row = {}
+        for key, value in vars(step).items():
+            if key == "digital_outputs":
+                row[key] = format_digital_outputs(value)
+            elif value is not None and key not in (
+                "enabled", "step", "notes", "chamber_run", "compressed_air", "dryer"
+            ):
+                row[key] = str(value)
+            else:
+                row[key] = value if value is not None else ""
+        rows.append(row)
+    return rows
 
 
 @ui.page("/profiles")
@@ -144,7 +164,7 @@ def profiles_page() -> None:
         )
         provenance_label.set_text(
             draft.profile.migration_warning or
-            "Canonical v1 · null gradients mean no gradient request in the editor"
+            "Canonical v2 · null gradients and UNCHANGED outputs issue no request"
         )
         version_input.value = draft.viewed_revision or 1
         show_warnings()
@@ -408,7 +428,9 @@ def profiles_page() -> None:
                 on_change=lambda e: meta("description", e.value)
             ).props("outlined dense").classes("w-full")
             ui.label("Choose a row, then edit grid cells or reorder with the buttons. "
-                     "Gradients may be blank (null).").classes("text-xs text-grey-7")
+                     "Outputs use ON / OFF / UNCHANGED; other outputs use, for example, "
+                     "2=ON;3=OFF. Gradients may be blank (null).").classes(
+                         "text-xs text-grey-7")
             grid = ui.aggrid({
                 "columnDefs": columns,
                 "rowData": [],

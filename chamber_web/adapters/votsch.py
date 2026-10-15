@@ -134,6 +134,19 @@ class VotschBackend:
     def stop(self) -> None:
         self._require().stop()
 
+    def read_digital_output(self, number: int) -> bool:
+        if type(number) is not int or not 1 <= number <= 64:
+            raise UnsupportedCapability("Digital output number must be 1..64")
+        value = self._require().query("GET DIGITAL_OUT VALUE", number)[0]
+        if value not in ("0", "1"):
+            raise ChamberSafetyError("Digital output readback was not boolean")
+        return value == "1"
+
+    def set_digital_output(self, number: int, state: bool) -> None:
+        if type(number) is not int or not 1 <= number <= 64 or type(state) is not bool:
+            raise UnsupportedCapability("Digital output number/state invalid")
+        self._require().query("SET DIGITAL_OUT VALUE", number, 1 if state else 0)
+
     def set_ramp_up(self, rate_c_per_min: float) -> None:
         raise UnsupportedCapability("Ramp units and support are not HIL certified")
 

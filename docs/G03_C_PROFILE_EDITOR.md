@@ -15,9 +15,12 @@ or hardware commands**. Code: `chamber_web/pages/profiles.py` +
 - The Profile Library pages through 100 items; every open is scoped to the configured
   `chamber_id` obtained from the server dashboard service. There is no chamber picker.
   Profile IDs are generated in the store and are distinct across duplicates.
-- AG Grid edits the canonical ten-column schema, including enabled, target Celsius,
+- AG Grid edits the canonical v2 fourteen-column schema, including enabled, target Celsius,
   optional ramp-up/down Celsius per minute, tolerance, stabilize seconds, dwell seconds,
-  reach timeout seconds and notes. Steps may be inserted/duplicated/deleted/reordered,
+  reach timeout seconds, chamber run, compressed air, dryer, numbered digital outputs,
+  and notes. Named outputs use `ON` / `OFF` / `UNCHANGED`; other outputs use the
+  bounded `number=ON;number=OFF` syntax. Outputs 1, 7 and 8 are reserved for the
+  named columns. Steps may be inserted/duplicated/deleted/reordered,
   and are resequenced to 1..N. Null ramps are a schema-level capability-neutral value,
   **not** a request to inherit arbitrary previous hardware settings.
 - Profile name, description and repeats are managed in the editor. Completion action is
@@ -39,8 +42,10 @@ or hardware commands**. Code: `chamber_web/pages/profiles.py` +
 All mutations and file contents are parsed/validated in Python before SQLite writes.
 The client grid and HTML input constraints are merely presentation hints, not a trust boundary.
 
-- Canonical G03-A CSV requires exactly the ten headers and ordered rows; the legacy six-column
-  simulator CSV is a distinct input format. Legacy import requires an explicit operator
+- Canonical G03-A v2 CSV requires exactly the fourteen headers and ordered rows. Existing
+  ten-column v1 CSV/ZIP files remain importable and migrate to chamber run `ON` with all
+  auxiliary outputs unchanged; the legacy six-column simulator CSV is a distinct input
+  format. Legacy import requires an explicit operator
   reach timeout; physical gradient fields remain null, historical simulation ramps stay in
   `legacy_import.csv` inside archival ZIP with checksums and warning metadata.
 - Files are capped at 1 MB CSV / 2 MB ZIP; expansion and entry count are constrained by
@@ -61,7 +66,8 @@ The client grid and HTML input constraints are merely presentation hints, not a 
   and is intentionally not a lossless round-trip format. Both are labeled.
 - Alternative backend compatibility feedback uses normalized
   `ChamberCapabilities`: out-of-range targets and unsupported gradient settings are
-  visibly flagged. Saving portable profile data does not assert that execution is safe;
+  visibly flagged, as are requested numbered outputs without a verified capability.
+  Saving portable profile data does not assert that execution is safe;
   the G04/G06 controller/runner owns final authorization and compatibility.
 
 ## Persistence and Windows deployment
