@@ -218,6 +218,12 @@ class ProfileRunner:
             return self._reason
 
     @property
+    def progress(self) -> tuple[int, int]:
+        """Return the zero-based scheduled step index and total including repeats."""
+        with self._mutex:
+            return self._step_index, len(self._scheduled_steps)
+
+    @property
     def events(self) -> tuple[RunEvent, ...]:
         with self._event_guard:
             return tuple(self._events)

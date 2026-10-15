@@ -260,3 +260,9 @@ The existing G07-A branch was integrated with `main` including merged H01 #32 an
 - H01 [draft PR #34](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/34): explicit launch-time `CHAMBER_HIL_*` authorization (loopback only, serial verified on every read, ≤ 30 °C software envelope). First session found that the VT 4011 setpoint readback (11002) ramps at the chamber gradient (5 K/min up, 3 K/min down); the immediate ±0.1 °C check failed safe (UNKNOWN + STOP latch, START never sent). Fixed by ramp-aware G04 checks and G05 convergence with a settle window; second session passed claim → 25 °C → START → ~90 s RUNNING (24.7 → 25.0 °C) → STOP, chamber restored to stopped / 23.0 °C.
 - Still open: owner/site safety signoff and signed HIL acceptance, profile execution on hardware, ramp (gradient) control, longer soaks and STOP-during-ramp on hardware.
 
+## Profile run UI (simulation) — 2026-10-15
+
+- Branch `feat/profile-run-ui`: `/profiles` gains a "Profile Run" panel backed by a server-owned `ProfileExecutionService` (one `ProfileRunner`, G08 session+CSRF on every action, STOP by any `profile.run` user, pause/resume by the run owner). Runs are refused outside simulation; Physical HIL shows the panel disabled. Server shutdown issues STOP before backend disconnect. The simulated FakeBackend now slews at 0.25 °C/s so runs make visible progress.
+- Tests: `tests/test_profile_execution_service.py` (authorization, CSRF, owner-only pause/resume, admin STOP, STOP latch, non-simulation refusal, shutdown STOP, fake slew) and a NiceGUI run/stop test in `tests/test_web_profiles_ui.py`.
+- Still open: durable G07 recording for browser-started runs, run history UI, profile execution on hardware.
+

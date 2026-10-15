@@ -61,9 +61,25 @@ class ProfileDraft:
 # Physical I/O only via an explicit, complete launch-time HIL authorization.
 _HIL = hil_authorization_from_env(os.environ)
 check_hil_deployment(_HIL, deployment_policy, os.environ)
-_dashboard_service, _manual_service = create_demo_control_services(get_security(), _HIL)
+_dashboard_service, _manual_service = create_demo_control_services(
+    get_security(), _HIL, simulated_slew_c_per_s=0.25,
+)
 _MODE = "Simulation" if _HIL is None else "Physical HIL"
+
+
+def profile_execution_is_simulation() -> bool:
+    """Trusted composition flag; browser input cannot enable profile execution."""
+    return _HIL is None
+
+
+async def _shutdown_profile_runs() -> None:
+    from .pages.profiles import shutdown_profile_execution
+    await shutdown_profile_execution()
+
+
 app.on_startup(_dashboard_service.start)
+# STOP a simulated profile before the dashboard disconnects its backend.
+app.on_shutdown(_shutdown_profile_runs)
 app.on_shutdown(_dashboard_service.close)
 
 

@@ -61,6 +61,17 @@ If an adapter's synchronous I/O was already admitted, G04 cannot preempt it. STO
 
 G07 must store `ExecutionSnapshot` inside `prepare()` with PREPARED, bind events to the run UUID and `chamber_id`, keep sequence idempotent, and mark recovered partially executed runs INTERRUPTED/UNKNOWN pending site-authorized verification. EventSink errors are never silently treated as success; the runner requests STOP and reports UNKNOWN if durable event recording fails.
 
+## Browser execution (simulation only)
+
+`chamber_web.services.profile_execution.ProfileExecutionService` hosts one `ProfileRunner` per server and exposes it on `/profiles` ("Profile Run" panel). Behaviour:
+
+- **Simulation only.** The composition root passes `simulation=True` only when no `CHAMBER_HIL_*` authorization is present; the service refuses `start` otherwise, and `ProfileRunner` independently rejects non-simulated chamber identities. In Physical HIL mode the panel is shown but disabled.
+- **Authorization.** Every start/pause/resume/stop re-authenticates the session and CSRF token and requires `profile.run` (ADMIN, OPERATOR); viewers see state only. Any `profile.run` user may stop a run; pause/resume are reserved for the operator who started it. Passive refresh (`view`) never renews a session and never exposes lease tokens.
+- **Exact revision.** "Run Loaded Revision" runs the saved revision currently loaded in the editor; unsaved drafts cannot run.
+- **Server-owned lifecycle.** The run task belongs to the server: closing or reloading a browser does not stop it. On server shutdown a trusted STOP is issued before the dashboard disconnects the backend.
+- **Simulated progress.** The production FakeBackend slews measured temperature at 0.25 °C/s while running (`simulated_slew_c_per_s`); tests keep the deterministic default of 0.
+- **Not yet wired:** a durable G07 `RunRecorder` sink (the panel shows the in-memory diagnostic event ring only), run history pages, and startup reconciliation of interrupted runs.
+
 ## Validation matrix and release blockers
 
 `tests/test_profile_runner.py` uses virtual time and isolated Fake/second-adapter instances for zero dwell, target boundary, multi-sample stabilization, gaps, excursions, logical pause/reset, absolute deadline, negative temperatures, readback mismatch, stale samples, invalid/fault telemetry, concurrent start, cancel during blocked I/O, STOP fencing, unauthorized start and explicit reconciliation. Windows CI for Python 3.10 and 3.12 also reruns G03/G04 regression suites. These are software-only tests and cannot establish real STOP latency.

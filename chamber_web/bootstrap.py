@@ -18,12 +18,13 @@ def create_demo_dashboard_service() -> DashboardService:
 
 
 def create_demo_control_services(security, hil=None, *, hil_driver_factory=None,
-                                 lease_directory=None):
+                                 lease_directory=None, simulated_slew_c_per_s=0.0):
     """Composition root for G05: one device and G08-min authority.
 
     Default is one FakeBackend. Only an explicit launch-time ``HilAuthorization``
     (validated from the server's own environment, never from a browser) selects
-    the single supervised physical Vötsch chamber.
+    the single supervised physical Vötsch chamber. The optional simulated slew
+    lets profile runs progress without changing deterministic test defaults.
     """
     from chamber_web.security.guards import AuthorizedChamber
     from chamber_web.services.manual_control import ManualControlService
@@ -31,6 +32,15 @@ def create_demo_control_services(security, hil=None, *, hil_driver_factory=None,
     if hil is None:
         config = ChamberConfig("demo-chamber", "fake")
         factory = make_backend
+        if simulated_slew_c_per_s:
+            from chamber_web.adapters.fake import FakeBackend
+
+            def factory(cfg, allow_test_backend=False):
+                if cfg != config:
+                    raise ChamberSafetyError("Unexpected chamber configuration")
+                return FakeBackend(
+                    cfg.chamber_id, slew_c_per_s=simulated_slew_c_per_s,
+                )
     else:
         from chamber_web.adapters.votsch import VotschBackend
 
