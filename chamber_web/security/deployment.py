@@ -15,6 +15,40 @@ import time
 from urllib.parse import urlsplit
 
 
+def certificate_matches_host(certificate: dict, hostname: str) -> bool:
+    """subjectAltName match (RFC 6125, no CN fallback).
+
+    Replaces ssl.match_hostname, which Python 3.12 removed. IP origins must
+    appear as an IP Address SAN; DNS names match exactly or one left-most
+    wildcard label.
+    """
+    sans = certificate.get("subjectAltName", ())
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        address = None
+    if address is not None:
+        for kind, value in sans:
+            if kind == "IP Address":
+                try:
+                    if ipaddress.ip_address(value.strip()) == address:
+                        return True
+                except ValueError:
+                    continue
+        return False
+    host = hostname.lower().rstrip(".")
+    for kind, value in sans:
+        if kind != "DNS":
+            continue
+        pattern = value.lower().rstrip(".")
+        if pattern == host:
+            return True
+        if (pattern.startswith("*.") and "*" not in pattern[2:] and "." in host and
+                host.split(".", 1)[1] == pattern[2:]):
+            return True
+    return False
+
+
 class DeploymentError(RuntimeError):
     """Unsafe or ambiguous network configuration: startup must fail."""
 
@@ -128,7 +162,8 @@ class DeploymentPolicy:
             if not (ssl.cert_time_to_seconds(certificate["notBefore"]) <= time.time()
                     < ssl.cert_time_to_seconds(certificate["notAfter"])):
                 raise DeploymentError("TLS certificate is not currently valid")
-            ssl.match_hostname(certificate, parts.hostname)
+            if not certificate_matches_host(certificate, parts.hostname):
+                raise ssl.CertificateError("certificate does not cover public origin host")
         except (OSError, ssl.SSLError, ValueError, KeyError, AttributeError) as exc:
             raise DeploymentError("Invalid or untrusted LAN TLS configuration") from exc
         except ssl.CertificateError as exc:

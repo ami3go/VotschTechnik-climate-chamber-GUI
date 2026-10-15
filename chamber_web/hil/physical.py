@@ -75,3 +75,27 @@ def hil_authorization_from_env(env: Mapping[str, str]) -> HilAuthorization | Non
     return HilAuthorization(
         env.get("CHAMBER_HIL_CHAMBER_ID", "").strip() or "hil-votsch",
         present["CHAMBER_HIL_ADDRESS"], present["CHAMBER_HIL_EXPECTED_SERIAL"], lo, hi)
+
+
+def check_hil_deployment(hil: HilAuthorization | None, policy, env: Mapping[str, str]) -> None:
+    """Loopback by default; LAN only behind an explicit, narrow opt-in.
+
+    LAN mode already enforces TLS, an exact https origin, a private client
+    allow-list and G08 login. Physical HIL over LAN additionally requires
+    CHAMBER_HIL_ALLOW_LAN=1, a specific bind address and client networks no
+    broader than /24 (IPv4) or /64 (IPv6).
+    """
+    if hil is None or not policy.is_lan:
+        return
+    if env.get("CHAMBER_HIL_ALLOW_LAN", "").strip() != "1":
+        raise ChamberSafetyError(
+            "Supervised physical HIL over LAN requires CHAMBER_HIL_ALLOW_LAN=1")
+    if ipaddress.ip_address(policy.bind_host).is_unspecified:
+        raise ChamberSafetyError("Physical HIL over LAN requires a specific CHAMBER_BIND_HOST")
+    if policy.certfile is None or policy.keyfile is None:
+        raise ChamberSafetyError("Physical HIL over LAN requires TLS")
+    for network in policy.client_networks:
+        if network.prefixlen < (24 if network.version == 4 else 64):
+            raise ChamberSafetyError(
+                f"Physical HIL over LAN allows client networks of /24 or narrower, not {network}")
+

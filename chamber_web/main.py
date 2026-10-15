@@ -21,8 +21,7 @@ configure_nicegui_storage()
 from nicegui import app, ui  # noqa: E402
 
 from .bootstrap import create_demo_control_services
-from .domain.chamber import ChamberSafetyError
-from .hil.physical import hil_authorization_from_env
+from .hil.physical import check_hil_deployment, hil_authorization_from_env
 from .security.nicegui import (active_tokens, cookie_secret, current_actor, deployment_policy,
                                get_security, logout, require_authenticated_page)
 from .ui_pages import (NavigationContext, install_navigation_resolver,
@@ -60,8 +59,7 @@ class ProfileDraft:
 # One process-level device service, independent of any client/browser lifecycle.
 # Physical I/O only via an explicit, complete launch-time HIL authorization.
 _HIL = hil_authorization_from_env(os.environ)
-if _HIL is not None and deployment_policy.is_lan:
-    raise ChamberSafetyError("Supervised physical HIL is restricted to loopback deployment")
+check_hil_deployment(_HIL, deployment_policy, os.environ)
 _dashboard_service, _manual_service = create_demo_control_services(get_security(), _HIL)
 _MODE = "Simulation" if _HIL is None else "Physical HIL"
 app.on_startup(_dashboard_service.start)

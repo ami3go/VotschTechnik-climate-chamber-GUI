@@ -124,6 +124,55 @@ class HilConfigurationTests(unittest.TestCase):
                 hil_authorization_from_env(env)
 
 
+class HilDeploymentTests(unittest.TestCase):
+    """Loopback by default; LAN only behind an explicit narrow opt-in."""
+
+    def policy(self, **kw):
+        import ipaddress
+        from types import SimpleNamespace
+
+        base = dict(is_lan=True, bind_host="192.168.0.23", certfile=Path("c.pem"),
+                    keyfile=Path("k.pem"),
+                    client_networks=(ipaddress.ip_network("192.168.0.0/24"),))
+        base.update(kw)
+        return SimpleNamespace(**base)
+
+    def test_loopback_and_simulation_need_no_opt_in(self):
+        from chamber_web.hil.physical import check_hil_deployment
+
+        hil = hil_authorization_from_env(_env())
+        check_hil_deployment(hil, self.policy(is_lan=False), {})
+        check_hil_deployment(None, self.policy(), {})
+
+    def test_lan_requires_explicit_opt_in(self):
+        from chamber_web.hil.physical import check_hil_deployment
+
+        hil = hil_authorization_from_env(_env())
+        for value in ("", "0", "yes", "true"):
+            with self.subTest(value), self.assertRaises(ChamberSafetyError):
+                check_hil_deployment(hil, self.policy(), {"CHAMBER_HIL_ALLOW_LAN": value})
+        check_hil_deployment(hil, self.policy(), {"CHAMBER_HIL_ALLOW_LAN": "1"})
+
+    def test_lan_hil_rejects_wildcard_bind_missing_tls_and_broad_networks(self):
+        import ipaddress
+
+        from chamber_web.hil.physical import check_hil_deployment
+
+        hil = hil_authorization_from_env(_env())
+        opt_in = {"CHAMBER_HIL_ALLOW_LAN": "1"}
+        bad = {
+            "wildcard bind": self.policy(bind_host="0.0.0.0"),
+            "no tls": self.policy(certfile=None),
+            "broad ipv4": self.policy(client_networks=(ipaddress.ip_network("192.168.0.0/16"),)),
+            "broad ipv6": self.policy(client_networks=(ipaddress.ip_network("fd00::/48"),)),
+        }
+        for name, policy in bad.items():
+            with self.subTest(name), self.assertRaises(ChamberSafetyError):
+                check_hil_deployment(hil, policy, opt_in)
+        check_hil_deployment(hil, self.policy(
+            client_networks=(ipaddress.ip_network("192.168.0.42/32"),)), opt_in)
+
+
 class HilNavigationLabelTests(unittest.TestCase):
     def test_sidebar_mode_follows_server_hil_flag(self):
         from chamber_web.ui_pages import NavigationContext
