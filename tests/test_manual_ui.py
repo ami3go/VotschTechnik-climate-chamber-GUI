@@ -3,7 +3,25 @@ from __future__ import annotations
 
 from typing import Callable
 
+import pytest
 from nicegui.testing import User
+
+
+@pytest.fixture(autouse=True)
+def _trusted_loopback_test_client(monkeypatch):
+    """Use W01's trusted loopback Host in the in-process NiceGUI client.
+
+    The G08 ASGI Host/Origin gate must keep rejecting "testserver" with 403.
+    """
+    original_open = User.open
+
+    async def open_with_localhost(self, path, *, clear_forward_history=True):
+        self.http_client.base_url = "http://127.0.0.1:8080"
+        return await original_open(
+            self, path, clear_forward_history=clear_forward_history
+        )
+
+    monkeypatch.setattr(User, "open", open_with_localhost)
 
 
 async def test_manual_dashboard_two_browsers_and_authorized_stop(
