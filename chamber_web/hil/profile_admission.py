@@ -152,6 +152,9 @@ def verify_signed_permit(
         raise AdmissionDenied("H02 permit signature unavailable/invalid") from exc
     except Exception as exc:
         raise AdmissionDenied("H02 permit signature rejected") from exc
+    # Bind all subsequent checks to the exact bytes that were verified; do not
+    # consult a caller-owned mutable dict after signature validation.
+    data = json.loads(canonical.decode("utf-8"))
     for name in ("site_method", "approval_reference", "serial_number",
                  "profile_id", "operator", "witness", "specimen_restrictions"):
         _nonempty(data[name], name)
@@ -187,6 +190,8 @@ def preflight_physical_profile(
     operator: str,
     witness: str,
     targets_c: Sequence[float],
+    step_budgets_s: Sequence[float],
+    planned_run_budget_s: float,
     has_outputs_or_gradient_mutations: bool,
     now_utc: datetime | None = None,
 ) -> str:
@@ -211,7 +216,7 @@ def preflight_physical_profile(
         _sha(driver_commit, "driver", 40) != data["driver_commit"] or
         operator != data["operator"] or witness != data["witness"]):
         raise AdmissionDenied("Physical run identity/version/operator mismatch")
-    if has_outputs_or_gradient_mutations:
+    if type(has_outputs_or_gradient_mutations) is not bool or has_outputs_or_gradient_mutations:
         raise AdmissionDenied("Unapproved profile v2 outputs or gradient mutations")
     if not targets_c or len(targets_c) > 10000 or any(
         type(target) not in (int, float) or not math.isfinite(target) or
@@ -219,6 +224,15 @@ def preflight_physical_profile(
         for target in targets_c
     ):
         raise AdmissionDenied("Profile target outside approved envelope")
+    approved = H02WatchdogLimits.from_dict(data["watchdog"])
+    if (type(planned_run_budget_s) not in (float, int) or
+        not math.isfinite(planned_run_budget_s) or
+        not 0 < planned_run_budget_s <= approved.whole_profile_deadline_s):
+        raise AdmissionDenied("Planned G06 whole-run deadline exceeds site permit")
+    if (not step_budgets_s or len(step_budgets_s) > 10000 or
+        any(type(v) not in (float, int) or not math.isfinite(v) or
+            not 0 < v <= approved.profile_step_deadline_s for v in step_budgets_s)):
+        raise AdmissionDenied("Planned G06 per-step deadline exceeds site permit")
     canonical = json.dumps(data, sort_keys=True, separators=(",", ":"),
                            ensure_ascii=False, allow_nan=False).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
