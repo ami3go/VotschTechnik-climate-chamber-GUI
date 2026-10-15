@@ -41,6 +41,12 @@ jobs:
         run: python -m unittest discover -s tests -p "test_run_recording_integration.py" -v
       - name: G06 upstream runner regressions
         run: python -m unittest discover -s tests -p "test_profile_runner.py" -v
+      - name: G04 exclusive controller and STOP-fencing regressions
+        run: python -m unittest discover -s tests -p "test_chamber_controller.py" -v
+      - name: G08-min auth/session/CSRF and profile authorization regressions
+        run: |
+          python -m unittest discover -s tests -p "test_security_core.py" -v
+          python -m unittest discover -s tests -p "test_profile_security_integration.py" -v
       - name: Driver boundary (no direct hardware/UI import)
         shell: pwsh
         run: |
