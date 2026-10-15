@@ -304,6 +304,22 @@ class HardenedNetworkTests(unittest.TestCase):
             DeploymentPolicy.from_env({
                 "CHAMBER_ALLOWED_ORIGINS": "http://attacker.invalid:8080"})
 
+    def test_certificate_host_matching_without_ssl_match_hostname(self):
+        # ssl.match_hostname was removed in Python 3.12; LAN must still verify SANs.
+        from chamber_web.security.deployment import certificate_matches_host as match
+
+        cert = {"subject": ((("commonName", "192.168.0.99"),),),
+                "subjectAltName": (("IP Address", "192.168.0.23"), ("DNS", "chamber.lab"),
+                                   ("DNS", "*.lab.local"), ("IP Address", "FD00:0:0:0:0:0:0:1\n"))}
+        for host in ("192.168.0.23", "chamber.lab", "CHAMBER.LAB.", "a.lab.local", "fd00::1"):
+            with self.subTest(host):
+                self.assertTrue(match(cert, host))
+        for host in ("192.168.0.24", "192.168.0.99", "other.lab", "lab.local",
+                     "a.b.lab.local", "evil-chamber.lab"):
+            with self.subTest(host):
+                self.assertFalse(match(cert, host))
+        self.assertFalse(match({"subject": ()}, "192.168.0.23"))
+
     def test_rejects_insecure_lan_and_invalid_certificate(self):
         base = {"CHAMBER_NETWORK_MODE": "lan",
                 "CHAMBER_BIND_HOST": "192.168.1.10",
