@@ -1,4 +1,5 @@
 """G03-C/G08-min NiceGUI browser-session integration (simulated backend only)."""
+import asyncio
 from typing import Callable
 
 import pytest
@@ -143,13 +144,21 @@ async def test_operator_runs_saved_revision_and_stops_it(
     user.find("Load").click()
     await user.should_see("Loaded latest persisted revision")
     user.find("Run Loaded Revision").click()
-    await user.should_see("Started revision 1 in simulation")
+    await user.should_see("Started revision 1 in simulation", retries=50)
     runner = get_profile_execution_service().runner
     assert runner is not None and runner.snapshot.profile_name == "UI run profile"
-    await user.should_see("UI run profile rev 1")
+    await user.should_see("UI run profile rev 1", retries=50)
 
     user.find("Stop Run").click()
-    await user.should_see("STOP requested")
-    await user.should_see("CANCELLED", retries=40)
+    # STOP runs off the event loop after durable audit writes; Windows CI
+    # fsync latency can exceed NiceGUI's default ~0.3 s should_see window.
+    for _ in range(200):
+        if runner.state is not None and runner.state.value in (
+            "CANCELLED", "FAULT", "UNKNOWN",
+        ):
+            break
+        await asyncio.sleep(0.05)
     assert runner.state.value == "CANCELLED"
+    await user.should_see("STOP requested", retries=50)
+    await user.should_see("CANCELLED", retries=50)
     get_profile_editor_service.cache_clear()
