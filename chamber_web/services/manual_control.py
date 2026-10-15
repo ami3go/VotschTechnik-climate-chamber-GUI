@@ -69,8 +69,13 @@ class ManualControlService:
 
     def __init__(self, manager: ChamberManager, dashboard: DashboardService,
                  authorized: AuthorizedChamber, security: SecurityStore,
-                 chamber_id: str, *, max_sample_age_s: float = 5.0):
+                 chamber_id: str, *, max_sample_age_s: float = 5.0,
+                 physical_hil=None):
         self.chamber_id = validate_chamber_id(chamber_id)
+        if physical_hil is not None and physical_hil.chamber_id != self.chamber_id:
+            raise ChamberSafetyError("HIL authorization is for a different chamber")
+        # Explicit launch-time supervised HIL authorization; None = simulation only.
+        self._hil = physical_hil
         if manager.configured_ids() != (self.chamber_id,) or dashboard.chamber_id != self.chamber_id:
             raise ChamberSafetyError("Manual service wrong device identity")
         if not 0 < max_sample_age_s <= 60 or not math.isfinite(max_sample_age_s):
@@ -90,9 +95,18 @@ class ManualControlService:
         if chamber_id != self.chamber_id:
             raise ChamberSafetyError("Wrong chamber")
 
+    def _controllable(self, identity) -> bool:
+        """A simulator, or exactly the HIL-authorized physical chamber."""
+        if identity is None or identity.chamber_id != self.chamber_id:
+            return False
+        if identity.is_simulation:
+            return self._hil is None
+        return (self._hil is not None and identity.backend_id == "votsch" and
+                identity.serial_number == self._hil.expected_serial)
+
     def _require_mock(self, identity) -> None:
-        if identity is None or identity.chamber_id != self.chamber_id or not identity.is_simulation:
-            raise ChamberSafetyError("Physical equipment is disabled for G05")
+        if not self._controllable(identity):
+            raise ChamberSafetyError("Physical equipment is disabled without HIL authorization")
 
     def view(self, session: str | None, chamber_id: str) -> ManualView:
         """Read-only cached telemetry; passive timer reads never renew sessions."""
@@ -103,8 +117,7 @@ class ManualControlService:
         dashboard = self._dashboard.view()
         health = self._manager.health(chamber_id)
         owner, mine = self._authorized.ownership_view(session, chamber_id)
-        simulator = bool(dashboard.identity and dashboard.identity.is_simulation and
-                         dashboard.identity.chamber_id == chamber_id)
+        simulator = self._controllable(dashboard.identity)
         good = simulator and dashboard.quality is ReadingQuality.GOOD and health.connected
         if not simulator:
             # Do not display a live identity as controllable or confirmed.

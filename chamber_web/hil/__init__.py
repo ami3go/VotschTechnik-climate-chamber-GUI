@@ -1,1 +1,1 @@
-"""H01 simulation-only test infrastructure; no physical device activation."""
+"""H01 test infrastructure: simulation helpers and explicit supervised physical HIL authorization."""

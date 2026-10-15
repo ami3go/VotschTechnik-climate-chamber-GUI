@@ -31,7 +31,7 @@ def project_telemetry(view: DashboardView) -> TelemetryDisplay:
         good = False
     identity = view.identity
     mode = ("IDENTITY UNVERIFIED" if identity is None else
-            "SIMULATION" if identity.is_simulation else "READ ONLY")
+            "SIMULATION" if identity.is_simulation else "PHYSICAL HIL")
     identity_text = (
         f"{identity.manufacturer} {identity.model} · {identity.backend_id} · {identity.chamber_id}"
         if identity else f"Identity unverified · {view.chamber_id}"

@@ -136,12 +136,18 @@ class ChamberController:
         if self._operator_token is not None and token != self._operator_token:
             raise ChamberSafetyError("Operator lease owned by another caller")
 
+    def _physical_authorized(self) -> bool:
+        return (getattr(self._backend, "simulation_only", False) is not True and
+                getattr(self._backend, "physical_authorized", False) is True)
+
     def connect(self, chamber_id: str) -> None:
         self._check_id(chamber_id)
         with self._state_lock:
-            # Pre-connect marker is adapter-supplied, fail-closed, vendor-neutral.
-            if getattr(self._backend, "simulation_only", False) is not True:
-                raise ChamberSafetyError("Physical hardware I/O DISABLED; mock backends only")
+            # Pre-connect marker is adapter-supplied, fail-closed, vendor-neutral:
+            # a mock, or a backend carrying an explicit supervised HIL authorization.
+            if not (getattr(self._backend, "simulation_only", False) is True or
+                    self._physical_authorized()):
+                raise ChamberSafetyError("Physical hardware I/O DISABLED without HIL authorization")
             if self._connected:
                 return
             if self._closed or self._thread is not None:
@@ -157,7 +163,9 @@ class ChamberController:
         def initialize():
             self._backend.connect()
             identity = self._backend.identify()
-            if identity.chamber_id != self.chamber_id or not identity.is_simulation:
+            if identity.chamber_id != self.chamber_id or not (
+                    identity.is_simulation or
+                    (self._physical_authorized() and identity.serial_number)):
                 raise ChamberSafetyError("Device identity mismatch / live hardware DISABLED")
             caps = self._backend.capabilities()
             try:
