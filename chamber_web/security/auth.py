@@ -462,7 +462,8 @@ class SecurityStore(AccountOperations):
             raise ValueError("Username must be 3–64 ASCII letters, digits, _ . or -")
 
     def login(self, username: str, password: str, *,
-              client_id: str | None = None, use_pin: bool = False) -> SessionTokens:
+              client_id: str | None = None, use_pin: bool = False,
+              offline_primary_password: bool = False) -> SessionTokens:
         now = self.clock()
         if not isinstance(username, str) or len(username) > 64:
             raise AuthenticationError("Invalid username or password")
@@ -476,7 +477,13 @@ class SecurityStore(AccountOperations):
         db = self._db()
         try:
             profile_at_start = self._profile_in(db)
-            if use_pin != (profile_at_start is SecurityProfile.ISOLATED_LAN):
+            # Explicit trusted local CLI recovery may verify the stronger
+            # primary password even while the GUI requires PIN-only login.
+            # The NiceGUI browser handler never supplies this override.
+            if offline_primary_password and use_pin:
+                raise AuthenticationError("Invalid offline recovery authentication mode")
+            if (not offline_primary_password and
+                    use_pin != (profile_at_start is SecurityProfile.ISOLATED_LAN)):
                 raise AuthenticationError("Invalid credentials for current security profile")
             if client_hash is not None:
                 attempts = db.execute(
