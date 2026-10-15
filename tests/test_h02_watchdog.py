@@ -61,6 +61,31 @@ class ExternalProcessWatchdogTests(unittest.TestCase):
             self.assertEqual(result.returncode, 125, result.stderr)
             self.assertEqual(summary["result"], "LOST_HEARTBEAT")
 
+    def test_timeout_terminates_owned_descendant_tree(self):
+        # Grandchild must not complete a delayed marker write after parent kill.
+        # Works without psutil on POSIX and Windows (taskkill /T).
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            marker = root / "grandchild-ran.txt"
+            grandchild = (
+                "import pathlib,time;time.sleep(1.5);"
+                f"pathlib.Path({str(marker)!r}).write_text('unexpected')"
+            )
+            parent = (
+                "import subprocess,sys,time;"
+                f"subprocess.Popen([sys.executable,'-c',{grandchild!r}]);"
+                "print('child spawned',flush=True);time.sleep(20)"
+            )
+            result, summary = invoke(
+                root / "logs", "--timeout-s", "0.5",
+                command=[sys.executable, "-c", parent],
+            )
+            self.assertEqual(result.returncode, 124, result.stderr)
+            self.assertEqual(summary["result"], "TIMEOUT")
+            time.sleep(1.6)
+            self.assertFalse(marker.exists(), "Watchdog leaked an owned descendant")
+
     def test_nonfinite_timeouts_rejected_before_spawn(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = subprocess.run(
