@@ -156,6 +156,15 @@ class SecurityProfileTests(unittest.TestCase):
             self.store.login("admin_user", self.PIN, use_pin=True,
                              client_id="192.168.0.20")
 
+    def test_offline_primary_password_still_works_for_recovery_enrollment(self):
+        self.activate_isolated()
+        with self.assertRaises(AuthenticationError):
+            self.store.login("admin_user", self.PASSWORD)
+        offline = self.store.login(
+            "admin_user", self.PASSWORD, offline_primary_password=True)
+        self.assertIs(self.store.authenticate(offline.session).role, Role.ADMIN)
+        self.store.logout(offline.session)
+
     def test_cannot_enable_bad_profile(self):
         with self.assertRaises(ValueError):
             self.store.set_security_profile(
