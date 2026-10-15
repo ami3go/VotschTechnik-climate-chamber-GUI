@@ -78,3 +78,43 @@ async def test_manual_dashboard_two_browsers_and_authorized_stop(
     await viewer.should_see("read only")
     await viewer.open("/admin")
     await viewer.should_see("Chamber Control")
+
+
+async def test_admin_security_profiles_panel_is_role_restricted(
+    create_user: Callable[[], User], monkeypatch, tmp_path,
+) -> None:
+    """Live NiceGUI page must expose new policy controls only to administrators."""
+    from chamber_web import main as application
+    from chamber_web.security import nicegui as security_ui
+    from chamber_web.security.auth import Role, SecurityStore
+
+    security = SecurityStore(tmp_path / "profiles_ui_security")
+    security.bootstrap_admin("profile_admin", "StrongAdminPassword#1")
+    administrator = security.login("profile_admin", "StrongAdminPassword#1")
+    security.create_user(administrator.session, administrator.csrf,
+                         "profile_viewer", "StrongViewerPassword#2", Role.VIEWER)
+    monkeypatch.setattr(security_ui, "_store", security)
+    monkeypatch.setattr(application._manual_service, "_security", security)
+    monkeypatch.setattr(application._manual_service._authorized, "_security", security)
+
+    browser = create_user()
+    await browser.open("/login")
+    browser.find("Username").type("profile_admin")
+    browser.find("Password").type("StrongAdminPassword#1")
+    browser.find("Sign in").click()
+    await browser.should_see("Signed in: profile_admin (ADMIN)")
+    await browser.open("/admin")
+    await browser.should_see("Security Profiles")
+    await browser.should_see("Account to enroll for PIN login")
+    await browser.should_see("Apply security profile")
+
+    viewer = create_user()
+    await viewer.open("/login")
+    viewer.find("Username").type("profile_viewer")
+    viewer.find("Password").type("StrongViewerPassword#2")
+    viewer.find("Sign in").click()
+    await viewer.should_see("Signed in: profile_viewer (VIEWER)")
+    await viewer.open("/admin")
+    await viewer.should_see("Chamber Control")
+    # The forbidden route does not render the administrator's PIN controls.
+    await viewer.should_not_see("Security Profiles")
