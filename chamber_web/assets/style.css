@@ -7,8 +7,8 @@ body{background:var(--bg);color:var(--ink);font-family:Inter,Arial,sans-serif;}
 .sidebar .q-btn{width:100%;justify-content:flex-start;text-transform:none;font-size:14px;color:#fff;padding:9px 12px;border-radius:5px}
 .nav-active{background:var(--blue)!important}
 .side-note{margin:40px 13px 0;color:#a6bfd3;font-size:12px;line-height:1.7}
-.main-area{flex:1;min-width:0}
-.topbar{min-height:75px;background:linear-gradient(90deg,#203a53,#112a41);color:white;padding:12px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.main-area{flex:1;min-width:0;align-items:stretch}
+.topbar{width:100%;height:80px;flex-wrap:nowrap;background:linear-gradient(90deg,#203a53,#112a41);color:white;padding:12px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 .top-title{font-size:24px;font-weight:600;line-height:1.2}
 .top-subtitle{color:#c6d4e2;font-size:13px}
 .demo-status{color:#ffcf90;font-size:13px;font-weight:650}
@@ -66,7 +66,7 @@ body{background:var(--bg);color:var(--ink);font-family:Inter,Arial,sans-serif;}
  .dashboard{padding:8px}
  .metric-row{grid-template-columns:1fr}
  .metric{border-right:0;border-bottom:1px solid var(--line)}
- .topbar{flex-wrap:wrap}
+ .topbar{flex-wrap:wrap;height:auto;min-height:80px}
  .settings-key,.settings-value{min-width:0;width:100%;flex:auto}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}

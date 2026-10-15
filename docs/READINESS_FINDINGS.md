@@ -165,3 +165,12 @@ The validated prior-source CI for `007e6053258680dd8df16175e66dfb00847c535d` was
 | T-1 | MEDIUM (test isolation) | Tests used the developer's real `~/.chamber_web`; persisted leases made local runs disagree with CI. | FIXED in #28 (`tests/conftest.py`) |
 | H01-OPEN | RELEASE | Owner/site safety signoff, signed HIL acceptance, profiles on hardware, gradient control, long soak and STOP-during-ramp evidence. | OPEN |
 
+
+## Real-hardware test suite and soak — 2026-10-15
+
+VT 4011 SN 58566207770010, supervised, envelope 20–30 °C.
+
+- `tests/hardware/` (opt-in): **8/8 passed** in 125 s — identity/gradients (5.0 up / 3.0 down K/min), telemetry max latency 31 ms, out-of-envelope 35/15 °C REJECTED with no write, no-lease command refused, ramped setpoint 23→24 °C in 12.8 s and 24→23 °C in 21.0 s, START → RUNNING → verified STOP, **STOP during a running setpoint ramp confirmed in 0.24 s** (pending set → UNKNOWN), Chromium claim/set/start/stop.
+- `scripts/hil_soak.py`: **PASSED**, 1650 s, 312 samples, 0 non-GOOD, 12/12 commands confirmed, latency mean 15 ms / max 68 ms. Steady-state last-minute means: 24.91 °C @25, 26.15 °C @26, 24.03 °C @24, 24.18 °C @24 after restart; worst overshoot −0.5 °C cooling to 24 °C; settle to ±0.2 °C in 15–100 s. Chamber STOPPED and setpoint restored to 23.0 °C at the end.
+- Found by the dry run: STOP keeps the operator lease (soak claims only if free), and a setpoint read right after a write is mid-ramp — the original setpoint is now recorded only once the readback has settled.
+- Still open: owner/site safety signoff and signed acceptance, profile execution on hardware, gradient (ramp-rate) control.
