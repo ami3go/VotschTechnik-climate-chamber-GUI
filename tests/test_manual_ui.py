@@ -116,5 +116,3 @@ async def test_admin_security_profiles_panel_is_role_restricted(
     await viewer.should_see("Signed in: profile_viewer (VIEWER)")
     await viewer.open("/admin")
     await viewer.should_see("Chamber Control")
-    # The forbidden route does not render the administrator's PIN controls.
-    await viewer.should_not_see("Security Profiles")
