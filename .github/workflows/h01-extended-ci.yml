@@ -17,6 +17,12 @@ on:
       - 'tests/test_manual_*.py'
   pull_request:
     paths:
+      # W02 release changes must preserve live simulated NiceGUI/web behavior.
+      - 'scripts/w02_*.py'
+      - 'scripts/windows_manifest.py'
+      - '.github/workflows/windows-packaging.yml'
+      - '.github/workflows/w02-release-validation.yml'
+      - 'docs/W02_OFFLINE_RELEASE.md'
       - 'tests/test_h01_*.py'
       - 'docs/H01_EXTENDED_*.md'
       - '.github/workflows/h01-extended-ci.yml'

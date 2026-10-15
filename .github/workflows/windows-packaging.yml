@@ -8,6 +8,10 @@ on:
       - "README_OFFLINE_WINDOWS.md"
       - "tests/test_windows_packaging.py"
       - ".github/workflows/windows-packaging.yml"
+      - ".github/workflows/w02-release-validation.yml"
+      - ".github/workflows/h01-extended-ci.yml"
+      - "docs/W02_OFFLINE_RELEASE.md"
+      - "docs/W02_SECURITY_REVIEW.md"
       - "requirements-web.txt"
       - "requirements-hardware.txt"
   push:
@@ -36,7 +40,7 @@ jobs:
           python-version: "3.12"
           architecture: x64
       - name: Install W01 test tools
-        run: python -m pip install -r requirements-web.txt pytest==9.1.1 ruff==0.17.0
+        run: python -m pip install -r requirements-web.txt -r requirements-w02-build.txt pyinstaller==6.16.0 pytest==9.1.1 ruff==0.17.0
       - name: Lint Windows code
         run: python -m ruff check chamber_web/windows_runtime.py scripts/windows_launcher.py scripts/windows_server.py scripts/windows_manifest.py tests/test_windows_packaging.py --select E4,E7,E9,F
       - name: Unit tests and Python syntax
@@ -123,6 +127,73 @@ jobs:
             if ($foreignLaunch.ExitCode -eq 0) { throw "Foreign port incorrectly accepted" }
           }
           finally { Stop-Process -Id $foreign.Id -Force -ErrorAction SilentlyContinue }
+      - name: W02 signed frozen-bundle integration (ephemeral TEST key, not a release)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bundle = Join-Path "$env:RUNNER_TEMP/offline-extracted" "ClimateChamber-Web-Windows-x64-0.1.0-w01-offline"
+          $env:W02_CI_PRIVATE = Join-Path $env:RUNNER_TEMP "w02-ci-private.pem"
+          $env:W02_CI_PUBLIC = Join-Path $env:RUNNER_TEMP "w02-ci-public.pem"
+          @'
+          import os
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          key = Ed25519PrivateKey.generate()
+          Path(os.environ["W02_CI_PRIVATE"]).write_bytes(key.private_bytes(
+              serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+              serialization.NoEncryption()))
+          Path(os.environ["W02_CI_PUBLIC"]).write_bytes(key.public_key().public_bytes(
+              serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw "CI-only Ed25519 key generation failed" }
+          try {
+            python -m scripts.w02_release --sign --bundle "$bundle" --version 0.1.0-w01 --source-sha ("0" * 64) --private-key "$env:W02_CI_PRIVATE"
+            if ($LASTEXITCODE -ne 0) { throw "Signing frozen W01 bundle failed" }
+            python -m scripts.w02_release --verify --bundle "$bundle" --public-key "$env:W02_CI_PUBLIC" --min-version 0.1.0-w01
+            if ($LASTEXITCODE -ne 0) { throw "Verifying signed frozen W01 bundle failed" }
+            $unlisted = Join-Path $bundle "unexpected-w02-ci-file.dll"
+            [IO.File]::WriteAllBytes($unlisted, [byte[]](1,2,3))
+            python -m scripts.w02_release --verify --bundle "$bundle" --public-key "$env:W02_CI_PUBLIC" *> $null
+            if ($LASTEXITCODE -eq 0) { throw "Signed release accepted an unexpected DLL" }
+            Remove-Item -LiteralPath $unlisted -Force
+            python -m scripts.w02_release --verify --bundle "$bundle" --public-key "$env:W02_CI_PUBLIC"
+            if ($LASTEXITCODE -ne 0) { throw "Signed release recovery verification failed" }
+
+            # This is a SECOND verified tool, not a second chamber launcher.
+            # The publisher/test key is not shipped in the uploaded W01 artifact.
+            $exeFolder = Join-Path $env:RUNNER_TEMP "w02-ci-verifier-bin"
+            python -m PyInstaller --noconfirm --clean --onefile --console --name ClimateChamberReleaseVerifier --paths . --distpath "$exeFolder" --workpath "$env:RUNNER_TEMP/w02-ci-verifier-build" --specpath "$env:RUNNER_TEMP/w02-ci-verifier-spec" "./scripts/w02_target_verifier.py"
+            if ($LASTEXITCODE -ne 0) { throw "Frozen independent verifier build failed" }
+            $verifierExe = Join-Path $exeFolder "ClimateChamberReleaseVerifier.exe"
+            if (-not (Test-Path -LiteralPath $verifierExe -PathType Leaf)) { throw "Frozen verifier missing" }
+            $ciPin = (Get-FileHash -LiteralPath $verifierExe -Algorithm SHA256).Hash.ToLowerInvariant()
+            $ciArchive = Join-Path $env:RUNNER_TEMP "w02-CI-ONLY-signed-test.zip"
+            Compress-Archive -Path "$bundle" -DestinationPath "$ciArchive" -CompressionLevel Optimal
+            $isolatedInstall = Join-Path $env:RUNNER_TEMP "w02-ci-verified-install"
+            $psVersion = (powershell.exe -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()').Trim()
+            if ($LASTEXITCODE -ne 0 -or -not $psVersion.StartsWith("5.1")) {
+              throw "Windows PowerShell 5.1 unavailable on test runner"
+            }
+            & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "./scripts/verify_w02_release.ps1" -Archive "$ciArchive" -InstallDir "$isolatedInstall" -VerifierPath "$verifierExe" -VerifierSha256 "$ciPin" -TrustedPublicKey "$env:W02_CI_PUBLIC" -MinimumVersion "0.1.0-w01"
+            if ($LASTEXITCODE -ne 0) { throw "PowerShell 5.1 frozen-verifier integration failed" }
+            if (-not (Test-Path -LiteralPath (Join-Path $isolatedInstall "ClimateChamberLauncher.exe") -PathType Leaf)) {
+              throw "Independently verified frozen launcher not staged"
+            }
+            $rejected = Join-Path $env:RUNNER_TEMP "w02-ci-rejected-install"
+            & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "./scripts/verify_w02_release.ps1" -Archive "$ciArchive" -InstallDir "$rejected" -VerifierPath "$verifierExe" -VerifierSha256 ("f" * 64) -TrustedPublicKey "$env:W02_CI_PUBLIC" -MinimumVersion "0.1.0-w01" *> $null
+            if ($LASTEXITCODE -eq 0 -or (Test-Path -LiteralPath $rejected)) {
+              throw "Wrong independently pinned verifier digest was accepted"
+            }
+            # PowerShell preserves the expected failing native exit code.
+            # Clear it only AFTER the negative assertion, or Actions marks this job failed.
+            $global:LASTEXITCODE = 0
+          }
+          finally {
+            Remove-Item -LiteralPath "$env:W02_CI_PRIVATE" -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath "$env:W02_CI_PUBLIC" -Force -ErrorAction SilentlyContinue
+          }
+          Write-Host "CI-only signing and tamper rejection passed; artifact remains UNSIGNED/UNTRUSTED W01 simulator."
       - name: Upload W01 simulator artifact (NOT release)
         uses: actions/upload-artifact@v4
         with:
