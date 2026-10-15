@@ -115,9 +115,9 @@ class SecurityProfileTests(unittest.TestCase):
             self.admin.session, self.admin.csrf, self.PASSWORD,
             SecurityProfile.LARGE_NETWORK)
         session = self.store.login("admin_user", self.PASSWORD)
-        for _ in range(12):
-            self.now[0] += 3600
-            if _ < 11:
+        for index in range(24):
+            self.now[0] += 1800
+            if index < 23:
                 self.store.authenticate(session.session)
         with self.assertRaises(AuthenticationError):
             self.store.authenticate(session.session)
