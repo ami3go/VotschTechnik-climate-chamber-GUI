@@ -61,7 +61,7 @@ class PermitSafetyTests(unittest.TestCase):
             "site_method": "SITE-H02-01", "approval_reference": "SIGNED-SITE-H02-01",
             "chamber_id": "hil-votsch", "serial_number": "S123",
             "profile_id": "profile-1", "profile_revision_sha256": "a" * 64,
-            "gui_commit": "b" * 40 + "b" * 24, "driver_commit": "c" * 64,
+            "gui_commit": "b" * 40, "driver_commit": "c" * 40,
             "operator": "operator-1", "witness": "witness-2",
             "specimen_restrictions": "Empty chamber, witness present",
             "temperature_min_c": 22.0, "temperature_max_c": 27.0,
@@ -79,8 +79,8 @@ class PermitSafetyTests(unittest.TestCase):
         live = H02LiveChecks(*(True for _ in range(9)))
         kwargs = dict(
             trusted_site_public_key=public, live=live, identity=identity,
-            profile_id="profile-1", profile_sha256="a"*64, gui_commit="b"*64,
-            driver_commit="c"*64, operator="operator-1", witness="witness-2",
+            profile_id="profile-1", profile_sha256="a"*64, gui_commit="b"*40,
+            driver_commit="c"*40, operator="operator-1", witness="witness-2",
             targets_c=(23.0, 25.0), has_outputs_or_gradient_mutations=False,
             now_utc=now,
         )
