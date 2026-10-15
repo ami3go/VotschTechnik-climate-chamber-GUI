@@ -107,3 +107,13 @@ B1 transport physical framing/timeout; B2 actual STOP and local emergency proced
 ## G07-A integration sync — 2026-10-14
 
 The existing G07-A branch was integrated with `main` including merged H01 #32 and environment setup #33. Original earlier-head CI evidence remains historical; final merge requires exact updated-head G07/G06/G08/NiceGUI/H01/Windows packaging checks and independent human architecture/durability/security acceptance. Physical hardware remains disabled; H01 site physical certification, G08-full, W02 and signed site safety approval remain NO-GO.
+
+## G07-A remediation / outstanding release findings — 2026-10-15
+
+| ID | Severity | Finding and closure | Status |
+|---|---|---|---|
+| G07-R9 | HIGH (software) | Missing SQLite DB with surviving run files or `-wal/-journal/-shm` sidecars previously recreated an empty history. Fail-closed preconnection guard and missing-DB, orphan-WAL regressions added on PR #27. | CODE FIX PUSHED; FINAL-HEAD WINDOWS CI REQUIRED |
+| G07-R10 | HIGH (software lifecycle) | START_INTENT and STOP_INTENT recovery must avoid fabricated success or restart; STOP/cancel + UNKNOWN reconciliation + tamper denial integration test added. | CODE/TEST PUSHED; FINAL-HEAD CI REQUIRED |
+| G07-R1/R2/R3/R4/R7/R8 | HIGH (release/acceptance) | Windows power-cut directory durability, G06 measured-setpoint/generation evidence, future G08-min authenticated History/Logs/export routes, independent archival integrity/backup, exclusive startup ownership and independent human review. | **OPEN; PR #27 DRAFT / DO NOT MERGE** |
+
+The validated prior-source CI for `007e6053258680dd8df16175e66dfb00847c535d` was [G07 Windows/million samples](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38613839443) and [H01 Windows/Linux/Chromium](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38613839547); that evidence is not a result for the updated branch. Hardware activation, physical HIL, W02 Windows release and G08-full remain disabled/open. Do not interpret mock STOP as an emergency stop.

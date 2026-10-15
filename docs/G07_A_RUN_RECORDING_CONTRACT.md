@@ -66,3 +66,9 @@ This is an engineering/software evidence layer. H01 site safety approval, physic
 ### SQLite startup corruption regression (2026-10-14)
 
 `RunStore` now executes SQLite `PRAGMA quick_check(1)` on startup before accepting its schema and refuses damaged database pages with `RunIntegrityError`. A regression test corrupts the database header and verifies startup rejects it without silent recreation. This is only a structural check, not a substitute for full integrity scanning, independent evidence anchoring, backup/restore drills, or Windows power-cut tests. H01 extended simulated test workflow now also triggers on G07 recorder changes. Independent review and site safety acceptance remain outstanding.
+
+### Missing database with surviving evidence — fail-closed startup (2026-10-15)
+
+Before opening SQLite, `RunStore` checks for `runs.sqlite3`. If absent when the per-run evidence directory or SQLite recovery sidecars survive, initialization fails with `RunIntegrityError` rather than silently constructing an empty database. Recover only from an authenticated, operator-approved trusted backup; **never** synthesize successful run history or dispatch control commands from surviving CSV files. Regression tests cover the missing database and an orphaned WAL sidecar. A genuinely empty deployment with neither run directory nor SQLite sidecars can initialize normally. This guard does not prove a backup is valid, prevent privileged tampering, or certify Windows power-cut filesystem behavior.
+
+The extended G07 Windows 3.10/3.12 matrix includes G04 STOP-fencing and G08-min authentication/authorization regressions alongside G06, and the integrated simulator test exercises operator cancellation, a durable STOP_INTENT crash gap, UNKNOWN recovery, export validation and tampered ZIP denial. All site and independent-approval requirements above remain open.
