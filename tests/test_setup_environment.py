@@ -79,6 +79,35 @@ class SetupEnvironmentTests(unittest.TestCase):
                 setup.install_environment(root=self.root, include_driver=False)
         run.assert_not_called()
 
+    def test_recreate_removes_only_a_real_virtual_environment(self):
+        python = self.fake_venv()
+        venv = python.parent.parent
+        (venv / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
+        (venv / "stale.txt").write_text("old", encoding="utf-8")
+
+        def fake_run(command, *, cwd):
+            if command[1:3] == ["-m", "venv"]:
+                python.parent.mkdir(parents=True, exist_ok=True)
+                python.touch()
+
+        with (mock.patch.object(setup.platform, "system", return_value="Linux"),
+              mock.patch.object(setup, "run_command", side_effect=fake_run) as run):
+            setup.install_environment(root=self.root, include_driver=False, recreate=True)
+        self.assertFalse((venv / "stale.txt").exists())
+        self.assertEqual(run.call_args_list[0].args[0][1:3], ["-m", "venv"])
+
+    def test_recreate_refuses_non_virtualenv_directory(self):
+        target = self.root / "not-a-venv"
+        target.mkdir()
+        (target / "keep.txt").write_text("data", encoding="utf-8")
+        with (mock.patch.object(setup.platform, "system", return_value="Linux"),
+              mock.patch.object(setup, "run_command") as run,
+              self.assertRaises(RuntimeError)):
+            setup.install_environment(root=self.root, venv=target,
+                                      include_driver=False, recreate=True)
+        self.assertTrue((target / "keep.txt").exists())
+        run.assert_not_called()
+
     def test_browser_requires_test_dependencies(self):
         with mock.patch.object(setup.platform, "system", return_value="Linux"):
             with self.assertRaisesRegex(ValueError, "requires --with-tests"):

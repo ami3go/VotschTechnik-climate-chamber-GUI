@@ -32,6 +32,7 @@ def install_environment(
     include_driver: bool = True,
     with_tests: bool = False,
     with_browser: bool = False,
+    recreate: bool = False,
 ) -> Path:
     """Create/reuse a venv, install requirements, and check dependencies."""
     system = platform.system()
@@ -62,6 +63,13 @@ def install_environment(
 
     python = python_in_venv(venv, system)
     print(f"Platform: {system}; virtualenv: {venv}", flush=True)
+    if recreate and venv.exists():
+        # Only ever delete a real virtual environment, never an arbitrary folder.
+        if not (venv / "pyvenv.cfg").is_file():
+            raise RuntimeError(
+                f"Refusing to delete {venv}: it is not a virtual environment (no pyvenv.cfg).")
+        print(f"Removing existing virtual environment: {venv}", flush=True)
+        shutil.rmtree(venv)
     if not python.is_file():
         if venv.exists():
             raise RuntimeError(
@@ -94,6 +102,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--with-tests", action="store_true", help="Install pinned test and lint libraries")
     parser.add_argument("--browser", action="store_true", help="Download Playwright Chromium (requires --with-tests)")
     parser.add_argument("--run", action="store_true", help="Start the simulated local NiceGUI app after setup")
+    parser.add_argument("--recreate", action="store_true",
+                        help="Delete and rebuild the virtual environment (only if it is one)")
     args = parser.parse_args(argv)
     try:
         python = install_environment(
@@ -101,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
             include_driver=not args.no_driver,
             with_tests=args.with_tests,
             with_browser=args.browser,
+            recreate=args.recreate,
         )
         if args.run:
             run_command([str(python), str(ROOT / "main.py")], cwd=ROOT)
