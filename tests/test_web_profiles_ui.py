@@ -31,7 +31,7 @@ async def test_profiles_page_requires_login_and_persists_between_sessions(
     create_user: Callable[[], User], monkeypatch, tmp_path,
 ) -> None:
     from chamber_web.security import nicegui as security_ui
-    from chamber_web.pages.profiles import get_profile_editor_service
+    from chamber_web.pages.profiles import _grid_columns, get_profile_editor_service
 
     store = SecurityStore(tmp_path / "security")
     store.bootstrap_admin("test_admin", "StrongAdminPassword#1")
@@ -55,6 +55,12 @@ async def test_profiles_page_requires_login_and_persists_between_sessions(
     await user.should_see("Persistent Profiles / Revisions")
     await user.should_see("Profile Library")
     await user.should_see("Profile Editor")
+    await user.should_see("Outputs use ON / OFF / UNCHANGED")
+    columns = {column["field"]: column for column in _grid_columns()}
+    assert columns["chamber_run"]["cellEditorParams"]["values"] == [
+        "UNCHANGED", "ON", "OFF",
+    ]
+    assert {"compressed_air", "dryer", "digital_outputs"} <= columns.keys()
     await user.should_see("New Temperature Profile")
     await user.should_see("Immutable Revision History")
     await user.should_see("Spreadsheet-safe CSV")

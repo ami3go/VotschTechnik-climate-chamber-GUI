@@ -200,6 +200,7 @@ class ProfileRunner:
         self._prepared = False
         self._stop_future: Future | None = None
         self._terminal_after_stop = RunState.UNKNOWN
+        self._profile_running = False
 
     @property
     def state(self) -> RunState | None:
@@ -320,6 +321,26 @@ class ProfileRunner:
                 # G04 has NO verified gradient setter/readback/restore contract.
                 if step.ramp_up_c_per_min is not None or step.ramp_down_c_per_min is not None:
                     raise ChamberSafetyError("Hardware gradients unsupported by G04; reject profile")
+                if step.chamber_run not in ("UNCHANGED", "ON", "OFF") or any(
+                    directive not in ("UNCHANGED", "ON", "OFF")
+                    for directive in (step.compressed_air, step.dryer)
+                ):
+                    raise ValueError("Invalid profile output directive")
+                if any(
+                    type(number) is not int or type(state) is not bool
+                    for number, state in step.digital_outputs
+                ):
+                    raise ValueError("Invalid profile digital output command")
+                available_outputs = {number for number, _ in caps.digital_outputs}
+                requested_outputs = {number for number, _ in step.digital_outputs}
+                if step.compressed_air != "UNCHANGED":
+                    requested_outputs.add(7)
+                if step.dryer != "UNCHANGED":
+                    requested_outputs.add(8)
+                if not requested_outputs <= available_outputs:
+                    raise ChamberSafetyError(
+                        "Profile requests unsupported/unverified digital outputs"
+                    )
             total = sum(self._step_budget(s, params) for s in enabled) * record.profile.repeat_count + 30
             if not math.isfinite(total) or total > 1_209_600:
                 raise ChamberSafetyError("Profile exceeds finite run watchdog limit")
@@ -357,6 +378,7 @@ class ProfileRunner:
                 self._last_source_timestamp = None
                 self._stable_count = 0
                 self._dwell_elapsed = 0.0
+                self._profile_running = False
                 if self._sink is not None:
                     # G07 must commit PREPARED snapshot before any mutation.
                     self._sink.prepare(self._snapshot)
@@ -391,10 +413,12 @@ class ProfileRunner:
             raise ChamberSafetyError("Controller lost safe generation/connection")
         if running and health.state != "RUNNING":
             raise ChamberSafetyError("Controller no longer reports running")
+        if not running and health.state != "VERIFIED_STOPPED":
+            raise ChamberSafetyError("Controller no longer reports profile-stopped")
 
     def _dispatch_step(self) -> None:
         assert self._snapshot is not None and self._owner_token
-        self._healthy(running=self._step_index > 0)
+        self._healthy(running=self._profile_running)
         step = self._step()
         self._step_started = self._now()
         self._step_deadline = self._step_started + self._step_budget(step, self._snapshot.parameters)
@@ -407,10 +431,30 @@ class ProfileRunner:
         if self._cancel_requested:
             return
         self._manager.set_temperature(self._id, target, operator_token=self._owner_token)
-        if self._step_index == 0:
+        output_commands = list(step.digital_outputs)
+        if step.compressed_air != "UNCHANGED":
+            output_commands.append((7, step.compressed_air == "ON"))
+        if step.dryer != "UNCHANGED":
+            output_commands.append((8, step.dryer == "ON"))
+        for number, output_state in output_commands:
             if self._cancel_requested:
                 return
-            self._manager.start(self._id, operator_token=self._owner_token)
+            self._emit(
+                "OUTPUT_INTENT", f"Digital output {number} -> " +
+                ("ON" if output_state else "OFF"),
+            )
+            self._manager.set_digital_output(
+                self._id, number, output_state, operator_token=self._owner_token,
+            )
+        if step.chamber_run != "UNCHANGED":
+            if self._cancel_requested:
+                return
+            requested_running = step.chamber_run == "ON"
+            self._emit("RUN_STATE_INTENT", "ON" if requested_running else "OFF")
+            self._manager.set_profile_running(
+                self._id, requested_running, operator_token=self._owner_token,
+            )
+            self._profile_running = requested_running
         self._reach_deadline = self._now() + self._duration(
             step.reach_timeout_s, "reach", positive=True,
         )
@@ -467,16 +511,18 @@ class ProfileRunner:
 
     def _observe(self) -> None:
         assert self._snapshot is not None
-        self._healthy(running=True)
+        self._healthy(running=self._profile_running)
         sample = self._manager.status(self._id)  # G04 owns serialized I/O
         now = self._now()
         if now > self._step_deadline or now > self._run_deadline:
             raise TimeoutError("Step/run deadline expired during poll")
-        self._healthy(running=True)
+        self._healthy(running=self._profile_running)
+        expected_operation = (OperationState.RUNNING if self._profile_running
+                              else OperationState.STOPPED)
         if (sample.identity != self._snapshot.identity or
                 sample.quality is not ReadingQuality.GOOD or
                 not self._sample_fresh(sample) or
-                sample.operation_state is not OperationState.RUNNING or
+                sample.operation_state is not expected_operation or
                 sample.measured_temperature_c is None or
                 not math.isfinite(sample.measured_temperature_c) or
                 sample.setpoint_temperature_c is None or
@@ -583,13 +629,15 @@ class ProfileRunner:
                 if self._state in (RunState.PREPARING, RunState.TRANSITIONING):
                     self._dispatch_step()
                 elif self._state is RunState.PAUSED:
-                    self._healthy(running=True)
+                    self._healthy(running=self._profile_running)
                     sample = self._manager.status(self._id)
-                    self._healthy(running=True)
+                    self._healthy(running=self._profile_running)
+                    expected_operation = (OperationState.RUNNING if self._profile_running
+                                          else OperationState.STOPPED)
                     if (sample.quality is not ReadingQuality.GOOD or
                             not self._sample_fresh(sample) or
                             sample.identity != self._snapshot.identity or
-                            sample.operation_state is not OperationState.RUNNING or
+                            sample.operation_state is not expected_operation or
                             sample.measured_temperature_c is None or
                             sample.setpoint_temperature_c is None or
                             not math.isfinite(sample.setpoint_temperature_c) or

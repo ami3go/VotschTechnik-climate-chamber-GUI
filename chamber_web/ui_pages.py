@@ -24,6 +24,7 @@ NAV_ITEMS = (
     ("history", "Run History", "/history"),
     ("list_alt", "Logs", "/logs"),
     ("settings", "Settings", "/settings"),
+    ("admin_panel_settings", "Admin", "/admin"),
 )
 
 

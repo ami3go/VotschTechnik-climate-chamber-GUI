@@ -49,20 +49,25 @@ async def test_manual_dashboard_two_browsers_and_authorized_stop(
     first.find("Password").type("StrongAdminPassword#1")
     first.find("Sign in").click()
     await first.should_see("SIMULATION ONLY")
+    await first.open("/admin")
+    await first.should_see("Lease state: RELEASED")
     await first.should_see("Claim")
     await first.should_see("Controller: VERIFIED_STOPPED")
-    await first.should_see("Web STOP is a best-effort control command")
 
     first.find("Claim").click()
     await first.should_see("CONFIRMED", retries=40)
+    await first.should_see("Lease state: CLAIMED")
     await first.open("/")
-    await first.should_see("you hold control")
+    await first.should_see("Web STOP is a best-effort control command")
 
     # A fresh browser page must dispatch as the currently authenticated
     # operator; a STOP does not require passing the operator's G04 token.
     first.find("Stop").click()
+    await first.should_see("CONFIRMED", retries=40)
+    await first.open("/admin")
     await first.should_see("STOP/reconciliation required", retries=40)
-    await first.should_see("CONFIRMED")
+    first.find("Release").click()
+    await first.should_see("Lease state: RELEASED", retries=40)
 
     # An independent VIEWER client may read but cannot command the chamber.
     await viewer.open("/login")
@@ -71,3 +76,5 @@ async def test_manual_dashboard_two_browsers_and_authorized_stop(
     viewer.find("Sign in").click()
     await viewer.should_see("SIMULATION ONLY")
     await viewer.should_see("read only")
+    await viewer.open("/admin")
+    await viewer.should_see("Chamber Control")

@@ -1,11 +1,8 @@
 """G03-C durable profile editor service regression tests (no physical I/O)."""
 from __future__ import annotations
 
-from dataclasses import replace
-from decimal import Decimal
-from pathlib import Path
-import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Barrier
 
 import pytest
@@ -91,6 +88,11 @@ def test_competing_saves_single_winner(editor):
     ("tolerance_c", "0"),
     ("ramp_up_c_per_min", "1001"),
     ("enabled", "true"),
+    ("chamber_run", "sometimes"),
+    ("compressed_air", True),
+    ("dryer", "enabled"),
+    ("digital_outputs", "1=ON"),
+    ("digital_outputs", "2=ON;2=OFF"),
     ("notes", "X" * 4097),
     ("__class__", "foo"),
 ])
@@ -113,6 +115,24 @@ def test_step_order_resequence_and_validation(editor):
     added = editor.change_step(added, "delete", 1)
     assert [s.step for s in added.profile.steps] == [1, 2]
     assert editor.save(added).viewed_revision == 1
+
+
+def test_output_edits_are_canonical_and_persisted(editor):
+    draft = editor.new_draft()
+    draft = editor.edit_step(draft, 0, "chamber_run", "off")
+    draft = editor.edit_step(draft, 0, "compressed_air", "on")
+    draft = editor.edit_step(draft, 0, "dryer", "unchanged")
+    draft = editor.edit_step(draft, 0, "digital_outputs", "6=OFF;2=ON")
+    saved = editor.save(draft)
+    step = editor.open(saved.profile_id).profile.steps[0]
+    assert step.chamber_run == "OFF"
+    assert step.compressed_air == "ON"
+    assert step.dryer == "UNCHANGED"
+    assert step.digital_outputs == ((2, True), (6, False))
+
+    unsupported = ChamberCapabilities(-40, 130, True, True, True)
+    warnings = compatibility_warnings(saved.profile, unsupported)
+    assert "digital outputs [2, 6, 7]" in str(warnings)
 
 
 def test_disabled_every_step_invalid_and_huge_numeric_rejected(editor):

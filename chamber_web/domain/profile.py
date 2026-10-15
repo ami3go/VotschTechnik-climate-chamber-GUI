@@ -9,14 +9,22 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
-CANONICAL = (
+CANONICAL_V1 = (
     "step", "enabled", "target_temperature_c", "ramp_up_c_per_min",
     "ramp_down_c_per_min", "tolerance_c", "stabilize_s", "dwell_s",
     "reach_timeout_s", "notes",
 )
+CANONICAL = (
+    "step", "enabled", "target_temperature_c", "ramp_up_c_per_min",
+    "ramp_down_c_per_min", "tolerance_c", "stabilize_s", "dwell_s",
+    "reach_timeout_s", "chamber_run", "compressed_air", "dryer",
+    "digital_outputs", "notes",
+)
 LEGACY = ("target", "ramp", "tolerance", "dwell", "description", "enabled")
 MAX_BYTES = 1_000_000
 MAX_STEPS = 200
+OUTPUT_DIRECTIVES = frozenset({"UNCHANGED", "ON", "OFF"})
+MAX_DIGITAL_OUTPUT = 64
 
 
 def _number(value: str, field: str, *, positive=False, minimum=None) -> Decimal:
@@ -39,6 +47,61 @@ def _enabled(value: str) -> bool:
     raise ValueError("Invalid enabled flag")
 
 
+def output_directive(value: object, field: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"Invalid {field}: use UNCHANGED, ON or OFF")
+    directive = value.strip().upper()
+    if directive not in OUTPUT_DIRECTIVES:
+        raise ValueError(f"Invalid {field}: use UNCHANGED, ON or OFF")
+    return directive
+
+
+def parse_digital_outputs(value: object) -> tuple[tuple[int, bool], ...]:
+    """Parse portable ``number=ON;number=OFF`` output commands."""
+    if value is None or value == "":
+        return ()
+    if not isinstance(value, str):
+        raise ValueError("Digital outputs must use number=ON;number=OFF")
+    commands: dict[int, bool] = {}
+    for item in value.split(";"):
+        parts = item.strip().split("=", 1)
+        if len(parts) != 2:
+            raise ValueError("Digital outputs must use number=ON;number=OFF")
+        try:
+            number = int(parts[0].strip())
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Digital output number must be an integer") from exc
+        if not 1 <= number <= MAX_DIGITAL_OUTPUT:
+            raise ValueError(f"Digital output number must be 1..{MAX_DIGITAL_OUTPUT}")
+        if number in (1, 7, 8):
+            raise ValueError(
+                "Use Chamber run, Compressed air or Dryer for outputs 1, 7 and 8"
+            )
+        if number in commands:
+            raise ValueError("Duplicate digital output number")
+        directive = output_directive(parts[1], f"digital output {number}")
+        if directive == "UNCHANGED":
+            raise ValueError("Omit unchanged numbered outputs")
+        commands[number] = directive == "ON"
+    return tuple(sorted(commands.items()))
+
+
+def format_digital_outputs(commands: tuple[tuple[int, bool], ...]) -> str:
+    if not isinstance(commands, tuple):
+        raise ValueError("Invalid digital output commands")
+    if any(
+        not isinstance(command, tuple) or len(command) != 2 or
+        type(command[0]) is not int or type(command[1]) is not bool
+        for command in commands
+    ):
+        raise ValueError("Invalid digital output commands")
+    text = ";".join(f"{number}={'ON' if state else 'OFF'}"
+                    for number, state in commands)
+    if parse_digital_outputs(text) != commands:
+        raise ValueError("Invalid or unsorted digital output commands")
+    return text
+
+
 @dataclass(frozen=True)
 class ProfileStep:
     step: int
@@ -51,6 +114,10 @@ class ProfileStep:
     dwell_s: Decimal
     reach_timeout_s: Decimal
     notes: str
+    chamber_run: str = "ON"
+    compressed_air: str = "UNCHANGED"
+    dryer: str = "UNCHANGED"
+    digital_outputs: tuple[tuple[int, bool], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -72,7 +139,7 @@ def _rows(data: bytes):
     except UnicodeDecodeError as exc:
         raise ValueError("Profile must use UTF-8") from exc
     reader = csv.DictReader(io.StringIO(text, newline=""))
-    if reader.fieldnames not in (list(CANONICAL), list(LEGACY)):
+    if reader.fieldnames not in (list(CANONICAL), list(CANONICAL_V1), list(LEGACY)):
         raise ValueError("Unknown profile CSV schema or duplicate/mismatched headers")
     fields = tuple(reader.fieldnames)
     rows = []
@@ -90,7 +157,7 @@ def _rows(data: bytes):
 def parse_profile_csv(
     data: bytes, *, legacy_reach_timeout_s: Decimal | None = None
 ) -> ParsedProfile:
-    """Detect canonical v1 or explicit demo legacy schema, never infer gradients."""
+    """Detect canonical v1/v2 or explicit demo legacy schema, never infer gradients."""
     fields, rows = _rows(data)
     if fields == LEGACY and legacy_reach_timeout_s is None:
         raise ValueError("Legacy CSV requires an operator-provided reach timeout")
@@ -137,6 +204,11 @@ def parse_profile_csv(
             _number(source["dwell_s"], "dwell_s", minimum=0),
             _number(source["reach_timeout_s"], "reach_timeout_s", positive=True),
             note,
+            output_directive(source.get("chamber_run", "ON"), "chamber_run"),
+            output_directive(source.get("compressed_air", "UNCHANGED"),
+                             "compressed_air"),
+            output_directive(source.get("dryer", "UNCHANGED"), "dryer"),
+            parse_digital_outputs(source.get("digital_outputs", "")),
         )
         steps.append(step)
     if not any(step.enabled for step in steps):
@@ -172,7 +244,11 @@ def export_profile_csv(profile: ParsedProfile, *, spreadsheet_safe=False) -> byt
             "" if step.ramp_up_c_per_min is None else str(step.ramp_up_c_per_min),
             "" if step.ramp_down_c_per_min is None else str(step.ramp_down_c_per_min),
             str(step.tolerance_c), str(step.stabilize_s), str(step.dwell_s),
-            str(step.reach_timeout_s), notes,
+            str(step.reach_timeout_s),
+            output_directive(step.chamber_run, "chamber_run"),
+            output_directive(step.compressed_air, "compressed_air"),
+            output_directive(step.dryer, "dryer"),
+            format_digital_outputs(step.digital_outputs), notes,
         ))
     data = buffer.getvalue().encode("utf-8")
     if len(data) > MAX_BYTES:
@@ -208,7 +284,7 @@ def export_profile_zip(profile: ParsedProfile) -> bytes:
         raise ValueError("Only STOP is approved as completion action")
     csv_data = export_profile_csv(profile)
     metadata = {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": profile.name,
         "description": profile.description,
         "repeat_count": profile.repeat_count,
@@ -267,11 +343,15 @@ def import_profile_zip(content: bytes) -> ParsedProfile:
         manifest = json.loads(archive.read("profile.json"))
         if not isinstance(manifest, dict):
             raise ValueError("Profile manifest must be a JSON object")
-        if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 1:
+        if (type(manifest.get("schema_version")) is not int or
+                manifest["schema_version"] not in (1, 2)):
             raise ValueError("Unsupported profile version")
         data = archive.read("profile.csv")
         if _checksum(data) != manifest.get("profile_csv_sha256"):
             raise ValueError("CSV checksum mismatch")
+        expected_header = CANONICAL_V1 if manifest["schema_version"] == 1 else CANONICAL
+        if data.splitlines()[:1] != [",".join(expected_header).encode("ascii")]:
+            raise ValueError("Profile manifest/schema version mismatch")
         parsed = parse_profile_csv(data)
         legacy = archive.read("legacy_import.csv") if "legacy_import.csv" in names else None
         if (legacy is None) != (manifest.get("legacy_csv_sha256") is None):

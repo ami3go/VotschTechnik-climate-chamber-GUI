@@ -10,7 +10,8 @@ from zipfile import BadZipFile
 from chamber_web.domain.chamber import ChamberCapabilities, validate_chamber_id
 from chamber_web.domain.profile import (
     MAX_BYTES, MAX_STEPS, ParsedProfile, ProfileStep, export_profile_zip,
-    import_profile_zip, parse_profile_csv,
+    format_digital_outputs, import_profile_zip, output_directive,
+    parse_digital_outputs, parse_profile_csv,
 )
 from chamber_web.persistence.profiles import ProfileHeader, ProfileStore
 
@@ -22,10 +23,15 @@ _IMPORT_LOCK = RLock()
 STEP_FIELDS = frozenset({
     "enabled", "target_temperature_c", "ramp_up_c_per_min",
     "ramp_down_c_per_min", "tolerance_c", "stabilize_s",
-    "dwell_s", "reach_timeout_s", "notes",
+    "dwell_s", "reach_timeout_s", "chamber_run", "compressed_air",
+    "dryer", "digital_outputs", "notes",
 })
-DECIMAL_FIELDS = STEP_FIELDS - {"enabled", "notes"}
+DECIMAL_FIELDS = STEP_FIELDS - {
+    "enabled", "notes", "chamber_run", "compressed_air", "dryer",
+    "digital_outputs",
+}
 OPTIONAL_DECIMAL_FIELDS = {"ramp_up_c_per_min", "ramp_down_c_per_min"}
+OUTPUT_FIELDS = {"chamber_run", "compressed_air", "dryer"}
 
 
 class DuplicateProfileError(ValueError):
@@ -74,6 +80,14 @@ def _step_field(field: str, value: object) -> object:
         if not isinstance(value, str) or len(value) > 4096:
             raise ValueError("Notes must contain at most 4096 characters")
         return value
+    if field in OUTPUT_FIELDS:
+        return output_directive(value, field)
+    if field == "digital_outputs":
+        if isinstance(value, tuple):
+            # Stored drafts pass through this path during validation.
+            format_digital_outputs(value)
+            return value
+        return parse_digital_outputs(value)
     if field in OPTIONAL_DECIMAL_FIELDS and (value is None or value == ""):
         return None
     if field == "target_temperature_c":
@@ -142,6 +156,17 @@ def compatibility_warnings(profile: ParsedProfile,
                 issues.append(f"Step {number}: {direction} gradient is not supported/verified")
             elif not limits[0] <= value <= limits[1]:
                 issues.append(f"Step {number}: {direction} gradient outside supported range")
+        available_outputs = {output for output, _ in capabilities.digital_outputs}
+        requested = {output for output, _ in step.digital_outputs}
+        if step.compressed_air != "UNCHANGED":
+            requested.add(7)
+        if step.dryer != "UNCHANGED":
+            requested.add(8)
+        missing = sorted(requested - available_outputs)
+        if missing:
+            issues.append(
+                f"Step {number}: digital outputs {missing} are not supported/verified"
+            )
     return tuple(issues)
 
 
@@ -157,7 +182,7 @@ class ProfileEditorService:
     def new_draft() -> EditorDraft:
         initial = ProfileStep(1, True, Decimal("25"), None, None,
                               Decimal("2"), Decimal("0"), Decimal("300"),
-                              Decimal("3600"), "Ambient soak")
+                              Decimal("3600"), "Ambient soak", "ON")
         return EditorDraft(ParsedProfile((initial,), name="New Temperature Profile"))
 
     def profiles(self, *, limit: int = 100, offset: int = 0) -> tuple[ProfileHeader, ...]:

@@ -24,13 +24,14 @@ from chamber_web.persistence.profiles import ProfileStore
 from chamber_web.services.chamber_manager import ChamberManager
 
 
-def step(target="25", *, stabilize="0", dwell="0", reach="20", up=None, down=None):
+def step(target="25", *, stabilize="0", dwell="0", reach="20", up=None, down=None,
+         chamber_run="ON", compressed_air="UNCHANGED", dryer="UNCHANGED", outputs=()):
     return ProfileStep(
         1, True, Decimal(target),
         Decimal(up) if up is not None else None,
         Decimal(down) if down is not None else None,
         Decimal("1"), Decimal(stabilize), Decimal(dwell),
-        Decimal(reach), "test",
+        Decimal(reach), "test", chamber_run, compressed_air, dryer, outputs,
     )
 
 
@@ -108,7 +109,8 @@ class RunnerTests(unittest.TestCase):
         return snapshot
 
     def terminal(self, expected):
-        for _ in range(150):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
             state = self.runner.advance()
             if state in (RunState.COMPLETED, RunState.CANCELLED, RunState.FAULT, RunState.UNKNOWN):
                 break
@@ -157,6 +159,45 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(self.backend._running)
         with self.assertRaises(ChamberSafetyError):
             self.manager.start("unit-chamber")
+
+    def test_per_step_run_and_digital_outputs_are_verified_in_simulation(self):
+        first = step(compressed_air="ON", outputs=((2, True),))
+        second = replace(
+            step(chamber_run="OFF", dryer="ON", outputs=((2, False),)), step=2,
+        )
+        self.prepare(profile=ParsedProfile((first, second), name="output cycle"))
+
+        self.runner.advance()
+        self.assertTrue(self.backend._running)
+        self.assertTrue(self.backend.read_digital_output(2))
+        self.assertTrue(self.backend.read_digital_output(7))
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.TRANSITIONING)
+
+        self.runner.advance()
+        self.assertFalse(self.backend._running)
+        self.assertFalse(self.backend.read_digital_output(2))
+        self.assertTrue(self.backend.read_digital_output(8))
+        self.runner.advance()
+        self.terminal(RunState.COMPLETED)
+        self.assertIn("OUTPUT_INTENT", [event.kind for event in self.sink.events])
+        # STOP does not invent an auxiliary-output policy; explicit step values remain.
+        self.assertTrue(self.backend.read_digital_output(7))
+        self.assertTrue(self.backend.read_digital_output(8))
+
+    def test_unsupported_profile_output_is_rejected_before_lease_or_mutation(self):
+        with self.assertRaisesRegex(ChamberSafetyError, "unsupported"):
+            self.prepare(step(outputs=((20, True),)))
+        self.assertFalse(self.backend._running)
+
+    def test_digital_output_readback_mismatch_fails_closed_and_stops(self):
+        self.prepare(step(compressed_air="ON"))
+        actual_read = self.backend.read_digital_output
+        self.backend.read_digital_output = lambda number: not actual_read(number)
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.STOP_REQUESTED)
+        self.terminal(RunState.UNKNOWN)
+        self.assertFalse(self.backend._running)
 
     def test_stabilization_requires_two_distinct_good_samples(self):
         self.prepare(step(stabilize="4", dwell="0"))

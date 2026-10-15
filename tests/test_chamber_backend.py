@@ -21,17 +21,39 @@ class FakeDriver:
     temperature_set_point = 25.0
     is_running = False
 
+    def __init__(self):
+        self.outputs = {number: False for number in range(1, 9)}
+
     def disconnect(self):
         pass
 
     def start(self):
         self.is_running = True
+        self.outputs[1] = True
 
     def stop(self):
         self.is_running = False
+        self.outputs[1] = False
+
+    def query(self, command, number, *values):
+        if command == "GET DIGITAL_OUT VALUE":
+            return ["1" if self.outputs[number] else "0"]
+        if command == "SET DIGITAL_OUT VALUE":
+            self.outputs[number] = bool(values[0])
+            return []
+        raise AssertionError("unexpected mock-driver query")
 
 
 class BackendContractTests(unittest.TestCase):
+    def test_votsch_numbered_output_protocol_mapping_is_read_back(self):
+        backend = VotschBackend("chamber-c", "mock.invalid", mock_driver_factory=FakeDriver)
+        backend.connect()
+        self.addCleanup(backend.disconnect)
+        backend.set_digital_output(2, True)
+        self.assertTrue(backend.read_digital_output(2))
+        backend.set_digital_output(2, False)
+        self.assertFalse(backend.read_digital_output(2))
+
     def test_three_backends_sequential_contract(self):
         backends = (
             FakeBackend("chamber-a"),

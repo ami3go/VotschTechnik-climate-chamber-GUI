@@ -1,11 +1,13 @@
 """G03-A canonical/legacy CSV and ZIP boundary tests (no chamber I/O)."""
 import io
+import hashlib
+import json
 import unittest
 from decimal import Decimal
 from zipfile import ZipFile, ZIP_DEFLATED
 
 from chamber_web.domain.profile import (
-    ParsedProfile, export_profile_csv, export_profile_zip,
+    ParsedProfile, ProfileStep, export_profile_csv, export_profile_zip,
     import_profile_zip, parse_profile_csv,
 )
 
@@ -100,6 +102,48 @@ class ProfileV1Tests(unittest.TestCase):
         data = export_profile_zip(self.profile)
         restored = import_profile_zip(data)
         self.assertTrue(all(s.ramp_up_c_per_min is None for s in restored.steps))
+
+    def test_v2_output_directives_round_trip_and_v1_remains_compatible(self):
+        base = self.profile.steps[0]
+        controlled = ProfileStep(
+            base.step, base.enabled, base.target_temperature_c,
+            base.ramp_up_c_per_min, base.ramp_down_c_per_min,
+            base.tolerance_c, base.stabilize_s, base.dwell_s,
+            base.reach_timeout_s, base.notes, "OFF", "ON", "OFF",
+            ((2, True), (6, False)),
+        )
+        profile = ParsedProfile((controlled,), name="Output cycle")
+        csv_data = export_profile_csv(profile)
+        self.assertIn(b"chamber_run,compressed_air,dryer,digital_outputs", csv_data)
+        self.assertEqual(parse_profile_csv(csv_data).steps, profile.steps)
+        self.assertEqual(import_profile_zip(export_profile_zip(profile)), profile)
+
+        v1 = csv_data.splitlines()
+        keep = list(range(9)) + [13]
+        v1_data = b"\n".join(
+            b",".join(row.split(b",")[index] for index in keep) for row in v1
+        ) + b"\n"
+        migrated = parse_profile_csv(v1_data)
+        self.assertEqual(migrated.steps[0].chamber_run, "ON")
+        self.assertEqual(migrated.steps[0].compressed_air, "UNCHANGED")
+
+        with ZipFile(io.BytesIO(export_profile_zip(profile))) as current:
+            manifest = json.loads(current.read("profile.json"))
+        manifest["schema_version"] = 1
+        manifest["profile_csv_sha256"] = hashlib.sha256(v1_data).hexdigest()
+        old_bundle = io.BytesIO()
+        with ZipFile(old_bundle, "w", ZIP_DEFLATED) as archive:
+            archive.writestr("profile.csv", v1_data)
+            archive.writestr("profile.json", json.dumps(manifest).encode())
+        restored_v1 = import_profile_zip(old_bundle.getvalue())
+        self.assertEqual(restored_v1.steps[0].chamber_run, "ON")
+
+    def test_numbered_output_syntax_is_strict_and_named_outputs_are_reserved(self):
+        csv_data = export_profile_csv(self.profile)
+        with self.assertRaisesRegex(ValueError, "outputs 1, 7 and 8"):
+            parse_profile_csv(csv_data.replace(b",UNCHANGED,UNCHANGED,,", b",UNCHANGED,UNCHANGED,7=ON,"))
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            parse_profile_csv(csv_data.replace(b",UNCHANGED,UNCHANGED,,", b",UNCHANGED,UNCHANGED,2=ON;2=OFF,"))
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ from .bootstrap import create_demo_control_services
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
 from .security.nicegui import (active_tokens, cookie_secret, current_actor, deployment_policy,
                                get_security, logout, require_authenticated_page)
+from .security.auth import Role
 from .ui_pages import (NavigationContext, install_navigation_resolver,
                        register_pages, render_navigation)
 from .ui_state import project_capabilities, project_telemetry, safe_view
@@ -73,11 +74,15 @@ def get_dashboard_service():
 # Role-driven navigation is presentation only; all service mutations are guarded.
 def _server_navigation_context() -> NavigationContext:
     actor = current_actor()
+    routes = {"/", "/profiles", "/history", "/logs", "/settings"}
+    # Lease administration remains available to both roles that are already
+    # authorized to control a chamber. Viewers do not see or enter this page.
+    if actor is not None and actor.role in (Role.ADMIN, Role.OPERATOR):
+        routes.add("/admin")
     return NavigationContext(
         authenticated=actor is not None,
         role=actor.role.value if actor else None,
-        permitted_routes=frozenset({"/", "/profiles", "/history", "/logs", "/settings"})
-        if actor else frozenset(),
+        permitted_routes=frozenset(routes) if actor else frozenset(),
         physical_hil=_HIL is not None,
     )
 
@@ -154,14 +159,6 @@ def dashboard() -> None:
             ui.notify(result.message, color="warning")
         refresh_manual()
 
-    async def confirm_handover() -> None:
-        takeover_dialog.close()
-        await execute_manual("handover")
-
-    async def confirm_reconciliation() -> None:
-        reconcile_dialog.close()
-        await execute_manual("reconcile")
-
     def use_suggestion() -> None:
         # Cosmetic text-field helper: never dispatch a preset automatically.
         if preset_select.value is not None:
@@ -174,13 +171,11 @@ def dashboard() -> None:
             data = _manual_service.view(active_tokens()[0], service.chamber_id)
         except Exception:
             outcome_label.set_text("UNKNOWN — manual status unavailable")
-            for b in (start_button, set_button, claim_button, release_button,
-                      handover_button, reconcile_button):
+            for b in (start_button, set_button):
                 b.disable()
             # Keep STOP available despite telemetry failure *only* for an
             # independently reauthenticated G08 ADMIN/OPERATOR. A revoked or
             # VIEWER browser must never be shown an enabled mutation control.
-            from .security.auth import Role
             try:
                 actor = current_actor(touch=False)
                 may_stop = actor is not None and actor.role in (Role.ADMIN, Role.OPERATOR)
@@ -188,25 +183,10 @@ def dashboard() -> None:
                 may_stop = False
             stop_button.enable() if may_stop else stop_button.disable()
             return
-        lease_label.set_text(
-            f"Owner: {data.owner or 'unclaimed'} · "
-            f"{'you hold control' if data.owned_by_actor else 'read only'}")
-        control_health_label.set_text(
-            f"Controller: {data.controller_state} · "
-            f"{'connected' if data.connected else 'disconnected'} · "
-            f"generation {data.controller_generation} · "
-            f"{'STOP/reconciliation required' if data.stop_latched else 'fence clear'}")
         for button, available in (
             (start_button, data.can_start),
             (set_button, data.can_set_target),
             (stop_button, data.can_stop),
-            (claim_button, data.can_stop and data.owner is None and
-             data.connected and not data.stop_latched and
-             data.controller_state in ("VERIFIED_STOPPED", "RUNNING") and
-             data.dashboard.quality.value == "GOOD"),
-            (release_button, data.can_stop and data.owned_by_actor),
-            (handover_button, data.can_handover),
-            (reconcile_button, data.can_reconcile),
         ):
             button.enable() if available else button.disable()
         choices = {n: f"{n:g} °C · suggestion only"
@@ -220,6 +200,9 @@ def dashboard() -> None:
             outcome_label.set_text(
                 f"{data.last_command.state.value} · {data.last_command.action} · "
                 f"{data.last_command.message}")
+        if (actor := current_actor(touch=False)) and actor.role is Role.VIEWER:
+            capability_detail_label.set_text(
+                "Viewer access is read only — chamber commands are disabled")
 
     with ui.row().classes("app-shell no-wrap"):
         with ui.column().classes("sidebar gap-1"):
@@ -277,28 +260,7 @@ def dashboard() -> None:
                                 ui.label("State").classes("metric-caption")
                                 status_label = ui.label("UNKNOWN").classes("status-pill")
                                 quality_label = ui.label("Awaiting telemetry").classes("text-xs text-grey-7")
-                        with ui.dialog() as takeover_dialog:
-                            with ui.card():
-                                ui.label("Transfer operator ownership to this administrator?").classes(
-                                    "font-bold")
-                                ui.label("This fences queued commands from the prior operator. "
-                                         "It does not STOP the chamber or make it safe.")
-                                with ui.row():
-                                    ui.button("Cancel", on_click=takeover_dialog.close)
-                                    ui.button("Confirm takeover",
-                                              on_click=confirm_handover).props(
-                                                  "color=deep-orange")
-                        with ui.dialog() as reconcile_dialog:
-                            with ui.card():
-                                ui.label("Confirm STOP reconciliation").classes("font-bold")
-                                ui.label("Only reconcile after independently checking the "
-                                         "device is stopped. This is not hardware certification.")
-                                with ui.row():
-                                    ui.button("Cancel", on_click=reconcile_dialog.close)
-                                    ui.button("Confirm reconcile",
-                                              on_click=confirm_reconciliation).props(
-                                                  "color=deep-orange")
-                        with ui.element("div").classes("control-grid"):
+                        with ui.element("div").classes("control-grid single-section"):
                             # Target: what the chamber should do.
                             with ui.column().classes("control-section gap-2"):
                                 ui.label("Target").classes("section-title")
@@ -327,31 +289,6 @@ def dashboard() -> None:
                                     ramp_detail_label = ui.label(
                                         "Gradients/modes unavailable; no ramp writes").classes(
                                             "text-xs text-grey-7")
-                            # Operator lease: who may command the chamber.
-                            with ui.column().classes("control-section gap-2"):
-                                ui.label("Operator lease").classes("section-title")
-                                lease_label = ui.label("Operator lease: unverified").classes("font-medium")
-                                with ui.row().classes("control-row"):
-                                    claim_button = ui.button(
-                                        "Claim", icon="lock",
-                                        on_click=lambda: execute_manual("claim")).props(
-                                            "unelevated color=primary no-caps").disable().classes(
-                                                "control-button")
-                                    release_button = ui.button(
-                                        "Release", icon="lock_open",
-                                        on_click=lambda: execute_manual("release")).props(
-                                            "outline no-caps").disable().classes("control-button")
-                                with ui.row().classes("control-row wrap"):
-                                    handover_button = ui.button(
-                                        "Admin takeover", icon="swap_horiz",
-                                        on_click=takeover_dialog.open).props(
-                                            "outline no-caps").disable().classes("control-button")
-                                    reconcile_button = ui.button(
-                                        "Admin reconcile STOP", icon="verified_user",
-                                        on_click=reconcile_dialog.open).props(
-                                            "outline no-caps").disable().classes("control-button")
-                                control_health_label = ui.label("Controller: UNKNOWN").classes(
-                                    "text-xs text-grey-8")
                         # Status footer: last outcome and standing safety notes.
                         with ui.column().classes("control-status gap-1"):
                             outcome_label = ui.label("IDLE — no manual command").classes("outcome-line")
@@ -544,6 +481,168 @@ def dashboard() -> None:
     ui.timer(1.0, refresh_manual, immediate=False)
     refresh()
     refresh_manual()
+
+
+@ui.page("/admin")
+def admin_page() -> None:
+    """Operator-lease administration, separate from routine chamber control."""
+    if not require_authenticated_page():
+        return
+    actor = current_actor()
+    if actor is None or actor.role not in (Role.ADMIN, Role.OPERATOR):
+        ui.navigate.to("/")
+        return
+    service = get_dashboard_service()
+
+    async def execute_lease_action(action: str) -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        session, csrf = active_tokens()
+        outcome_label.set_text(f"PENDING — {action}")
+        try:
+            result = await asyncio.to_thread(
+                _manual_service.command, session, csrf, service.chamber_id, action)
+        except Exception as exc:
+            from .security.auth import AuthenticationError, AuthorizationError
+            denied = isinstance(exc, (AuthenticationError, AuthorizationError))
+            outcome_label.set_text(
+                f"{'REJECTED' if denied else 'UNKNOWN'} — "
+                f"{'permission denied' if denied else 'server result unverified'} "
+                f"({type(exc).__name__})")
+            ui.notify("Lease action denied" if denied else "Lease result unverified",
+                      color="negative")
+            return
+        outcome_label.set_text(
+            f"{result.state.value} · {result.action} · {result.message}")
+        if result.state.value != "CONFIRMED":
+            ui.notify(result.message, color="warning")
+        refresh_lease()
+
+    async def confirm_handover() -> None:
+        takeover_dialog.close()
+        await execute_lease_action("handover")
+
+    async def confirm_reconciliation() -> None:
+        reconcile_dialog.close()
+        await execute_lease_action("reconcile")
+
+    def refresh_lease() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        try:
+            data = _manual_service.view(active_tokens()[0], service.chamber_id)
+        except Exception:
+            lease_label.set_text("Lease state: UNKNOWN")
+            health_label.set_text("Controller status unavailable")
+            outcome_label.set_text("UNKNOWN — lease status unavailable")
+            for button in (claim_button, release_button, handover_button,
+                           reconcile_button):
+                button.disable()
+            return
+
+        if data.owner is None:
+            lease_label.set_text("Lease state: RELEASED · no operator owns control")
+        else:
+            relationship = "you hold control" if data.owned_by_actor else "owned by another user"
+            lease_label.set_text(
+                f"Lease state: CLAIMED · owner {data.owner} · {relationship}")
+        health_label.set_text(
+            f"Controller: {data.controller_state} · "
+            f"{'connected' if data.connected else 'disconnected'} · "
+            f"generation {data.controller_generation} · "
+            f"{'STOP/reconciliation required' if data.stop_latched else 'fence clear'}")
+        claim_ready = (
+            data.can_stop and data.owner is None and data.connected and
+            not data.stop_latched and
+            data.controller_state in ("VERIFIED_STOPPED", "RUNNING") and
+            data.dashboard.quality.value == "GOOD"
+        )
+        for button, available in (
+            (claim_button, claim_ready),
+            (release_button, data.can_stop and data.owned_by_actor),
+            (handover_button, data.can_handover),
+            (reconcile_button, data.can_reconcile),
+        ):
+            button.enable() if available else button.disable()
+        if data.last_command:
+            outcome_label.set_text(
+                f"{data.last_command.state.value} · {data.last_command.action} · "
+                f"{data.last_command.message}")
+
+    with ui.row().classes("app-shell no-wrap"):
+        with ui.column().classes("sidebar gap-1"):
+            render_navigation("/admin")
+        with ui.column().classes("main-area gap-0"):
+            with ui.row().classes("topbar"):
+                with ui.column().classes("gap-0"):
+                    ui.label("Admin").classes("top-title")
+                    ui.label(
+                        f"{_MODE.upper()} · Chamber administration · Signed in: {actor.username} "
+                        f"({actor.role.value})").classes("top-subtitle")
+                ui.button("Sign out", icon="logout", on_click=logout).props("flat dense")
+
+            with ui.column().classes("dashboard gap-3"):
+                ui.label(
+                    "The chamber starts with its operator lease released. "
+                    "Acquire it here before issuing Start or Set Target commands."
+                ).classes("demo-banner w-full")
+                with ui.column().classes("panel gap-3"):
+                    _panel_title("admin_panel_settings", "Operator Lease")
+                    lease_label = ui.label(
+                        "Lease state: RELEASED · no operator owns control").classes(
+                            "text-lg font-medium")
+                    health_label = ui.label("Controller: UNKNOWN").classes(
+                        "text-sm text-grey-8")
+                    with ui.row().classes("control-row wrap"):
+                        claim_button = ui.button(
+                            "Claim", icon="lock",
+                            on_click=lambda: execute_lease_action("claim")).props(
+                                "unelevated color=primary no-caps").disable().classes(
+                                    "control-button")
+                        release_button = ui.button(
+                            "Release", icon="lock_open",
+                            on_click=lambda: execute_lease_action("release")).props(
+                                "outline no-caps").disable().classes("control-button")
+                    with ui.row().classes("control-row wrap"):
+                        handover_button = ui.button(
+                            "Admin takeover", icon="swap_horiz",
+                            on_click=lambda: takeover_dialog.open()).props(
+                                "outline no-caps").disable().classes("control-button")
+                        reconcile_button = ui.button(
+                            "Admin reconcile STOP", icon="verified_user",
+                            on_click=lambda: reconcile_dialog.open()).props(
+                                "outline no-caps").disable().classes("control-button")
+                    outcome_label = ui.label("IDLE — lease is released by default").classes(
+                        "outcome-line")
+                    ui.label(
+                        "Releasing ownership does not STOP the chamber. STOP remains available "
+                        "from the Dashboard to an authorized user regardless of lease ownership."
+                    ).classes("text-xs text-orange-9")
+
+                with ui.dialog() as takeover_dialog:
+                    with ui.card():
+                        ui.label(
+                            "Transfer operator ownership to this administrator?").classes(
+                                "font-bold")
+                        ui.label("This fences queued commands from the prior operator. "
+                                 "It does not STOP the chamber or make it safe.")
+                        with ui.row():
+                            ui.button("Cancel", on_click=takeover_dialog.close)
+                            ui.button("Confirm takeover", on_click=confirm_handover).props(
+                                "color=deep-orange")
+                with ui.dialog() as reconcile_dialog:
+                    with ui.card():
+                        ui.label("Confirm STOP reconciliation").classes("font-bold")
+                        ui.label("Only reconcile after independently checking the device is "
+                                 "stopped. This is not hardware certification.")
+                        with ui.row():
+                            ui.button("Cancel", on_click=reconcile_dialog.close)
+                            ui.button("Confirm reconcile",
+                                      on_click=confirm_reconciliation).props(
+                                          "color=deep-orange")
+
+    ui.timer(1.0, refresh_lease, immediate=False)
+    refresh_lease()
 
 
 # G03-C profile route is registered during module import for all Windows entrypoints.

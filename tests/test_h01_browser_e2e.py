@@ -151,6 +151,8 @@ def test_browser_g05_actual_manual_start_stop_and_viewer_denial(live_app):
             sign_in(admin, "browser_admin", "StrongAdminPassword#1")
             expect(admin.get_by_role("button", name="Start", exact=True)).to_be_disabled()
             expect(admin.get_by_role("button", name="Stop", exact=True)).to_be_enabled()
+            admin.goto(URL + "/admin")
+            expect(admin.locator("body")).to_contain_text("Lease state: RELEASED")
             claim = admin.get_by_role("button", name="Claim", exact=True)
             # The prior NiceGUI tests share the runner's OS home directory.
             # G04 correctly carries STOP uncertainty across server restarts.
@@ -162,6 +164,7 @@ def test_browser_g05_actual_manual_start_stop_and_viewer_denial(live_app):
             expect(claim).to_be_enabled(timeout=15000)
             claim.click()
             expect(admin.locator("body")).to_contain_text("you hold control", timeout=15000)
+            admin.goto(URL + "/")
             expect(admin.get_by_role("button", name="Start", exact=True)).to_be_enabled()
             admin.get_by_label("Target °C").fill("25")
             admin.get_by_role("button", name="Set Target").click()
@@ -172,8 +175,13 @@ def test_browser_g05_actual_manual_start_stop_and_viewer_denial(live_app):
             expect(viewer.get_by_role("button", name="Start", exact=True)).to_be_disabled()
             expect(viewer.get_by_role("button", name="Stop", exact=True)).to_be_disabled()
             admin.get_by_role("button", name="Stop", exact=True).click()
-            expect(admin.locator("body")).to_contain_text("STOP/reconciliation required", timeout=15000)
             expect(admin.locator("body")).to_contain_text("CONFIRMED · stop", timeout=15000)
+            admin.goto(URL + "/admin")
+            expect(admin.locator("body")).to_contain_text(
+                "STOP/reconciliation required", timeout=15000)
+            admin.get_by_role("button", name="Release", exact=True).click()
+            expect(admin.locator("body")).to_contain_text(
+                "Lease state: RELEASED", timeout=15000)
             viewer.reload()
             expect(viewer.get_by_role("button", name="Stop", exact=True)).to_be_disabled()
             admin_context.close()
