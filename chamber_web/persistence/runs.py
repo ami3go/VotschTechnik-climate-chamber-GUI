@@ -162,8 +162,10 @@ class RunStore:
         # not a clean installation. sqlite3.connect would otherwise create an
         # empty journal and silently hide interrupted or completed runs.
         # Check before the first SQLite connection (which can create the file).
+        chambers = self.data / "chambers"
         if not self.database.is_file() and (
-            (self.data / "chambers").exists()
+            (chambers.is_dir() and any(chambers.iterdir()))
+            or (chambers.exists() and not chambers.is_dir())
             or any((self.data / ("runs.sqlite3" + ext)).exists()
                    for ext in ("-journal", "-wal", "-shm"))
         ):
