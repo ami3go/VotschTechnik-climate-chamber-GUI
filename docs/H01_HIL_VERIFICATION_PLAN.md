@@ -34,3 +34,8 @@ Simulation-only tests in `tests/test_h01_simulation.py` exercise a *subset* of t
 Source contracts: `docs/P00_DECISION_CONTRACTS.md`, `docs/G04_A_CONTROLLER_CONTRACT.md`, `docs/G06_A_PROFILE_RUNNER_CONTRACT.md`, `docs/G08_MIN_SECURITY.md`, and branch contracts in G05 #28 / G07-A #27 / G08-full #29.
 
 **NO-GO to real connections, control and certification until signed authorization and independent witnessed HIL.**
+
+
+## H02 scope separation (2026-10-15)
+
+H01 supervised manual HIL, including its opt-in over LAN and any manual soak, is NOT authorization for G06 physical profile execution. H02 requires a separately signed scope-specific site test method, independent watchdog and safety review. See [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md); physical H02 tests NOT RUN.

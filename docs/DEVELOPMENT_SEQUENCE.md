@@ -260,3 +260,8 @@ The existing G07-A branch was integrated with `main` including merged H01 #32 an
 - H01 [draft PR #34](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/34): explicit launch-time `CHAMBER_HIL_*` authorization (loopback only, serial verified on every read, ≤ 30 °C software envelope). First session found that the VT 4011 setpoint readback (11002) ramps at the chamber gradient (5 K/min up, 3 K/min down); the immediate ±0.1 °C check failed safe (UNKNOWN + STOP latch, START never sent). Fixed by ramp-aware G04 checks and G05 convergence with a settle window; second session passed claim → 25 °C → START → ~90 s RUNNING (24.7 → 25.0 °C) → STOP, chamber restored to stopped / 23.0 °C.
 - Still open: owner/site safety signoff and signed HIL acceptance, profile execution on hardware, ramp (gradient) control, longer soaks and STOP-during-ramp on hardware.
 
+
+
+## H02 progress note — 2026-10-15 (software draft, physical NO-GO)
+
+H02 work is tracked in [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md) and [H02 watchdog operations](H02_WATCHDOG_OPERATIONS.md). The H02 branch adds a separately scoped cryptographically verified site-permit preflight primitive, a portable external-process test watchdog and simulation-only CI/fault injection. **It does not connect a physical ProfileRunner, alter existing simulation-only admission, authorize H01 site opt-in as an H02 permit, or claim hardware qualification.** Physical integration, G07 composition root, independent two-way physical supervisor, authorized on-site test and independent review remain BLOCKED/OPEN. No physical H02 tests performed.

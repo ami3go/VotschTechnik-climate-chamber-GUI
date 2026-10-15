@@ -72,3 +72,8 @@ This is an engineering/software evidence layer. H01 site safety approval, physic
 Before opening SQLite, `RunStore` checks for `runs.sqlite3`. If absent when the per-run evidence directory or SQLite recovery sidecars survive, initialization fails with `RunIntegrityError` rather than silently constructing an empty database. Recover only from an authenticated, operator-approved trusted backup; **never** synthesize successful run history or dispatch control commands from surviving CSV files. Regression tests cover the missing database and an orphaned WAL sidecar. A genuinely empty deployment with neither run directory nor SQLite sidecars can initialize normally. This guard does not prove a backup is valid, prevent privileged tampering, or certify Windows power-cut filesystem behavior.
 
 The extended G07 Windows 3.10/3.12 matrix includes G04 STOP-fencing and G08-min authentication/authorization regressions alongside G06, and the integrated simulator test exercises operator cancellation, a durable STOP_INTENT crash gap, UNKNOWN recovery, export validation and tampered ZIP denial. All site and independent-approval requirements above remain open.
+
+
+## H02 durable evidence integration status — 2026-10-15
+
+The existing RunRecorder implements G06 EventSink and is exercised by simulation integration tests. No production NiceGUI composition-root physical profile runner/event sink or supervisor has yet been wired. H02 must still record separately intended targets and authoritative observed ramping setpoint evidence, actual runtime driver/version and permit, and fail-closed recorder loss before physical admission. H02 hardware recording and STOP timing are NOT RUN. See [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md).
