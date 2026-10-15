@@ -1,0 +1,87 @@
+name: H02 supervised profile software safety gates
+
+on:
+  pull_request:
+    paths:
+      - 'chamber_web/hil/profile_admission.py'
+      - 'chamber_web/execution/**'
+      - 'chamber_web/persistence/**'
+      - 'scripts/h02_watchdog_command.py'
+      - 'tests/test_h02_*.py'
+      - 'docs/H02_*.md'
+      - '.github/workflows/h02-simulation-ci.yml'
+  push:
+    branches: [feat/h02-physical-profile-verification]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  h02-regression:
+    name: H02 simulation watchdog / ${{ matrix.os }} / ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.10', '3.12']
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Bounded dependency install (simulated only)
+        run: python scripts/h02_watchdog_command.py --timeout-s 540 --idle-timeout-s 180 --log-dir h02-evidence -- python -m pip install --disable-pip-version-check --timeout 30 -r requirements-web.txt cryptography==46.0.3
+      - name: Admission signature and watchdog fault injection
+        run: python scripts/h02_watchdog_command.py --timeout-s 160 --idle-timeout-s 60 --log-dir h02-evidence -- python -m unittest discover -s tests -p "test_h02_*.py" -v
+      - name: G06 runner and G07 durability/recovery
+        run: python scripts/h02_watchdog_command.py --timeout-s 240 --idle-timeout-s 90 --log-dir h02-evidence -- python -m unittest discover -s tests -p "test_profile_runner.py" -v
+      - name: G07 integrated event sink
+        run: python scripts/h02_watchdog_command.py --timeout-s 240 --idle-timeout-s 90 --log-dir h02-evidence -- python -m unittest discover -s tests -p "test_run_recording_integration.py" -v
+      - name: H01 existing simulated full stack
+        run: python scripts/h02_watchdog_command.py --timeout-s 240 --idle-timeout-s 90 --log-dir h02-evidence -- python -m unittest discover -s tests -p "test_h01_full_stack.py" -v
+      - name: H01 additional simulation
+        run: python scripts/h02_watchdog_command.py --timeout-s 240 --idle-timeout-s 90 --log-dir h02-evidence -- python -m unittest discover -s tests -p "test_h01_simulation.py" -v
+      - name: Windows W02 packaging assertions
+        if: runner.os == 'Windows'
+        run: python scripts/h02_watchdog_command.py --timeout-s 240 --idle-timeout-s 90 --log-dir h02-evidence -- python -m unittest discover -s tests -p "test_w02_release.py" -v
+      - name: Syntax/static import compile
+        run: python scripts/h02_watchdog_command.py --timeout-s 60 --log-dir h02-evidence -- python -m compileall -q chamber_web/hil scripts/h02_watchdog_command.py tests/test_h02_profile_admission.py tests/test_h02_watchdog.py
+      - name: Publish all partial watchdog evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: h02-watchdog-${{ matrix.os }}-${{ matrix.python }}
+          path: h02-evidence/
+          if-no-files-found: ignore
+
+  h02-chromium:
+    name: H02 existing real Chromium GUI regression (simulation only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Bounded dependency install
+        run: python scripts/h02_watchdog_command.py --timeout-s 540 --idle-timeout-s 180 --log-dir h02-evidence -- python -m pip install --disable-pip-version-check --timeout 30 -r requirements-web.txt pytest==9.1.1 pytest-asyncio==1.4.0 playwright==1.58.0
+      - name: Bounded Chromium install
+        run: python scripts/h02_watchdog_command.py --timeout-s 540 --idle-timeout-s 180 --log-dir h02-evidence -- python -m playwright install --with-deps chromium
+      - name: Existing Chromium session/regression smoke
+        run: python scripts/h02_watchdog_command.py --timeout-s 240 --idle-timeout-s 90 --log-dir h02-evidence -- python -m pytest -v -s tests/test_h01_browser_e2e.py --junitxml=h02-chromium-junit.xml
+      - name: Publish browser/evidence artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: h02-browser-evidence
+          path: |
+            h02-evidence/
+            h02-chromium-junit.xml
+          if-no-files-found: ignore
