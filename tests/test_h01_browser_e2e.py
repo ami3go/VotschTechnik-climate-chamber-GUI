@@ -22,7 +22,9 @@ from chamber_web.security.auth import Role, SecurityStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
-URL = "http://127.0.0.1:8080"
+# Override when 8080 is taken on a developer machine (CI keeps the default).
+PORT = int(os.environ.get("H01_BROWSER_PORT", "8080"))
+URL = f"http://127.0.0.1:{PORT}"
 
 
 @pytest.fixture(scope="module")
@@ -50,8 +52,8 @@ def live_app():
                not key.startswith("NICEGUI_SCREEN_TEST")}
         env.update({
             "CHAMBER_SECURITY_DIR": str(security_root),
-            "CHAMBER_PORT": "8080",
-            "CHAMBER_ALLOWED_ORIGINS": URL + ",http://localhost:8080",
+            "CHAMBER_PORT": str(PORT),
+            "CHAMBER_ALLOWED_ORIGINS": URL + f",http://localhost:{PORT}",
             "PYTHONUNBUFFERED": "1",
         })
         logfile = Path(temp) / "server.log"

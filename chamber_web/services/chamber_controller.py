@@ -136,12 +136,18 @@ class ChamberController:
         if self._operator_token is not None and token != self._operator_token:
             raise ChamberSafetyError("Operator lease owned by another caller")
 
+    def _physical_authorized(self) -> bool:
+        return (getattr(self._backend, "simulation_only", False) is not True and
+                getattr(self._backend, "physical_authorized", False) is True)
+
     def connect(self, chamber_id: str) -> None:
         self._check_id(chamber_id)
         with self._state_lock:
-            # Pre-connect marker is adapter-supplied, fail-closed, vendor-neutral.
-            if getattr(self._backend, "simulation_only", False) is not True:
-                raise ChamberSafetyError("Physical hardware I/O DISABLED; mock backends only")
+            # Pre-connect marker is adapter-supplied, fail-closed, vendor-neutral:
+            # a mock, or a backend carrying an explicit supervised HIL authorization.
+            if not (getattr(self._backend, "simulation_only", False) is True or
+                    self._physical_authorized()):
+                raise ChamberSafetyError("Physical hardware I/O DISABLED without HIL authorization")
             if self._connected:
                 return
             if self._closed or self._thread is not None:
@@ -157,7 +163,9 @@ class ChamberController:
         def initialize():
             self._backend.connect()
             identity = self._backend.identify()
-            if identity.chamber_id != self.chamber_id or not identity.is_simulation:
+            if identity.chamber_id != self.chamber_id or not (
+                    identity.is_simulation or
+                    (self._physical_authorized() and identity.serial_number)):
                 raise ChamberSafetyError("Device identity mismatch / live hardware DISABLED")
             caps = self._backend.capabilities()
             try:
@@ -299,16 +307,30 @@ class ChamberController:
     def _verified_write(self, operation: Callable, *,
                         running: OperationState | None = None,
                         target: float | None = None) -> None:
+        ramps = bool(target is not None and self._capabilities is not None and
+                     self._capabilities.setpoint_readback_ramp_c_per_min)
+        before = None
+        if ramps:
+            before = self._require_readback(self._backend.read_status()).setpoint_temperature_c
+            if before is None or not math.isfinite(before):
+                raise ChamberSafetyError("Setpoint readback unavailable before write")
         operation()
         snapshot = self._require_readback(self._backend.read_status())
         if running is not None and snapshot.operation_state is not running:
             raise ChamberSafetyError("State readback did not confirm command")
-        if target is not None and (
-            snapshot.setpoint_temperature_c is None or
-            not math.isfinite(snapshot.setpoint_temperature_c) or
-            abs(snapshot.setpoint_temperature_c - target) > 0.1
-        ):
-            raise ChamberSafetyError("Setpoint readback did not confirm command")
+        if target is not None:
+            readback = snapshot.setpoint_temperature_c
+            if readback is None or not math.isfinite(readback):
+                raise ChamberSafetyError("Setpoint readback did not confirm command")
+            if ramps:
+                # Device-side ramp: the readback must lie on the path from the
+                # previous setpoint to the target. G05 awaits convergence via
+                # separate fresh reads so STOP is never queued behind a ramp.
+                low, high = min(before, target) - 0.1, max(before, target) + 0.1
+                if not low <= readback <= high:
+                    raise ChamberSafetyError("Setpoint readback is not ramping toward target")
+            elif abs(readback - target) > 0.1:
+                raise ChamberSafetyError("Setpoint readback did not confirm command")
         with self._state_lock:
             self._last_snapshot = snapshot
 

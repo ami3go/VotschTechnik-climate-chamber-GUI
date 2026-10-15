@@ -91,6 +91,9 @@ class ChamberCapabilities:
     supports_ramp_down: bool = False
     ramp_up_range_c_per_min: tuple[float, float] | None = None
     ramp_down_range_c_per_min: tuple[float, float] | None = None
+    # (up, down) °C/min when the setpoint READBACK follows a device-side ramp
+    # toward a new target (e.g. Vötsch 11002); None = readback is immediate.
+    setpoint_readback_ramp_c_per_min: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)

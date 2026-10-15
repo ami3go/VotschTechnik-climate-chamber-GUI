@@ -1,11 +1,14 @@
 """NiceGUI read-only Dashboard bound to the server-owned generic service.
 
-G05 exposes server-authorized mock-only manual control. No physical hardware.
+G05 exposes server-authorized manual control of one FakeBackend by default, or
+of ONE supervised physical Vötsch chamber when the server is launched with a
+complete CHAMBER_HIL_* authorization (loopback deployment only).
 G03-C provides persistent profile editing in /profiles; Dashboard preview is non-executable.
 """
 from __future__ import annotations
 
 import asyncio
+import os
 
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
@@ -18,8 +21,10 @@ configure_nicegui_storage()
 from nicegui import app, ui  # noqa: E402
 
 from .bootstrap import create_demo_control_services
-from .security.nicegui import (active_tokens, cookie_secret, current_actor, get_security,
-                               logout, require_authenticated_page)
+from .domain.chamber import ChamberSafetyError
+from .hil.physical import hil_authorization_from_env
+from .security.nicegui import (active_tokens, cookie_secret, current_actor, deployment_policy,
+                               get_security, logout, require_authenticated_page)
 from .ui_pages import (NavigationContext, install_navigation_resolver,
                        register_pages, render_navigation)
 from .ui_state import project_capabilities, project_telemetry, safe_view
@@ -52,8 +57,13 @@ class ProfileDraft:
         del self.logs[40:]
 
 
-# One process-level Fake service, independent of any client/browser lifecycle.
-_dashboard_service, _manual_service = create_demo_control_services(get_security())
+# One process-level device service, independent of any client/browser lifecycle.
+# Physical I/O only via an explicit, complete launch-time HIL authorization.
+_HIL = hil_authorization_from_env(os.environ)
+if _HIL is not None and deployment_policy.is_lan:
+    raise ChamberSafetyError("Supervised physical HIL is restricted to loopback deployment")
+_dashboard_service, _manual_service = create_demo_control_services(get_security(), _HIL)
+_MODE = "simulation" if _HIL is None else "physical HIL"
 app.on_startup(_dashboard_service.start)
 app.on_shutdown(_dashboard_service.close)
 
@@ -70,6 +80,7 @@ def _server_navigation_context() -> NavigationContext:
         role=actor.role.value if actor else None,
         permitted_routes=frozenset({"/", "/profiles", "/history", "/logs", "/settings"})
         if actor else frozenset(),
+        physical_hil=_HIL is not None,
     )
 
 
@@ -223,14 +234,22 @@ def dashboard() -> None:
                     ui.label(f"Signed in: {current_actor().username} ({current_actor().role.value})")
                     ui.label("Test Control Platform").classes("top-subtitle")
                 with ui.column().classes("items-end gap-0"):
-                    backend_label = ui.label("● SIMULATION · UNKNOWN").classes("demo-status")
-                    backend_id_label = ui.label("Backend: fake · demo-chamber").classes("text-xs text-grey-4")
+                    backend_label = ui.label(
+                        "● SIMULATION · UNKNOWN" if _HIL is None else "● PHYSICAL HIL · UNKNOWN"
+                    ).classes("demo-status")
+                    backend_id_label = ui.label(
+                        f"Backend: {'fake' if _HIL is None else 'votsch'} · {service.chamber_id}"
+                    ).classes("text-xs text-grey-4")
                     clock_label = ui.label("").classes("text-xs text-grey-4")
                     ui.button("Sign out", icon="logout", on_click=logout).props("flat")
 
             with ui.column().classes("dashboard gap-0").props('id="dashboard-content"'):
                 ui.label(
                     "SIMULATION ONLY — G04/G08-min authorized manual control. Physical hardware I/O is disabled."
+                    if _HIL is None else
+                    f"SUPERVISED PHYSICAL HIL — Vötsch SN {_HIL.expected_serial} at {_HIL.address}, "
+                    f"software envelope {_HIL.temperature_min_c:g}–{_HIL.temperature_max_c:g} °C. "
+                    "A person must be at the chamber; its own controls and emergency stop remain primary."
                 ).classes("demo-banner w-full")
                 with ui.element("div").classes("top-grid"):
                     with ui.column().classes("panel"):
@@ -250,10 +269,10 @@ def dashboard() -> None:
                         ui.separator()
                         with ui.element("div").classes("metric-row"):
                             with ui.column().classes("metric gap-1"):
-                                ui.label("Backend measured (simulation)").classes("metric-caption")
+                                ui.label(f"Backend measured ({_MODE})").classes("metric-caption")
                                 current_label = ui.label("—").classes("metric-value")
                             with ui.column().classes("metric gap-1"):
-                                ui.label("Backend setpoint (simulation)").classes("metric-caption")
+                                ui.label(f"Backend setpoint ({_MODE})").classes("metric-caption")
                                 manual_target_label = ui.label("—").classes("metric-value")
                             with ui.column().classes("metric gap-1"):
                                 ui.label("Backend reported state").classes("metric-caption")
@@ -262,7 +281,8 @@ def dashboard() -> None:
                         ui.separator()
                         with ui.element("div").classes("controls-line"):
                             with ui.column().classes("gap-1"):
-                                ui.label("Simulated capability range (not site-certified)").classes("text-xs")
+                                ui.label("Simulated capability range (not site-certified)" if _HIL is None
+                                         else "HIL software envelope (not site-certified)").classes("text-xs")
                                 limits_label = ui.label("Waiting for backend capabilities")
                                 capability_detail_label = ui.label("Capabilities unverified").classes("text-xs text-orange-9")
                                 ramp_detail_label = ui.label("Gradients/modes unavailable; no ramp writes").classes("text-xs text-grey-7")
@@ -368,7 +388,7 @@ def dashboard() -> None:
 
                 with ui.column().classes("panel chart-panel"):
                     with ui.row().classes("panel-head"):
-                        _panel_title("show_chart", "Temperature Graph (Simulation)")
+                        _panel_title("show_chart", f"Temperature Graph ({_MODE.title()})")
                         with ui.row().classes("items-center gap-2"):
                             range_toggle = ui.toggle(["1h", "6h", "12h", "24h"], value="6h").props(
                                 "dense no-caps")
@@ -479,6 +499,8 @@ def dashboard() -> None:
             "SIMULATED manual control — requires operator lease and fresh readback; "
             "physical device writes disabled"
             if identity and identity.is_simulation and view.capabilities
+            else "PHYSICAL HIL manual control — requires operator lease and fresh device readback"
+            if identity and _HIL is not None and view.capabilities
             else capability.controls_locked_reason)
         ramp_detail_label.set_text(f"Ramp up: {capability.ramp_up} · "
                                    f"ramp down: {capability.ramp_down}")
@@ -499,7 +521,7 @@ def dashboard() -> None:
             "id": str(index), "time": s.time_utc.astimezone().strftime("%H:%M:%S"),
             "measured": f"{s.measured_c:.1f}",
             "target": f"{s.target_c:.1f}" if s.target_c is not None else "—",
-            "status": "SIMULATED" if identity is None or identity.is_simulation else "READ ONLY",
+            "status": "SIMULATED" if identity is None or identity.is_simulation else "PHYSICAL",
         } for index, s in enumerate(recent)])
         log_table.update_rows(list(state.logs))
 
@@ -514,13 +536,14 @@ from .pages import profiles as _profile_editor_page  # noqa: E402,F401
 
 def run() -> None:
     # TLS, peer ACL and exact Origin are mandatory for explicit LAN mode.
-    # Physical Vötsch communication remains disabled in either mode.
+    # Physical Vötsch I/O requires a CHAMBER_HIL_* authorization and loopback mode.
     from .security.nicegui import deployment_policy
     options = {}
     if deployment_policy.is_lan:
         options = {"ssl_certfile": str(deployment_policy.certfile),
                    "ssl_keyfile": str(deployment_policy.keyfile)}
-    ui.run(title="Climate Chamber — server simulation",
+    ui.run(title="Climate Chamber — server simulation" if _HIL is None
+           else "Climate Chamber — SUPERVISED PHYSICAL HIL",
            host=deployment_policy.bind_host, port=deployment_policy.port,
            reload=False, show=False, storage_secret=cookie_secret(),
            session_middleware_kwargs={
