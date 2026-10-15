@@ -49,11 +49,33 @@ Optional script arguments:
 - `--no-driver`: simulation-only installation without Git/external driver.
 - `--run`: launch the local simulated GUI after dependency installation.
 - `--venv PATH`: choose a custom venv; a non-venv directory is never overwritten.
+- `--recreate`: delete and rebuild the venv (refused unless it contains `pyvenv.cfg`).
 
 Rerunning the script reuses the virtual environment. Run
 `python setup_environment.py --help` for options. This source installation
 requires network access for first-time downloads; use the separate
 [offline Windows bundle](README_OFFLINE_WINDOWS.md) for offline deployment.
+
+## Supervised physical HIL (one Vötsch chamber)
+
+Physical I/O is disabled by default. Only a server started with a **complete**
+set of the variables below drives the real chamber; any missing or invalid
+value refuses to start. Nothing can be selected from the browser.
+
+```bash
+CHAMBER_HIL_ADDRESS=192.168.0.11            # private IPv4 literal
+CHAMBER_HIL_EXPECTED_SERIAL=58566207770010  # checked at connect and on every read
+CHAMBER_HIL_TEMP_MIN_C=20                   # software envelope, span <= 30 °C
+CHAMBER_HIL_TEMP_MAX_C=30
+CHAMBER_HIL_ACK=SUPERVISED-PHYSICAL-HIL     # a person is present at the chamber
+python main.py
+```
+
+HIL is loopback-only (LAN mode with HIL is refused) and needs the external
+driver (`requirements-hardware.txt`). The Vötsch setpoint readback ramps at the
+chamber gradient, so **Set Target** is confirmed only after the ramp settles.
+Profile execution remains simulation-only. Web STOP is not an emergency stop;
+the chamber's own controls and emergency stop remain primary.
 
 ## Verification
 

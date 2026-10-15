@@ -153,3 +153,15 @@ The existing G07-A branch was integrated with `main` including merged H01 #32 an
 | G07-R1/R2/R3/R4/R7/R8 | HIGH (release/acceptance) | Windows power-cut directory durability, G06 measured-setpoint/generation evidence, future G08-min authenticated History/Logs/export routes, independent archival integrity/backup, exclusive startup ownership and independent human review. | **OPEN; PR #27 DRAFT / DO NOT MERGE** |
 
 The validated prior-source CI for `007e6053258680dd8df16175e66dfb00847c535d` was [G07 Windows/million samples](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38613839443) and [H01 Windows/Linux/Chromium](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38613839547); that evidence is not a result for the updated branch. Hardware activation, physical HIL, W02 Windows release and G08-full remain disabled/open. Do not interpret mock STOP as an emergency stop.
+
+
+## Readiness after merges and first supervised HIL — 2026-10-15
+
+| ID | Severity | Finding | Status |
+|---|---|---|---|
+| H01-F1 | HIGH (hardware) | VT 4011 `GET CONTROL_VARIABLE SET_POINT` returns the ramped instantaneous setpoint, not the target; immediate readback check made every setpoint change UNKNOWN (fail-safe). | FIXED in [#34](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/34): ramp-aware G04 path check + G05 convergence/settle; verified on hardware |
+| H01-F2 | HIGH (safety labelling) | Any driver injected into `VotschBackend` was reported `is_simulation=True`, so a real chamber would show SIMULATION ONLY. | FIXED in [#34](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/34): HIL identity is physical; UI labels SUPERVISED PHYSICAL HIL |
+| H01-F3 | MEDIUM (process) | Divergent ramp toward a wrong goal passes through the target and could be confirmed by a single read. | FIXED in [#34](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/34): settle window; regression test |
+| T-1 | MEDIUM (test isolation) | Tests used the developer's real `~/.chamber_web`; persisted leases made local runs disagree with CI. | FIXED in #28 (`tests/conftest.py`) |
+| H01-OPEN | RELEASE | Owner/site safety signoff, signed HIL acceptance, profiles on hardware, gradient control, long soak and STOP-during-ramp evidence. | OPEN |
+
