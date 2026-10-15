@@ -109,7 +109,8 @@ class RunnerTests(unittest.TestCase):
         return snapshot
 
     def terminal(self, expected):
-        for _ in range(150):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
             state = self.runner.advance()
             if state in (RunState.COMPLETED, RunState.CANCELLED, RunState.FAULT, RunState.UNKNOWN):
                 break
