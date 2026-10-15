@@ -63,6 +63,7 @@ _HIL = hil_authorization_from_env(os.environ)
 if _HIL is not None and deployment_policy.is_lan:
     raise ChamberSafetyError("Supervised physical HIL is restricted to loopback deployment")
 _dashboard_service, _manual_service = create_demo_control_services(get_security(), _HIL)
+_MODE = "simulation" if _HIL is None else "physical HIL"
 app.on_startup(_dashboard_service.start)
 app.on_shutdown(_dashboard_service.close)
 
@@ -267,10 +268,10 @@ def dashboard() -> None:
                         ui.separator()
                         with ui.element("div").classes("metric-row"):
                             with ui.column().classes("metric gap-1"):
-                                ui.label("Backend measured (simulation)").classes("metric-caption")
+                                ui.label(f"Backend measured ({_MODE})").classes("metric-caption")
                                 current_label = ui.label("—").classes("metric-value")
                             with ui.column().classes("metric gap-1"):
-                                ui.label("Backend setpoint (simulation)").classes("metric-caption")
+                                ui.label(f"Backend setpoint ({_MODE})").classes("metric-caption")
                                 manual_target_label = ui.label("—").classes("metric-value")
                             with ui.column().classes("metric gap-1"):
                                 ui.label("Backend reported state").classes("metric-caption")
@@ -279,7 +280,8 @@ def dashboard() -> None:
                         ui.separator()
                         with ui.element("div").classes("controls-line"):
                             with ui.column().classes("gap-1"):
-                                ui.label("Simulated capability range (not site-certified)").classes("text-xs")
+                                ui.label("Simulated capability range (not site-certified)" if _HIL is None
+                                         else "HIL software envelope (not site-certified)").classes("text-xs")
                                 limits_label = ui.label("Waiting for backend capabilities")
                                 capability_detail_label = ui.label("Capabilities unverified").classes("text-xs text-orange-9")
                                 ramp_detail_label = ui.label("Gradients/modes unavailable; no ramp writes").classes("text-xs text-grey-7")
@@ -385,7 +387,7 @@ def dashboard() -> None:
 
                 with ui.column().classes("panel chart-panel"):
                     with ui.row().classes("panel-head"):
-                        _panel_title("show_chart", "Temperature Graph (Simulation)")
+                        _panel_title("show_chart", f"Temperature Graph ({_MODE.title()})")
                         with ui.row().classes("items-center gap-2"):
                             range_toggle = ui.toggle(["1h", "6h", "12h", "24h"], value="6h").props(
                                 "dense no-caps")

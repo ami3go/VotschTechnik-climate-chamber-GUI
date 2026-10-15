@@ -307,16 +307,30 @@ class ChamberController:
     def _verified_write(self, operation: Callable, *,
                         running: OperationState | None = None,
                         target: float | None = None) -> None:
+        ramps = bool(target is not None and self._capabilities is not None and
+                     self._capabilities.setpoint_readback_ramp_c_per_min)
+        before = None
+        if ramps:
+            before = self._require_readback(self._backend.read_status()).setpoint_temperature_c
+            if before is None or not math.isfinite(before):
+                raise ChamberSafetyError("Setpoint readback unavailable before write")
         operation()
         snapshot = self._require_readback(self._backend.read_status())
         if running is not None and snapshot.operation_state is not running:
             raise ChamberSafetyError("State readback did not confirm command")
-        if target is not None and (
-            snapshot.setpoint_temperature_c is None or
-            not math.isfinite(snapshot.setpoint_temperature_c) or
-            abs(snapshot.setpoint_temperature_c - target) > 0.1
-        ):
-            raise ChamberSafetyError("Setpoint readback did not confirm command")
+        if target is not None:
+            readback = snapshot.setpoint_temperature_c
+            if readback is None or not math.isfinite(readback):
+                raise ChamberSafetyError("Setpoint readback did not confirm command")
+            if ramps:
+                # Device-side ramp: the readback must lie on the path from the
+                # previous setpoint to the target. G05 awaits convergence via
+                # separate fresh reads so STOP is never queued behind a ramp.
+                low, high = min(before, target) - 0.1, max(before, target) + 0.1
+                if not low <= readback <= high:
+                    raise ChamberSafetyError("Setpoint readback is not ramping toward target")
+            elif abs(readback - target) > 0.1:
+                raise ChamberSafetyError("Setpoint readback did not confirm command")
         with self._state_lock:
             self._last_snapshot = snapshot
 

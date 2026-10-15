@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -43,11 +44,17 @@ def _env(**overrides):
 class DriverDouble:
     """Same attribute surface as VotschTechnikClimateChamber.ClimateChamber."""
 
-    def __init__(self, serial=SERIAL, measured=24.6, setpoint=23.0):
+    def __init__(self, serial=SERIAL, measured=24.6, setpoint=23.0, ramp_c_per_min=None,
+                 ramp_goal_offset=0.0):
         self.serial_number = serial
         self.test_system_type = "VT 4011"
         self.temperature_measured = measured
         self._setpoint = setpoint
+        # Like the VT 4011: 11002 readback ramps from the old value to the target.
+        self._ramp = ramp_c_per_min
+        self.gradient_up = self.gradient_down = ramp_c_per_min or 5.0
+        self._ramp_from, self._ramp_t0, self._goal = setpoint, time.monotonic(), setpoint
+        self._goal_offset = ramp_goal_offset
         self._running = False
         self.calls = []
         self.disconnected = False
@@ -55,13 +62,20 @@ class DriverDouble:
 
     @property
     def temperature_set_point(self):
-        return self._setpoint
+        if self._ramp is None:
+            return self._setpoint
+        elapsed = time.monotonic() - self._ramp_t0
+        step = self._ramp / 60.0 * elapsed
+        delta = self._goal - self._ramp_from
+        return self._goal if abs(delta) <= step else self._ramp_from + step * (1 if delta > 0 else -1)
 
     @temperature_set_point.setter
     def temperature_set_point(self, value):
         with self._lock:
             self.calls.append(("set", value))
-            self._setpoint = value
+            self._ramp_from, self._ramp_t0 = self.temperature_set_point, time.monotonic()
+            self._goal = value + self._goal_offset
+            self._setpoint = value + self._goal_offset
 
     @property
     def is_running(self):
@@ -147,6 +161,17 @@ class VotschHilBackendTests(unittest.TestCase):
         self.assertEqual(snapshot.operation_state, OperationState.STOPPED)
         self.assertEqual(snapshot.measured_temperature_c, 24.6)
 
+    def test_device_ramp_reported_and_invalid_gradients_refused(self):
+        backend = self.backend()
+        backend.connect()
+        self.assertEqual(backend.capabilities().setpoint_readback_ramp_c_per_min, (5.0, 5.0))
+        for bad in (0.0, -1.0, float("nan"), 1000.0):
+            driver = DriverDouble()
+            driver.gradient_down = bad
+            with self.subTest(bad), self.assertRaises(ChamberSafetyError):
+                self.backend(driver).connect()
+            self.assertTrue(driver.disconnected)
+
     def test_wrong_serial_refused_and_disconnected(self):
         other = DriverDouble(serial="99999999999999")
         with self.assertRaises(ChamberIdentityMismatch):
@@ -172,6 +197,8 @@ class VotschHilBackendTests(unittest.TestCase):
 class HilManualControlTests(unittest.TestCase):
     """End-to-end through G04 controller, G08 authorization and G05 service."""
 
+    driver_kwargs = {}
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -183,7 +210,7 @@ class HilManualControlTests(unittest.TestCase):
                                   "StrongOperatorPassword#2", Role.OPERATOR)
         self.op = self.security.login("operator_1", "StrongOperatorPassword#2")
         self.hil = hil_authorization_from_env(_env())
-        self.driver = DriverDouble()
+        self.driver = DriverDouble(**self.driver_kwargs)
         config = ChamberConfig(self.hil.chamber_id, "votsch", self.hil.address)
         self.manager = ChamberManager(
             [config], lease_directory=root / "lease", io_timeout_s=2.0,
@@ -236,6 +263,32 @@ class HilManualControlTests(unittest.TestCase):
             ManualControlService(
                 self.manager, self.dashboard, AuthorizedChamber(self.manager, self.security),
                 self.security, self.service.chamber_id, physical_hil=other)
+
+
+class HilRampingSetpointTests(HilManualControlTests):
+    """VT 4011 behaviour observed on hardware: the setpoint readback ramps."""
+
+    driver_kwargs = {"ramp_c_per_min": 60.0}  # 1 °C/s keeps CI fast
+
+    def test_ramped_setpoint_confirmed_only_after_convergence(self):
+        self.assertEqual(self.send("claim").state, ManualState.CONFIRMED)
+        started = time.monotonic()
+        outcome = self.send("set_temperature", target_c=25.0)
+        self.assertEqual(outcome.state, ManualState.CONFIRMED, outcome.message)
+        self.assertGreaterEqual(time.monotonic() - started, 1.5)  # 2 °C at 1 °C/s
+        self.assertAlmostEqual(self.driver.temperature_set_point, 25.0, delta=0.1)
+
+
+class HilDivergingSetpointTests(HilManualControlTests):
+    """A device that ramps to a different value must never be CONFIRMED."""
+
+    driver_kwargs = {"ramp_c_per_min": 60.0, "ramp_goal_offset": 3.0}
+
+    def test_claim_set_start_stop_on_authorized_physical_chamber(self):
+        self.assertEqual(self.send("claim").state, ManualState.CONFIRMED)
+        outcome = self.send("set_temperature", target_c=25.0)
+        self.assertEqual(outcome.state, ManualState.UNKNOWN, outcome.message)
+        self.assertEqual(self.driver.calls, [("set", 25.0)])
 
 
 if __name__ == "__main__":

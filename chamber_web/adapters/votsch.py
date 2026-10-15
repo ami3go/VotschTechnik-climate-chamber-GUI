@@ -6,6 +6,7 @@ protocol mapping without opening chamber connections.
 """
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -32,6 +33,7 @@ class VotschBackend:
         self._hil_factory = hil_driver_factory
         self._driver = None
         self._identity: ChamberIdentity | None = None
+        self._ramp: tuple[float, float] | None = None
 
     @property
     def simulation_only(self) -> bool:
@@ -60,6 +62,11 @@ class VotschBackend:
             self._identity = ChamberIdentity(
                 self._chamber_id, "votsch", "Vötsch", str(driver.test_system_type).strip(),
                 serial, is_simulation=False)
+            # Read-only: the 11002 setpoint readback follows these device ramps.
+            ramp = (float(driver.gradient_up), float(driver.gradient_down))
+            if not all(math.isfinite(rate) and 0 < rate <= 60 for rate in ramp):
+                raise ChamberSafetyError("Chamber setpoint gradients unavailable or invalid")
+            self._ramp = ramp
         except BaseException:
             driver.disconnect()
             raise
@@ -97,7 +104,8 @@ class VotschBackend:
         if self._hil is not None:
             # Software envelope from the HIL authorization; NOT a chamber certification.
             return ChamberCapabilities(self._hil.temperature_min_c,
-                                       self._hil.temperature_max_c, True, True, True)
+                                       self._hil.temperature_max_c, True, True, True,
+                                       setpoint_readback_ramp_c_per_min=self._ramp)
         if self._factory is None:
             return ChamberCapabilities(0, 1, False, False, False)
         return ChamberCapabilities(-20, 80, True, True, True)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -153,6 +154,45 @@ class ManualControlService:
             actor.role is Role.ADMIN and health.stop_latched,
             presets, last,
         )
+
+    def _await_ramped_setpoint(self, chamber_id: str, target: float,
+                               ramp: tuple[float, float], origin: float | None):
+        """Fresh G04 reads (STOP can interleave) until a device ramp reaches target."""
+        from chamber_web.domain.chamber import ChamberProtocolError, ChamberTimeoutError
+
+        if origin is None or not math.isfinite(origin):
+            raise ChamberProtocolError("No verified setpoint before ramped write")
+        rate = ramp[0] if target >= origin else ramp[1]
+        budget = min(300.0, abs(target - origin) / rate * 60.0 * 1.5 + 15.0)
+        deadline = time.monotonic() + budget
+        # A ramp toward a WRONG goal passes through the target, so convergence
+        # also requires the readback to have stopped moving: a second read,
+        # spaced so the slowest configured ramp would move >= 0.05 °C.
+        settle_s = min(30.0, max(1.0, 0.05 * 60.0 / min(ramp)))
+        best = math.inf
+        candidate = None
+        while True:
+            verified, _ = self._fresh(chamber_id)
+            readback = verified.setpoint_temperature_c
+            if readback is None or not math.isfinite(readback):
+                raise ChamberProtocolError("Setpoint readback unavailable during ramp")
+            distance = abs(readback - target)
+            now = time.monotonic()
+            if distance <= 0.1:
+                if candidate is None:
+                    candidate = (readback, now)
+                elif abs(readback - candidate[0]) > 0.02:
+                    candidate = (readback, now)  # still moving: restart settle window
+                elif now - candidate[1] >= settle_s:
+                    return verified
+            else:
+                candidate = None
+            if distance > best + 0.2:
+                raise ChamberProtocolError("Setpoint ramp moving away from target")
+            best = min(best, distance)
+            if now >= deadline + settle_s:
+                raise ChamberTimeoutError("Setpoint ramp did not reach target in time")
+            time.sleep(0.25 if candidate is not None else 0.5)
 
     def _fresh(self, chamber_id: str) -> tuple[ChamberSnapshot, object]:
         """A new G04 worker read, never a browser/Dashboard cached sample."""
@@ -311,7 +351,12 @@ class ManualControlService:
                     command_may_have_dispatched = True
                     self._authorized.execute_owned(
                         session, csrf, chamber_id, "set_temperature", target)
-                verified, _ = self._fresh(chamber_id)  # independent authoritative readback
+                ramp = caps.setpoint_readback_ramp_c_per_min
+                if action == "set_temperature" and ramp:
+                    verified = self._await_ramped_setpoint(
+                        chamber_id, target, ramp, sample.setpoint_temperature_c)
+                else:
+                    verified, _ = self._fresh(chamber_id)  # independent authoritative readback
                 if action == "start" and verified.operation_state is not OperationState.RUNNING:
                     raise ChamberProtocolError("Follow-up START readback disagrees")
                 if action == "set_temperature" and (
@@ -327,7 +372,9 @@ class ManualControlService:
                     raise ChamberSafetyError(
                         "Command superseded by a newer STOP/FAULT generation")
             return self._finish(serial, action, ManualState.CONFIRMED,
-                                "Confirmed by simulated authoritative device readback"
+                                ("Confirmed by authoritative physical device readback"
+                                 if self._hil is not None else
+                                 "Confirmed by simulated authoritative device readback")
                                 if action in ("start", "set_temperature", "stop", "reconcile")
                                 else "Server operator-lease transition confirmed")
         except Exception as exc:
