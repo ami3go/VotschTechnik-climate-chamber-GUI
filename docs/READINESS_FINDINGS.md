@@ -96,6 +96,21 @@ H01 simulation-only readiness package proposed in [PR #32](https://github.com/am
 B1 transport physical framing/timeout; B2 actual STOP and local emergency procedure; B3 approved exact model/serial/firmware, manual, operating envelope/gradient and site signatures; B4 G05/G07/G08/W02/R01 integration and signed witnessed HIL remain **OPEN / PHYSICAL NO-GO**. H2, H4, H7 and H8 retain their previously documented physical/deployment gaps. Site data, operator signatures, readbacks, STOP timing, alarm semantics and power-loss permits have not been supplied. No physical enable path was added. See [H01 test plan](H01_HIL_VERIFICATION_PLAN.md), [inventory](H01_HARDWARE_ACCEPTANCE_CHECKLIST.md), [report](H01_TEST_REPORT_TEMPLATE.md), and [decision matrix](H01_SITE_APPROVAL_AND_GO_NOGO.md).
 
 
+### G05 PR #28 integration checkpoint (2026-10-13)
+
+G05 is a **mock-only software candidate with all five final-head Windows CI checks passed** at `3dc72ec7f8df73136a8822f7a201eac082320fab` ([G05/G08/G03-C Windows 3.10/3.12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38453093551), [G06 3.10/3.12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38453093490), [W01 packaging](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38453093491)). Independent review approval and PR merge remain pending. G03-C profile editing is retained. No real device activation is authorized. Site-approved chamber identity/limits, physical STOP procedures and HIL, driver capability/readback qualification, G07 recording integration, G08-full, W02 offline release and final site certification remain **OPEN**.
+
+
+## G05 pre-merge rebase/synchronization — 2026-10-14
+
+The existing G05 branch was integrated with latest `main`, preserving merged H01 #32 and environment setup #33. G07-A #27 has not merged: after its independently approved merge G05 must integrate that final `main` again, and rerun Windows 3.10/3.12 G05/G06/G07/G08/NiceGUI/H01/frozen packaging checks. No merged-runner/recorder production claim or site physical authorization exists. All physical I/O remains disabled, including on loopback.
+
+
+## G05 final-head review requirements — 2026-10-14
+
+- Existing draft PR #28 now includes the H01 #32/setup #33 merge, actual NiceGUI conditional-button initialization fix, role-guarded degraded STOP visibility, G06/manual exclusive-lease regression and H01 real-browser manual workflow assertions. Prior Chromium CI revealed an actual UI defect; exact final-head green browser and Windows CI are still required. Do not infer acceptance from earlier-head green CI.
+- **UNRESOLVED MERGE GATES:** independent qualified human approval; exact final-head G05/G06/G08/NiceGUI/H01 Windows 3.10/3.12 and frozen Windows package checks; G07 #27 merge and subsequent G05 resynchronization/test; authenticated profile runner and G07 recording composition into the live app; engineering review of real browser session/Origin/CSRF deployment boundaries.
+- **RELEASE NO-GO:** G08-full, W02, physical H01 signed site acceptance/STOP/operating limits, validated physical driver, Windows power-loss evidence. Simulation-only FakeBackend remains unconditional. Web STOP is not physical E-STOP.
 ## G07-A current readiness — 2026-10-13
 
 - [Draft PR #27](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/27) source `c586bd563b60830130d1d098c0bf21ef3ab47a23` has recorded passing [G07 recorder + 1M samples](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440410962), [G06](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440410835), [NiceGUI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440411011) and [W01](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440410963) workflows. These checks precede synchronization with `main` `7a481d1125148fdcd610c0e9fea1dd7621ac938a`; exact integrated-branch verification remains required.
