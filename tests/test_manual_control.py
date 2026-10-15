@@ -159,7 +159,7 @@ class ManualControlTests(unittest.TestCase):
 
         def attempt(tokens):
             barrier.wait()
-            results.append(self.send(service, tokens, "claim").state)
+            results.append((tokens, self.send(service, tokens, "claim").state))
 
         threads = [threading.Thread(target=attempt, args=(who,))
                    for who in (self.op, self.op2)]
@@ -169,8 +169,19 @@ class ManualControlTests(unittest.TestCase):
         for thread in threads:
             thread.join(timeout=4)
             self.assertFalse(thread.is_alive())
-        self.assertEqual(results.count(ManualState.CONFIRMED), 1)
-        self.assertEqual(results.count(ManualState.REJECTED), 1)
+        # Exactly one operator wins the lease. The winner's page result may be
+        # conservatively downgraded to UNKNOWN ("superseded") when the losing
+        # claim began before it finished; it must never be REJECTED, and the
+        # authoritative lease view must show the winner (and only the winner).
+        rejected = [who for who, state in results if state is ManualState.REJECTED]
+        others = [(who, state) for who, state in results
+                  if state is not ManualState.REJECTED]
+        self.assertEqual(len(rejected), 1, results)
+        self.assertEqual(len(others), 1, results)
+        winner, winner_state = others[0]
+        self.assertIn(winner_state, (ManualState.CONFIRMED, ManualState.UNKNOWN))
+        self.assertTrue(service.view(winner.session, service.chamber_id).owned_by_actor)
+        self.assertFalse(service.view(rejected[0].session, service.chamber_id).owned_by_actor)
         with self.assertRaises(AuthorizationError):
             self.send(service, self.op, "handover")
         self.assertEqual(self.send(service, self.admin, "handover").state,
