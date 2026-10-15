@@ -158,6 +158,18 @@ class RunStore:
         self.data = self.root / "data"
         self.data.mkdir(parents=True, exist_ok=True)
         self.database = self.data / "runs.sqlite3"
+        # A missing SQLite file alongside surviving run evidence is data loss,
+        # not a clean installation. sqlite3.connect would otherwise create an
+        # empty journal and silently hide interrupted or completed runs.
+        # Check before the first SQLite connection (which can create the file).
+        if not self.database.is_file() and (
+            (self.data / "chambers").exists()
+            or any((self.data / ("runs.sqlite3" + ext)).exists()
+                   for ext in ("-journal", "-wal", "-shm"))
+        ):
+            raise RunIntegrityError(
+                "Run SQLite database missing with surviving evidence; restore from backup"
+            )
         # Check existing SQLite pages before accepting control-run evidence. A
         # corrupt journal is a startup NO-GO, never a request to recreate it.
         # quick_check is structural, not a substitute for site backup/restore.
