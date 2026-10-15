@@ -323,6 +323,33 @@ class RecorderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.read_csv(self.chamber, self.run, name="../runs.sqlite3")
 
+    def test_missing_sqlite_with_surviving_run_directory_is_not_reset(self):
+        # Removing the database must never masquerade as a clean install.
+        # A surviving run directory proves the deployment already recorded a
+        # PREPARED run, even if export files have not yet been materialized.
+        run_directory = (Path(self.temp.name) / "data" / "chambers" /
+                         self.chamber / "runs" / self.run)
+        self.assertTrue(run_directory.is_dir())
+        self.store.database.unlink()
+        self.assertFalse(self.store.database.exists())
+        with self.assertRaisesRegex(RunIntegrityError, "restore from backup"):
+            RunStore(self.temp.name)
+        self.assertFalse(self.store.database.exists())
+
+    def test_missing_sqlite_with_sidecar_is_not_reset(self):
+        # A former SQLite WAL/journal can survive independently of run files.
+        # This must not be silently discarded by sqlite3.connect().
+        (self.store.data / "chambers" / self.chamber / "runs" / self.run).rmdir()
+        (self.store.data / "chambers" / self.chamber / "runs").rmdir()
+        (self.store.data / "chambers" / self.chamber).rmdir()
+        (self.store.data / "chambers").rmdir()
+        self.store.database.unlink()
+        sidecar = self.store.data / "runs.sqlite3-wal"
+        sidecar.write_bytes(b"not a recovered SQLite database")
+        with self.assertRaisesRegex(RunIntegrityError, "restore from backup"):
+            RunStore(self.temp.name)
+        self.assertFalse(self.store.database.exists())
+
     def test_damaged_sqlite_header_prevents_startup_without_recreation(self):
         # Never convert corrupt SQLite bytes into a fresh empty journal.
         original_bytes = self.store.database.read_bytes()
