@@ -590,11 +590,16 @@ class AlternateFixtureTests(unittest.TestCase):
                     runner.start("alternate", record.profile_id, revision=1)
                     runner.advance()
                     runner.advance()
-                    for _ in range(100):
-                        if runner.advance() in (RunState.COMPLETED, RunState.UNKNOWN):
+                    # G04 STOP confirmation is asynchronous. Poll until an
+                    # explicit bounded wall-clock deadline, rather than relying
+                    # on 0.5 s of runner scheduling under loaded Windows CI.
+                    deadline = time.monotonic() + 10.0
+                    while time.monotonic() < deadline:
+                        if runner.advance() in (RunState.COMPLETED, RunState.UNKNOWN,
+                                                RunState.FAULT):
                             break
-                        time.sleep(.005)
-                    self.assertEqual(runner.state, RunState.COMPLETED)
+                        time.sleep(.01)
+                    self.assertEqual(runner.state, RunState.COMPLETED, runner.reason)
                     self.assertEqual(runner.snapshot.identity.backend_id, "alternate_stub")
                 finally:
                     runner.close()
