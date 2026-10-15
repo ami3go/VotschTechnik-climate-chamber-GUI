@@ -12,7 +12,7 @@ import threading
 
 from nicegui import app, ui
 
-from .auth import AuthenticationError, SecurityStore
+from .auth import AuthenticationError, SecurityProfile, SecurityStore
 from .http import OriginMiddleware
 from .deployment import DeploymentPolicy
 from .paths import security_directory
@@ -102,6 +102,8 @@ def login_page() -> None:
             session = get_security().login(
                 username.value, password.value,
                 client_id=peer if isinstance(peer, str) and peer else "unknown-peer",
+                use_pin=(get_security().get_security_profile()
+                         is SecurityProfile.ISOLATED_LAN),
             )
         except AuthenticationError:
             password.value = ""
@@ -116,14 +118,19 @@ def login_page() -> None:
 
     with ui.card().classes("absolute-center items-stretch").style("min-width: 330px"):
         ui.label("Climate Chamber — sign in").classes("text-h5")
-        ui.label("Offline local account · server-controlled simulation").classes("text-caption")
+        isolated = get_security().get_security_profile() is SecurityProfile.ISOLATED_LAN
+        ui.label("Isolated workstation · PIN sign-in · no automatic logout"
+                 if isolated else "Offline local account · password sign-in").classes(
+                     "text-caption")
         if not get_security().is_bootstrapped():
             ui.label("No administrator provisioned. On the server, run:").classes(
                 "text-negative")
             ui.code("python -m chamber_web.security.bootstrap")
         username = ui.input("Username").props("autocomplete=username")
-        password = ui.input("Password", password=True).props(
-            "autocomplete=current-password")
+        password = ui.input("PIN (6–12 digits)" if isolated else "Password",
+                            password=True).props(
+            "autocomplete=off inputmode=numeric" if isolated
+            else "autocomplete=current-password")
         ui.button("Sign in", on_click=sign_in)
 
 
