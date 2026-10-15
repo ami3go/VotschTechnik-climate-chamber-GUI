@@ -5,6 +5,7 @@ Use a fake clock; no physical hardware or network listener is required.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,7 +60,7 @@ class SecurityProfileTests(unittest.TestCase):
             with self.subTest(pin=pin), self.assertRaises(ValueError):
                 self.enroll(pin=pin)
         self.enroll()
-        with sqlite3.connect(self.store.database) as db:
+        with closing(sqlite3.connect(self.store.database)) as db:
             stored = db.execute("SELECT pin_hash FROM users WHERE username='admin_user'"
                                 ).fetchone()[0]
         self.assertTrue(stored.startswith("scrypt:"))
