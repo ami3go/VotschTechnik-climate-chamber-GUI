@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
@@ -29,7 +30,7 @@ class FactoryCredentialTests(unittest.TestCase):
         self.assertEqual(self.store.authenticate(tokens.session).role, Role.ADMIN)
         with self.assertRaises(AuthenticationError):
             self.store.login("admin", "12345678", use_pin=True)
-        with sqlite3.connect(self.store.database) as db:
+        with closing(sqlite3.connect(self.store.database)) as db:
             password_hash, pin_hash = db.execute(
                 "SELECT password_hash,pin_hash FROM users WHERE username='admin'"
             ).fetchone()
@@ -133,11 +134,12 @@ class FactoryCredentialTests(unittest.TestCase):
         )
 
     def test_interrupted_partial_identity_does_not_trigger_factory_reset(self):
-        with sqlite3.connect(self.store.database) as db:
+        with closing(sqlite3.connect(self.store.database)) as db:
             db.execute(
                 "INSERT INTO users(username,password_hash,role)"
                 " VALUES('partial_admin','redacted','ADMIN')"
             )
+            db.commit()
         with self.assertRaises(RuntimeError):
             self.store.provision_factory_admin()
         self.assertFalse(self.store.is_bootstrapped())
@@ -159,7 +161,7 @@ class FactoryCredentialTests(unittest.TestCase):
             results = list(executor.map(attempt, range(4)))
         self.assertEqual(results.count(True), 1)
         self.assertEqual(results.count(False), 3)
-        with sqlite3.connect(self.store.database) as db:
+        with closing(sqlite3.connect(self.store.database)) as db:
             self.assertEqual(db.execute("SELECT count(*) FROM users").fetchone()[0], 1)
 
     def test_password_change_after_long_isolated_session(self):
