@@ -180,6 +180,92 @@ def dashboard() -> None:
         if preset_select.value is not None:
             target_input.value = preset_select.value
 
+    from .pages.profiles import (_RUN_ERRORS, get_profile_editor_service,
+                                 get_profile_execution_service)
+    execution = get_profile_execution_service()
+    # profile_id -> latest saved revision, refreshed from the server-owned store.
+    profile_revisions: dict[str, int] = {}
+    shown_overview: list[tuple | None] = [None]
+
+    def refresh_profile_choices() -> None:
+        try:
+            headers = get_profile_editor_service().profiles(limit=100)
+        except Exception:
+            return
+        profile_revisions.clear()
+        profile_revisions.update({h.profile_id: h.current_revision for h in headers})
+        choices = {h.profile_id: f"{h.name} · rev {h.current_revision}" for h in headers}
+        if choices != profile_select.options:
+            profile_select.options = choices
+            if profile_select.value not in choices:
+                profile_select.value = None
+            profile_select.update()
+
+    async def profile_action(action: str) -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        session, csrf = active_tokens()
+        try:
+            if action == "start":
+                profile_id = profile_select.value
+                revision = profile_revisions.get(profile_id)
+                if revision is None:
+                    ui.notify("Choose a saved profile first", color="warning")
+                    return
+                await execution.start_async(session, csrf, profile_id, revision)
+                ui.notify(f"Profile started (revision {revision}, simulation)",
+                          color="positive")
+            else:
+                await asyncio.to_thread(execution.cancel, session, csrf)
+                ui.notify("Profile STOP requested", color="positive")
+        except _RUN_ERRORS as exc:
+            ui.notify(str(exc), color="negative", timeout=7000)
+        refresh_profile_run()
+
+    def refresh_profile_run() -> None:
+        try:
+            run = execution.view(active_tokens()[0])
+        except Exception:
+            run_profile_button.disable()
+            stop_profile_button.set_visibility(False)
+            profile_run_label.set_text("Profile run status unavailable")
+            return
+        if run.can_start and profile_select.value in profile_revisions:
+            run_profile_button.enable()
+        else:
+            run_profile_button.disable()
+        run_profile_button.set_visibility(not run.active)
+        stop_profile_button.set_visibility(run.active)
+        stop_profile_button.enable() if run.can_stop else stop_profile_button.disable()
+        if not run.simulation:
+            profile_run_label.set_text("Profile runs are disabled in Physical HIL mode")
+        elif run.state is None:
+            profile_run_label.set_text("No profile run since server start")
+        else:
+            profile_run_label.set_text(
+                f"{run.state} · {run.profile_name} rev {run.revision} · "
+                f"step {run.step}/{run.total_steps}" +
+                ("" if run.target_c is None else f" · target {run.target_c:g} °C"))
+        overview_key = (run.run_id, run.step, run.state)
+        if overview_key != shown_overview[0]:
+            shown_overview[0] = overview_key
+            step_overview.refresh()
+        if run.state is not None:
+            run_source_label.set_text("Server-side run of the saved revision · "
+                                      "closing this page does not stop it")
+            # Completed steps only: a cancelled/faulted run never shows 100%.
+            runner = execution.runner
+            done, total = runner.progress if runner is not None else (0, 0)
+            fraction = max(0.0, min(1.0, done / total)) if total else 0.0
+            step_indicator.set_text(f"Step {run.step}/{run.total_steps}")
+            progress.value = fraction
+            progress_label.set_text(f"{fraction:.0%}")
+            active_name.set_text(f"Profile: {run.profile_name} · rev {run.revision}")
+            elapsed_label.set_text(
+                run.state + ("" if run.elapsed_s is None else
+                             f" · elapsed {int(run.elapsed_s // 60)}:"
+                             f"{int(run.elapsed_s % 60):02d}"))
+
     def refresh_manual() -> None:
         if not require_authenticated_page(touch=False):
             return
@@ -296,6 +382,27 @@ def dashboard() -> None:
                                     ui.button("Fill target", icon="edit",
                                               on_click=use_suggestion).props(
                                                   "outline no-caps").classes("control-button")
+                                ui.label("Profile").classes("section-title")
+                                with ui.row().classes("control-row"):
+                                    profile_select = ui.select(
+                                        options={}, label="Saved profiles", with_input=True,
+                                        on_change=lambda: refresh_profile_run()).props(
+                                            "outlined dense").classes("control-field")
+                                    profile_select.on("popup-show",
+                                                      lambda: refresh_profile_choices())
+                                    run_profile_button = ui.button(
+                                        "Run Profile", icon="playlist_play",
+                                        on_click=lambda: profile_action("start")).props(
+                                            "unelevated color=primary no-caps").classes(
+                                                "control-button")
+                                    run_profile_button.disable()
+                                    stop_profile_button = ui.button(
+                                        "Stop Run", icon="stop",
+                                        on_click=lambda: profile_action("cancel")).props(
+                                            "unelevated color=deep-orange no-caps").classes(
+                                                "control-button")
+                                    stop_profile_button.set_visibility(False)
+                                profile_run_label = ui.label("").classes("text-xs text-grey-7")
                                 with ui.column().classes("gap-0"):
                                     ui.label("Simulated capability range (not site-certified)" if _HIL is None
                                              else "HIL software envelope (not site-certified)").classes(
@@ -326,7 +433,8 @@ def dashboard() -> None:
                         with ui.column().classes("profile-intro gap-1"):
                             active_name = ui.label("Profile: " + state.profile_name).classes("font-bold")
                             elapsed_label = ui.label("Execution unavailable (G06)")
-                            ui.label("Draft preview only · no server-side profile runner").classes("text-xs")
+                            run_source_label = ui.label(
+                                "Draft preview only · no server-side profile runner").classes("text-xs")
 
                         @ui.refreshable
                         def step_overview():
@@ -334,6 +442,31 @@ def dashboard() -> None:
                                 with ui.element("div").classes("profile-row header"):
                                     for heading in ("#", "Step", "Target", "Dwell", "Status"):
                                         ui.label(heading)
+                                runner = execution.runner
+                                snapshot = runner.snapshot if runner is not None else None
+                                if snapshot is not None:
+                                    # Server-owned run: exact saved revision, repeats expanded.
+                                    current, _ = runner.progress
+                                    run_state = runner.state
+                                    for index, step in enumerate(
+                                            snapshot.steps * snapshot.repeat_count):
+                                        css = "profile-row"
+                                        if index == current and run_state is not None and \
+                                                run_state.value not in ("COMPLETED",):
+                                            css += " active-step"
+                                        with ui.element("div").classes(css):
+                                            ui.label(str(index + 1))
+                                            ui.label(step.notes or f"Step {step.step}")
+                                            ui.label(f"{float(step.target_temperature_c):g} °C")
+                                            ui.label(f"{float(step.dwell_s) / 60:g} min")
+                                            if index < current:
+                                                message = "✓ Done"
+                                            elif index == current and run_state is not None:
+                                                message = run_state.value
+                                            else:
+                                                message = "○ Pending"
+                                            ui.label(message)
+                                    return
                                 for index, step in enumerate(state.active_steps):
                                     css = "profile-row"
                                     if state.run_steps and index == state.step_index:
@@ -475,10 +608,11 @@ def dashboard() -> None:
         if view.capabilities:
             chart.options["yAxis"]["min"] = view.capabilities.temperature_min_c - 10
             chart.options["yAxis"]["max"] = view.capabilities.temperature_max_c + 10
-        step_indicator.set_text("Draft")
-        progress.value = 0
-        progress_label.set_text("0%")
-        active_name.set_text("Draft: " + state.profile_name)
+        if execution.runner is None:
+            step_indicator.set_text("Draft")
+            progress.value = 0
+            progress_label.set_text("0%")
+            active_name.set_text("Draft: " + state.profile_name)
         clock_label.set_text(f"Sample: {display.sampled_utc}")
         update_chart()
         try:
@@ -495,8 +629,11 @@ def dashboard() -> None:
 
     ui.timer(1.0, refresh, immediate=False)
     ui.timer(1.0, refresh_manual, immediate=False)
+    ui.timer(1.0, refresh_profile_run, immediate=False)
+    refresh_profile_choices()
     refresh()
     refresh_manual()
+    refresh_profile_run()
 
 
 @ui.page("/admin")

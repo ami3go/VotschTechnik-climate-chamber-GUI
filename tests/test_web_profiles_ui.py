@@ -28,6 +28,16 @@ from nicegui.testing import User
 from chamber_web.security.auth import Role, SecurityStore
 
 
+def _reconcile_stop_latch() -> None:
+    """A verified run STOP latches the shared simulated chamber; clear it the way
+    an authorized operator does (fresh stopped readback) so later tests can run."""
+    from chamber_web.main import get_dashboard_service
+
+    service = get_dashboard_service()
+    if service.manager.health(service.chamber_id).stop_latched:
+        service.manager.reconcile_stop(service.chamber_id)
+
+
 async def test_profiles_page_requires_login_and_persists_between_sessions(
     create_user: Callable[[], User], monkeypatch, tmp_path,
 ) -> None:
@@ -161,4 +171,71 @@ async def test_operator_runs_saved_revision_and_stops_it(
     assert runner.state.value == "CANCELLED"
     await user.should_see("STOP requested", retries=50)
     await user.should_see("CANCELLED", retries=50)
+    _reconcile_stop_latch()
+    get_profile_editor_service.cache_clear()
+
+
+async def test_dashboard_chamber_control_runs_selected_saved_profile(
+    create_user: Callable[[], User], monkeypatch, tmp_path,
+) -> None:
+    """Chamber Control lists saved profiles and runs the latest revision (simulation)."""
+    from nicegui import ui
+    from chamber_web.security import nicegui as security_ui
+    from chamber_web.pages.profiles import (get_profile_editor_service,
+                                            get_profile_execution_service)
+
+    monkeypatch.setenv("CHAMBER_PROFILE_DB", str(tmp_path / "profiles.sqlite3"))
+    get_profile_editor_service.cache_clear()
+    store = SecurityStore(tmp_path / "security")
+    store.bootstrap_admin("test_admin", "StrongAdminPassword#1")
+    admin = store.login("test_admin", "StrongAdminPassword#1")
+    store.create_user(admin.session, admin.csrf,
+                      "test_viewer", "StrongViewerPassword#2", Role.VIEWER)
+    monkeypatch.setattr(security_ui, "_store", store)
+    editor = get_profile_editor_service()
+    draft = editor.edit_step(editor.new_draft(), 0, "dwell_s", "0")
+    saved = editor.save(editor.set_metadata(draft, "name", "Dashboard profile"))
+    revised = editor.save(editor.edit_step(saved, 0, "notes", "second revision"))
+    assert revised.viewed_revision == 2
+
+    def profile_select(client: User):
+        return next(element for element in client.find(ui.select).elements
+                    if element.props.get("label") == "Saved profiles")
+
+    viewer = create_user()
+    await viewer.open("/login")
+    viewer.find("Username").type("test_viewer")
+    viewer.find("Password").type("StrongViewerPassword#2")
+    viewer.find("Sign in").click()
+    await viewer.should_see("Chamber Control")
+    viewer_select = profile_select(viewer)
+    assert viewer_select.options == {saved.profile_id: "Dashboard profile · rev 2"}
+    viewer_select.value = saved.profile_id
+    await viewer.should_see("No profile run since server start")
+    run_button = next(iter(viewer.find("Run Profile").elements))
+    assert not run_button.enabled  # viewers may look, never run
+
+    user = create_user()
+    await user.open("/login")
+    user.find("Username").type("test_admin")
+    user.find("Password").type("StrongAdminPassword#1")
+    user.find("Sign in").click()
+    await user.should_see("Chamber Control")
+    profile_select(user).value = saved.profile_id
+    user.find("Run Profile").click()
+    await user.should_see("Profile started (revision 2, simulation)", retries=50)
+    runner = get_profile_execution_service().runner
+    assert runner is not None and runner.snapshot.revision == 2
+    await user.should_see("Profile: Dashboard profile · rev 2", retries=50)
+
+    user.find("Stop Run").click()
+    for _ in range(200):
+        if runner.state is not None and runner.state.value in (
+            "CANCELLED", "FAULT", "UNKNOWN",
+        ):
+            break
+        await asyncio.sleep(0.05)
+    assert runner.state.value == "CANCELLED"
+    await user.should_see("Profile STOP requested", retries=50)
+    _reconcile_stop_latch()
     get_profile_editor_service.cache_clear()
