@@ -70,6 +70,6 @@ jobs:
       - name: Profile validation and demo tests
         run: python -m unittest discover -s tests -p "test_web_*.py" -v
       - name: Render dashboard in simulated NiceGUI client
-        run: python -m pytest -q tests/test_web_ui.py tests/test_web_pages_ui.py tests/test_manual_ui.py
+        run: python -m pytest -q tests/test_web_ui.py tests/test_web_pages_ui.py tests/test_manual_ui.py tests/test_web_factory_admin_ui.py
       - name: Dashboard saved-profile run browser integration
         run: python -m pytest -q tests/test_dashboard_profile_ui.py

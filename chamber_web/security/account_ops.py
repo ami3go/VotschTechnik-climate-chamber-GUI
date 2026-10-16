@@ -28,8 +28,8 @@ class AccountOperations:
                 (_digest(session), actor.user_id),
             ).fetchone()
             now = self.clock()
-            if (not row or row[1] or now - row[2] >= self.absolute_timeout_s
-                    or now - row[3] >= self.idle_timeout_s or
+            if (not row or row[1] or
+                    self._session_expired(db, row[2], row[3], now) or
                     not _verify_password(old_password, row[0])):
                 self._audit(db, actor, "user.password", "DENIED")
                 db.commit()
@@ -41,6 +41,49 @@ class AccountOperations:
             db.execute("DELETE FROM login_failures WHERE username=?",
                        (actor.username,))
             self._audit(db, actor, "user.password", "SUCCESS")
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def change_admin_username(self, session: str, csrf: str,
+                              password: str, new_username: str) -> None:
+        """Rename the signed-in administrator after password reauthentication.
+
+        Revokes all of that account's sessions, without changing role or PIN.
+        """
+        from .auth import AuthorizationError, Role
+        self._validate_username(new_username)
+        actor = self.authenticate(session, csrf=csrf, mutation=True)
+        if actor.role is not Role.ADMIN:
+            raise AuthorizationError("Administrator required")
+        confirmed_hash = self._confirm_admin_password(actor, password)
+        db = self._db()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_current_admin(db, session, actor)
+            current = db.execute(
+                "SELECT password_hash FROM users WHERE id=?", (actor.user_id,)
+            ).fetchone()
+            if not current or current[0] != confirmed_hash:
+                raise AuthorizationError("Administrator credentials changed")
+            if db.execute(
+                "SELECT 1 FROM users WHERE username=? AND id<>?",
+                (new_username, actor.user_id),
+            ).fetchone():
+                raise ValueError("Username already exists")
+            db.execute("UPDATE users SET username=? WHERE id=?",
+                       (new_username, actor.user_id))
+            db.execute("UPDATE sessions SET revoked=1 WHERE user_id=?",
+                       (actor.user_id,))
+            db.execute("DELETE FROM login_failures WHERE username=?",
+                       (actor.username,))
+            db.execute("DELETE FROM login_failures WHERE username=?",
+                       (new_username,))
+            self._audit(db, actor, "user.username", "SUCCESS",
+                        detail="Administrator account renamed")
             db.commit()
         except BaseException:
             db.rollback()

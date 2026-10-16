@@ -8,6 +8,9 @@ No hardware I/O release is authorized by this document. References:
 
 ## Local setup / secure first administrator
 
+**Factory setup update (2026-10-16):** New NiceGUI deployments provision `admin` / `admin` and default PIN `12345678` on first startup if no administrator exists. These deliberately weak values are for localhost commissioning only; change the password and PIN via Admin before LAN operation. Existing accounts are preserved, and the strong-password policy still applies to subsequent changes. See [Factory Credentials](FACTORY_CREDENTIALS.md). The CLI procedure below remains an optional way to provision a strong administrator before starting the GUI.
+
+
 Run the GUI only as a single local process, bound to `127.0.0.1`, with a
 dedicated operating-system account. BEFORE using the browser run in a local
 interactive terminal (not via HTTP or an unattended launch script):
@@ -25,7 +28,7 @@ interactive PowerShell console:
 ```
 
 The CLI prompts for a **chosen** administrator username, a password of at least
-12 UTF-8 bytes, and confirmation (hidden input). There is **no default password**,
+12 UTF-8 bytes, and confirmation (hidden input). The manual CLI does not use the factory password,
 no initial bearer token in a file, no web/bootstrap endpoint and no automated
 password reset. Provisioning is an atomic SQLite transaction, permitted **once**
 per data directory. Concurrent bootstrap is rejected for the losing process.
