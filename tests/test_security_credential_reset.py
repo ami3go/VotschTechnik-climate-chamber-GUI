@@ -5,7 +5,10 @@ from contextlib import closing, redirect_stdout
 from io import StringIO
 import os
 from pathlib import Path
+import shutil
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -169,6 +172,53 @@ class OfflineCredentialResetTests(unittest.TestCase):
             stdin.isatty.return_value = True
             self.assertEqual(interactive_reset_credentials(unknown), 2)
         self.assertFalse(unknown.exists())
+
+
+class DirectScriptInvocationTests(unittest.TestCase):
+    """Regression for ModuleNotFoundError when script is run by filename."""
+
+    def test_script_loads_from_repo_root_and_unrelated_working_directory(self):
+        script = Path(__file__).resolve().parents[1] / "scripts" / "reset_credentials.py"
+        with tempfile.TemporaryDirectory() as other_cwd:
+            for cwd in (script.parent.parent, Path(other_cwd)):
+                with self.subTest(cwd=str(cwd)):
+                    env = os.environ.copy()
+                    env.pop("PYTHONPATH", None)
+                    result = subprocess.run(
+                        [sys.executable, "-I", str(script), "--help"],
+                        cwd=cwd, env=env, capture_output=True, text=True,
+                        timeout=30, check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("--data-dir", result.stdout)
+                    self.assertNotIn("ModuleNotFoundError", result.stderr)
+
+    def test_direct_execution_remains_interactive_only(self):
+        script = Path(__file__).resolve().parents[1] / "scripts" / "reset_credentials.py"
+        with tempfile.TemporaryDirectory() as other_cwd:
+            result = subprocess.run(
+                [sys.executable, "-I", str(script)],
+                cwd=other_cwd, capture_output=True, text=True,
+                timeout=30, check=False,
+            )
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("interactive local terminal", result.stderr)
+        self.assertNotIn("ModuleNotFoundError", result.stderr)
+
+    def test_standalone_copied_script_exits_with_clear_diagnostic(self):
+        script = Path(__file__).resolve().parents[1] / "scripts" / "reset_credentials.py"
+        with tempfile.TemporaryDirectory() as directory:
+            detached = Path(directory) / "scripts" / script.name
+            detached.parent.mkdir()
+            shutil.copyfile(script, detached)
+            result = subprocess.run(
+                [sys.executable, "-I", str(detached), "--help"],
+                cwd=directory, capture_output=True, text=True,
+                timeout=30, check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("complete GUI repository checkout", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
 
 if __name__ == "__main__":
