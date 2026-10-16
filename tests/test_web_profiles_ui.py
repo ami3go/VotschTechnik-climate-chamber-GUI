@@ -161,4 +161,5 @@ async def test_operator_runs_saved_revision_and_stops_it(
     assert runner.state.value == "CANCELLED"
     await user.should_see("STOP requested", retries=50)
     await user.should_see("CANCELLED", retries=50)
+    await user.should_see("request STOP reconciliation in Admin", retries=50)
     get_profile_editor_service.cache_clear()
