@@ -319,7 +319,12 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(self.backend._running)
         self.runner.advance()
         self.assertEqual(self.runner.state, RunState.DWELLING)
-        self.clock.advance(6)
+        # Qualification requires continuous samples with gaps <= max_gap_s (5 s).
+        # A single 6-second leap correctly resets dwell instead of completing it.
+        self.clock.advance(3)
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.DWELLING)
+        self.clock.advance(3)
         self.runner.advance()
         self.terminal(RunState.COMPLETED)
         self.assertFalse(self.backend._running)
