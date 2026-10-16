@@ -531,6 +531,43 @@ def admin_page() -> None:
         if pin_account.value.casefold() == actor.username.casefold():
             logout()
 
+    async def update_admin_password() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        if new_password.value != repeat_password.value:
+            ui.notify("New passwords do not match.", color="negative")
+            return
+        try:
+            session, csrf = active_tokens()
+            await asyncio.to_thread(
+                get_security().change_password, session, csrf,
+                old_password.value, new_password.value)
+        except (AuthenticationError, AuthorizationError, ValueError):
+            ui.notify("Password change denied. Verify the current password "
+                      "and password length.", color="negative")
+            return
+        old_password.value = ""
+        new_password.value = ""
+        repeat_password.value = ""
+        ui.notify("Administrator password changed. Sign in again.", color="positive")
+        logout()
+
+    async def update_admin_username() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        try:
+            session, csrf = active_tokens()
+            await asyncio.to_thread(
+                get_security().change_admin_username, session, csrf,
+                rename_password.value, new_username.value)
+        except (AuthenticationError, AuthorizationError, ValueError):
+            ui.notify("Account rename denied. Verify password and username.",
+                      color="negative")
+            return
+        rename_password.value = ""
+        ui.notify("Administrator account renamed. Sign in again.", color="positive")
+        logout()
+
     async def apply_security_profile() -> None:
         if not require_authenticated_page(touch=False):
             return
@@ -621,6 +658,44 @@ def admin_page() -> None:
                                           "color=deep-orange")
 
                 if actor.role is Role.ADMIN:
+                    with ui.column().classes("panel gap-3"):
+                        _panel_title("manage_accounts", "Administrator Credentials")
+                        ui.label(
+                            "Factory setup uses admin / admin and PIN 12345678. "
+                            "Change both before LAN use. Changes are permanent, "
+                            "hashed in the security database, and revoke active sessions."
+                        ).classes("text-sm text-orange-9")
+                        weak_pw, weak_pin = get_security().factory_credentials_active()
+                        if weak_pw or weak_pin:
+                            ui.label("Factory password or PIN is still active.").classes(
+                                "text-negative font-bold")
+                        old_password = ui.input(
+                            "Current administrator password", password=True).props(
+                                "autocomplete=current-password").classes("w-full")
+                        new_password = ui.input(
+                            "New administrator password (12+ bytes)",
+                            password=True).props(
+                                "autocomplete=new-password").classes("w-full")
+                        repeat_password = ui.input(
+                            "Repeat new administrator password", password=True).props(
+                                "autocomplete=new-password").classes("w-full")
+                        ui.button("Change password", icon="lock_reset",
+                                  on_click=update_admin_password).props(
+                                      "outline no-caps")
+                        new_username = ui.input(
+                            "New administrator username", value=actor.username).classes(
+                                "w-full")
+                        rename_password = ui.input(
+                            "Current password to rename administrator",
+                            password=True).props(
+                                "autocomplete=current-password").classes("w-full")
+                        ui.button("Change username", icon="person",
+                                  on_click=update_admin_username).props(
+                                      "outline no-caps")
+                        ui.label(
+                            "To change the PIN, use Enroll account PIN below. "
+                            "Each credential change requires administrator authentication."
+                        ).classes("text-xs")
                     with ui.column().classes("panel gap-3"):
                         _panel_title("security", "Security Profiles")
                         ui.label(
