@@ -40,6 +40,7 @@ async def test_dashboard_starts_saved_revision_shares_state_and_stops(
 
     editor = profiles_page.get_profile_editor_service()
     draft = editor.set_metadata(editor.new_draft(), "name", "Dashboard run profile")
+    draft = editor.edit_step(draft, 0, "target_temperature_c", "85")
     draft = editor.edit_step(draft, 0, "dwell_s", "0")
     saved = editor.save(draft)
 
