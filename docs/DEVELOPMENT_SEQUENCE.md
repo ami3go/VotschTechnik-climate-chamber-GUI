@@ -10,7 +10,7 @@ Status: **ACTIVE / SOFTWARE INTEGRATED, PHYSICAL NO-GO** (updated 2026-10-13; PR
 - Server owns chamber state and profile execution independently of browser clients. Exactly one command owner per chamber and single authoritative server process; operator ownership does not obstruct an authorized STOP.
 - NO physical-device release until the actual B1–B4 findings in [READINESS_FINDINGS.md](READINESS_FINDINGS.md), approved site safety policy and chamber-in-the-loop (HIL) gate are closed. D01 driver fixes are merged/pinned but **not** physically certified.
 - Local physical emergency stop/manufacturer protections remain necessary. Web STOP is an attempted control command, not a certified emergency stop. A disconnected chamber cannot be asserted stopped.
-- Keep legacy Tkinter and historical releases usable until an explicitly approved cutover. Do not merge unreleased simulated/frozen builds as evidence of HIL certification.
+- The retired desktop GUI source, build outputs, and executable are preserved in Git history, not in the active tree. Existing field deployments must remain recoverable until an explicitly approved R01 cutover. Removing obsolete repository files is not HIL, W02, or production-release approval.
 
 ## Workstreams and prerequisites
 
@@ -155,7 +155,7 @@ The canonical reviewed issue IDs, owners, status and closure evidence are in [RE
 
 - **GO now:** G02-B UI completion, G03 storage/editor, W01-A simulator freeze delivered (W02 pending), G04-A merged mock-only controller, G08-min security and subsequent mocked G06/G07. D01 and G01 software foundations are already merged; do not reopen duplicate foundation implementation.
 - **CONDITIONAL GO:** any Vötsch real chamber command requires D01 merged/pinned, G08-min passed, signed STOP policy, certified identity/envelope and controller ownership; additional vendor control requires its own reviewed maintained driver, new adapter and separate HIL signoff, never bypassing the generic `ChamberBackend` port.
-- **NO-GO:** enabling hardware gradients until site HIL proves ranges/units/readback; any live hardware mutation without G04/G08-min/site STOP policy; physical-control release while B1–B4 or H01 is open; LAN mutation before full G08; legacy retirement before H01 and W02.
+- **NO-GO:** enabling hardware gradients until site HIL proves ranges/units/readback; any live hardware mutation without G04/G08-min/site STOP policy; physical-control release while B1–B4 or H01 is open; LAN mutation before full G08; decommissioning deployed legacy installations before H01 and W02.
 
 ## Far-future multi-chamber roadmap (not part of initial implementation)
 

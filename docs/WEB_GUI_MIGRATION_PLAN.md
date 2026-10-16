@@ -2,7 +2,7 @@
 
 Status: **ACTIVE SPECIFICATION / PARTIALLY IMPLEMENTED** (GUI `main` `ef473e1`, driver `main` `9323e37`, verified 2026-10-12). D01 driver transport, G01 backend foundation, P00 software contracts and G03 CSV/ZIP core have merged. The web GUI is still a demo without production control/persistence/authentication/runner; physical release remains **NO-GO** pending site signoff, HIL and offline gates. Current phase statuses and proposed PR sequence: [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md); findings: [READINESS_FINDINGS.md](READINESS_FINDINGS.md).
 Repositories reviewed: [GUI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI) main and [Python driver](https://github.com/ami3go/VotschTechnik-climate-chamber-Python) main (2026-10-12).
-Owner decision: The NiceGUI web application replaces Tkinter. Desktop GUI support will be discontinued after web acceptance.
+Owner decision: The NiceGUI web application replaces Tkinter. The obsolete desktop source, old PyInstaller spec and artifacts were removed from the active source tree in October 2026; historical versions remain recoverable in Git history. Removing these files is **not** production/HIL/W02 release approval or permission to decommission existing field installations.
 
 ## 1. Goals, boundaries, and non-goals
 
@@ -37,7 +37,7 @@ Non-goals for initial release: browser-to-chamber protocol, firmware programming
 - `stop_chamber` (~606–619): calls `tcam.stop()` twice.
 - `read_temperature` (~621–650): worker thread mutates Tkinter variables and plots via a 0.5-second loop; raw points retained at most 10,000 in memory with no durable recording or measurement-quality indicator.
 - The original desktop README listed table/CSV profiles as future work; the current NiceGUI tree now has CI and CSV/ZIP profile-core tests but still lacks a persistent editor and server-runner.
-- PyInstaller .spec, build outputs and .exe are tracked. No desktop maintenance after the defined web cutover.
+- The old desktop PyInstaller `.spec`, tracked build outputs, and `.exe` have been removed from the active tree. They remain accessible through Git history as historical migration evidence; active packaging uses only the NiceGUI Windows launcher/server scripts.
 
 ### Python driver repository
 - Installable `VotschTechnikClimateChamber`, version 0.2.0; it is a separate dependency and the sole device protocol owner.

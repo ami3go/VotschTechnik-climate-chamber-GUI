@@ -1,14 +1,18 @@
-
+# Python
 *.pyc
-/Archive
-.idea/vcs.xml
-
-# Python web application
 __pycache__/
 .venv/
 .pytest_cache/
 .coverage
 *.egg-info/
 
-# Locally generated Windows/offline artifacts
+# Editor-local configuration
+.idea/
+
+# Generated build/release artifacts, never source-controlled
+/build/
+/dist/
 *.zip
+
+# Retired standalone desktop prototypes
+/Archive/
