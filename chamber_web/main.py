@@ -35,8 +35,14 @@ from .model import MAX_TEMP, MIN_TEMP
 # Physical I/O only via an explicit, complete launch-time HIL authorization.
 _HIL = hil_authorization_from_env(os.environ)
 check_hil_deployment(_HIL, deployment_policy, os.environ)
+_security = get_security()
+# Published factory credentials must not authorize physical chamber operation.
+if _HIL is not None and any(_security.factory_credentials_active()):
+    raise RuntimeError(
+        "Physical HIL requires changing both factory credentials in Admin "
+        "under local simulation before hardware authorization")
 _dashboard_service, _manual_service = create_demo_control_services(
-    get_security(), _HIL, simulated_slew_c_per_s=0.25,
+    _security, _HIL, simulated_slew_c_per_s=0.25,
 )
 _MODE = "Simulation" if _HIL is None else "Physical HIL"
 
