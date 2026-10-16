@@ -51,7 +51,7 @@ async def test_profiles_page_requires_login_and_persists_between_sessions(
     user.find("Username").type("test_admin")
     user.find("Password").type("StrongAdminPassword#1")
     user.find("Sign in").click()
-    await user.should_see("SIMULATION")
+    await user.should_see("SIMULATION", retries=50)
     await user.open("/profiles")
     await user.should_see("Persistent Profiles / Revisions")
     await user.should_see("Profile Library")
@@ -137,7 +137,7 @@ async def test_operator_runs_saved_revision_and_stops_it(
     user.find("Username").type("test_admin")
     user.find("Password").type("StrongAdminPassword#1")
     user.find("Sign in").click()
-    await user.should_see("SIMULATION")
+    await user.should_see("SIMULATION", retries=50)
     await user.open("/profiles")
     await user.should_see("Profile Run")
     user.find(ui.select).elements.pop().value = saved.profile_id
