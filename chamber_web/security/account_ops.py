@@ -106,10 +106,15 @@ class AccountOperations:
             db.close()
 
     def recover_admin_offline(self, token: str, username: str,
-                              new_password: str) -> None:
-        """ONLY from interactive trusted host CLI; not an HTTP/WS route."""
-        from .auth import (AuthenticationError, Actor, Role, _digest,
-                           _hash_password, _password_bytes)
+                              new_password: str, *,
+                              reset_credentials: bool = False) -> None:
+        """Local recovery; optionally clear PIN and restore password login.
+
+        The CLI must authenticate the administrator before calling this.
+        The transaction preserves the audit chain and all unrelated data.
+        """
+        from .auth import (AuthenticationError, Actor, Role, SecurityProfile,
+                           _digest, _hash_password, _password_bytes)
         if not isinstance(token, str) or not 32 <= len(token) <= 256:
             raise AuthenticationError("Invalid recovery credential")
         pw = _hash_password(_password_bytes(
@@ -131,12 +136,23 @@ class AccountOperations:
             db.execute("DELETE FROM recovery_tokens")
             db.execute("UPDATE users SET password_hash=? WHERE id=?",
                        (pw, user[0]))
-            db.execute("UPDATE sessions SET revoked=1 WHERE user_id=?",
-                       (user[0],))
+            if reset_credentials:
+                # A recovered password alone cannot log in to PIN-only mode.
+                # Restore password sign-in and revoke ALL previously issued
+                # sessions to fence the global security-profile transition.
+                db.execute("UPDATE users SET pin_hash=NULL WHERE id=?",
+                           (user[0],))
+                db.execute("UPDATE security_policy SET profile=? WHERE id=1",
+                           (SecurityProfile.GENERAL.value,))
+                db.execute("UPDATE sessions SET revoked=1")
+            else:
+                db.execute("UPDATE sessions SET revoked=1 WHERE user_id=?",
+                           (user[0],))
             db.execute("DELETE FROM login_failures WHERE username=?",
                        (username,))
             self._audit(db, Actor(user[0], user[1], Role.ADMIN),
-                        "recovery.use", "SUCCESS")
+                        "recovery.credentials.reset" if reset_credentials
+                        else "recovery.use", "SUCCESS")
             db.commit()
         except BaseException:
             db.rollback()
