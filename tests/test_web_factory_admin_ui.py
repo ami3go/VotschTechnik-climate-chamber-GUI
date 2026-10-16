@@ -54,3 +54,32 @@ async def test_factory_admin_login_change_password_and_relogin(
     user.find("Sign in").click()
     await user.should_see("Signed in: admin (ADMIN)")
     assert store.factory_credentials_active() == (False, True)
+
+
+def test_first_nicegui_get_security_seeds_local_admin_and_rejects_lan_factory(
+    monkeypatch, tmp_path,
+) -> None:
+    from types import SimpleNamespace
+    from chamber_web.security import nicegui as security_ui
+    from chamber_web.security.auth import SecurityStore
+
+    root = tmp_path / "fresh"
+    monkeypatch.setattr(security_ui, "_store", None)
+    monkeypatch.setattr(security_ui, "security_directory", lambda: root)
+    monkeypatch.setattr(security_ui, "deployment_policy",
+                        SimpleNamespace(is_lan=True))
+    with pytest.raises(RuntimeError, match="Factory administrator"):
+        security_ui.get_security()
+    local = SecurityStore(root)
+    assert local.is_bootstrapped()
+    assert local.factory_credentials_active() == (True, True)
+    session = local.login("admin", "admin")
+    local.change_password(session.session, session.csrf, "admin",
+                          "ApprovedLocalPassword#123")
+    session = local.login("admin", "ApprovedLocalPassword#123")
+    local.configure_user_pin(session.session, session.csrf,
+                             "ApprovedLocalPassword#123", "admin", "86420975")
+    assert local.factory_credentials_active() == (False, False)
+    recovered = security_ui.get_security()
+    assert recovered.is_bootstrapped()
+    assert recovered.login("admin", "ApprovedLocalPassword#123").session
