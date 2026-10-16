@@ -192,6 +192,9 @@ def dashboard() -> None:
             capability_detail_label.set_text(
                 "Viewer access is read only — chamber commands are disabled")
 
+    from .pages.dashboard_profiles import DashboardProfileUI
+    profile_ui = DashboardProfileUI()
+
     with ui.row().classes("app-shell no-wrap"):
         with ui.column().classes("sidebar gap-1"):
             render_navigation("/")
@@ -268,6 +271,8 @@ def dashboard() -> None:
                                     ui.button("Fill target", icon="edit",
                                               on_click=use_suggestion).props(
                                                   "outline no-caps").classes("control-button")
+                                # Saved profiles: same service/runner as /profiles.
+                                profile_ui.render_controls()
                                 with ui.column().classes("gap-0"):
                                     ui.label("Simulated capability range (not site-certified)" if _HIL is None
                                              else "HIL software envelope (not site-certified)").classes(
@@ -288,9 +293,7 @@ def dashboard() -> None:
 
 
                     with ui.column().classes("panel"):
-                        # This is the same service/runner used by /profiles.
-                        from .pages.dashboard_profiles import render_dashboard_profile_card
-                        render_dashboard_profile_card()
+                        profile_ui.render_card()
 
                 with ui.column().classes("panel chart-panel"):
                     with ui.row().classes("panel-head"):
@@ -421,6 +424,7 @@ def dashboard() -> None:
     ui.timer(1.0, refresh_manual, immediate=False)
     refresh()
     refresh_manual()
+    profile_ui.start()
 
 
 @ui.page("/admin")

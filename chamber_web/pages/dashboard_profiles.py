@@ -10,22 +10,38 @@ import asyncio
 
 from nicegui import ui
 
-from chamber_web.domain.chamber import ChamberSafetyError
-from chamber_web.persistence.profiles import (
-    ProfileNotFoundError, ProfileRevision, ProfileSchemaError,
-)
-from chamber_web.security.auth import AuthenticationError, AuthorizationError
-from chamber_web.security.guards import Permission
-from chamber_web.security.nicegui import (
-    active_tokens, require_authenticated_page, require_browser_permission,
-)
-from chamber_web.services.profile_execution import RunView
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chamber_web.persistence.profiles import ProfileRevision
+    from chamber_web.services.profile_execution import RunView
 
 
-def render_dashboard_profile_card() -> None:
-    """Render controls and a read-only step preview for persisted revisions."""
+class DashboardProfileUI:
+    """Saved-profile controls (Chamber Control) and run status (Active Profile).
+
+    Both parts share one selection and one refresh timer. Call
+    ``render_controls()`` and ``render_card()`` inside their dashboard cards,
+    then ``start()`` once both exist.
+    """
+
+    def __init__(self) -> None:
+        self.render_controls, self.render_card, self.start = _build()
+
+
+def _build():
+    # Resolve the session/authority modules at page build, never at import:
+    # a module-level binding could outlive a reloaded composition root and
+    # check sessions against a stale SecurityStore (redirect loop to /login).
+    from chamber_web.domain.chamber import ChamberSafetyError
     from chamber_web.pages.profiles import (
         get_profile_editor_service, get_profile_execution_service,
+    )
+    from chamber_web.persistence.profiles import ProfileNotFoundError, ProfileSchemaError
+    from chamber_web.security.auth import AuthenticationError, AuthorizationError
+    from chamber_web.security.guards import Permission
+    from chamber_web.security.nicegui import (
+        active_tokens, require_authenticated_page, require_browser_permission,
     )
 
     editor = get_profile_editor_service()
@@ -250,53 +266,77 @@ def render_dashboard_profile_card() -> None:
             step_overview.refresh()
 
     current_view: RunView | None = None
-    with ui.row().classes("panel-head"):
-        with ui.row().classes("items-center gap-2"):
-            ui.icon("description", color="blue-grey-10").classes("text-2xl")
-            ui.label("Active Profile").classes("panel-heading")
-        with ui.row().classes("items-center gap-2"):
-            step_label = ui.label("Step —").classes("text-xs")
-            progress = ui.linear_progress(value=0, color="blue",
-                                          show_value=False).style("width:100px")
-            progress_label = ui.label("0%").classes("text-xs")
-    with ui.column().classes("w-full gap-2"):
-        with ui.row().classes("items-center gap-2 w-full"):
+    profile_select = reload_button = library_info = None
+    run_button = pause_button = resume_button = stop_button = None
+    status_label = details_label = mode_label = None
+    step_label = progress = progress_label = active_name = None
+    run_timer = None
+
+    def render_controls() -> None:
+        """Chamber Control section: choose a saved profile and run it."""
+        nonlocal profile_select, reload_button, library_info, run_button
+        nonlocal pause_button, resume_button, stop_button, status_label
+        nonlocal details_label, mode_label
+        ui.label("Profile").classes("section-title")
+        with ui.row().classes("control-row"):
             profile_select = ui.select(
                 {}, label="Saved profile", with_input=True,
                 on_change=lambda event: selection_changed(event.value),
-            ).props("outlined dense").classes("flex-grow")
+            ).props("outlined dense").classes("control-field")
             reload_button = ui.button(
                 "Reload", icon="refresh",
                 on_click=lambda: (refresh_library(),
                                   selection_changed(profile_select.value)),
-            ).props("outline no-caps")
+            ).props("outline no-caps").classes("control-button")
         library_info = ui.label("").classes("text-xs text-grey-7")
-        with ui.row().classes("gap-2 flex-wrap"):
+        with ui.row().classes("control-row wrap"):
             run_button = ui.button(
                 "Run Profile", icon="play_arrow",
                 on_click=lambda: run_action("start"),
-            ).props("no-caps").disable()
+            ).props("unelevated color=primary no-caps").classes(
+                "control-button").disable()
             pause_button = ui.button(
                 "Pause", icon="pause",
                 on_click=lambda: run_action("pause"),
-            ).props("outline no-caps").disable()
+            ).props("outline no-caps").classes("control-button").disable()
             resume_button = ui.button(
                 "Resume", icon="play_circle",
                 on_click=lambda: run_action("resume"),
-            ).props("outline no-caps").disable()
+            ).props("outline no-caps").classes("control-button").disable()
             stop_button = ui.button(
                 "Stop Run", icon="stop",
                 on_click=lambda: run_action("stop"),
-            ).props("no-caps color=negative").disable()
-        active_name = ui.label("Select a saved profile").classes("font-bold")
+            ).props("unelevated color=deep-orange no-caps").classes(
+                "control-button").disable()
         status_label = ui.label("").classes("text-sm")
         details_label = ui.label("").classes("text-xs text-grey-7")
         mode_label = ui.label("").classes("text-xs text-orange-9")
-        ui.label(
-            "Run uses the selected immutable revision. Closing the browser does not "
-            "stop the server run. STOP is not a hardware emergency stop."
-        ).classes("text-xs text-grey-7")
-        step_overview()
-    run_timer = ui.timer(1.0, refresh_run, immediate=False)
-    refresh_library()
-    refresh_run()
+
+    def render_card() -> None:
+        """Active Profile card: progress and read-only step preview."""
+        nonlocal step_label, progress, progress_label, active_name
+        with ui.row().classes("panel-head"):
+            with ui.row().classes("items-center gap-2"):
+                ui.icon("description", color="blue-grey-10").classes("text-2xl")
+                ui.label("Active Profile").classes("panel-heading")
+            with ui.row().classes("items-center gap-2"):
+                step_label = ui.label("Step —").classes("text-xs")
+                progress = ui.linear_progress(value=0, color="blue",
+                                              show_value=False).style("width:100px")
+                progress_label = ui.label("0%").classes("text-xs")
+        with ui.column().classes("w-full gap-2"):
+            active_name = ui.label("Select a saved profile").classes("font-bold")
+            ui.label(
+                "Choose and run profiles in Chamber Control. Runs use the selected "
+                "immutable revision; closing the browser does not stop the server "
+                "run. STOP is not a hardware emergency stop."
+            ).classes("text-xs text-grey-7")
+            step_overview()
+
+    def start() -> None:
+        nonlocal run_timer
+        run_timer = ui.timer(1.0, refresh_run, immediate=False)
+        refresh_library()
+        refresh_run()
+
+    return render_controls, render_card, start
