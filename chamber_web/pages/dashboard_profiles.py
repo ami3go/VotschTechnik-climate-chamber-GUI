@@ -22,11 +22,11 @@ class DashboardProfileUI:
 
     Both parts share one selection and one refresh timer. Call
     ``render_controls()`` and ``render_card()`` inside their dashboard cards,
-    then ``start()`` once both exist.
+    then ``begin_refresh()`` once both exist.
     """
 
     def __init__(self) -> None:
-        self.render_controls, self.render_card, self.start = _build()
+        self.render_controls, self.render_card, self.begin_refresh = _build()
 
 
 def _build():
@@ -333,10 +333,10 @@ def _build():
             ).classes("text-xs text-grey-7")
             step_overview()
 
-    def start() -> None:
+    def begin_refresh() -> None:
         nonlocal run_timer
         run_timer = ui.timer(1.0, refresh_run, immediate=False)
         refresh_library()
         refresh_run()
 
-    return render_controls, render_card, start
+    return render_controls, render_card, begin_refresh

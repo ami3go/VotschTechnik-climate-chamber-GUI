@@ -424,7 +424,7 @@ def dashboard() -> None:
     ui.timer(1.0, refresh_manual, immediate=False)
     refresh()
     refresh_manual()
-    profile_ui.start()
+    profile_ui.begin_refresh()
 
 
 @ui.page("/admin")
