@@ -8,8 +8,10 @@ The new browser-based interface is being developed in `chamber_web/`, based on t
 
 ## Offline administrator credential reset
 
-From a trusted local terminal, run `python -m scripts.reset_credentials` inside
-the installed Python environment, or
+From the **complete GUI repository checkout**, use the installed Python
+environment to run `python -m scripts.reset_credentials` or execute
+`python scripts/reset_credentials.py` directly. Running a standalone
+copy without the `chamber_web/` directory is not supported. Alternatively use
 `server/ClimateChamberServer.exe --reset-credentials` in a frozen Windows
 distribution. The prompt accepts the existing administrator password **or**
 a previously escrowed one-time recovery token. It resets the password,
