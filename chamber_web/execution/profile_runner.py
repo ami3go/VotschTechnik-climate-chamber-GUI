@@ -694,7 +694,7 @@ class ProfileRunner:
             self._last_good = self._stable_from = None
             self._stable_count = 0
             self._dwell_elapsed = 0.0
-            self._transition(RunState.PAUSED, "Logical pause; chamber remains RUNNING")
+            self._transition(RunState.PAUSED, "Logical pause; chamber retains commanded run state")
 
     async def pause_async(self, chamber_id: str) -> None:
         await asyncio.to_thread(self.pause, chamber_id)
@@ -704,7 +704,9 @@ class ProfileRunner:
         with self._mutex:
             if self._state is not RunState.PAUSED:
                 raise ChamberSafetyError("Run is not paused")
-            self._healthy(running=True)
+            # OFF/UNCHANGED steps may be paused while the chamber is STOPPED.
+            # Verify the commanded state instead of unconditionally demanding RUNNING.
+            self._healthy(running=self._profile_running)
             self._reach_deadline = min(
                 self._step_deadline, self._now() +
                 self._duration(self._step().reach_timeout_s, "reach", positive=True),

@@ -33,7 +33,7 @@ G04 currently has no verified gradient **readback/set/restore-baseline** API. Th
 | STABILIZING | Eligible first sample recorded; require second distinct sample and continuous in-band window | DWELLING, REACHING (excursion), STOP_REQUESTED |
 | DWELLING | Credit only consecutive eligible observation brackets | TRANSITIONING, REACHING (excursion or gap), STOP_REQUESTED |
 | TRANSITIONING | Previous step qualified; pending next setpoint | REACHING, STOP_REQUESTED |
-| PAUSED | **Logical observation pause only**; hardware remains RUNNING and retains setpoint | REACHING (resume), STOP_REQUESTED |
+| PAUSED | **Logical observation pause only**; simulator retains the step's commanded RUNNING/STOPPED state and setpoint | REACHING (resume), STOP_REQUESTED |
 | STOP_REQUESTED | G04 STOP intent fenced; async serialized STOP + authoritative readback pending | COMPLETED, CANCELLED, FAULT (only when STOP verified), UNKNOWN |
 | COMPLETED/CANCELLED/FAULT | Terminal only after fresh G04 VERIFIED_STOPPED; controller STOP latch **remains set** | none; later start requires separate explicit reconciliation |
 | UNKNOWN | STOP, controller generation/identity/quality, recording or operator lease cannot be verified | none; local/operator reconciliation mandatory |
