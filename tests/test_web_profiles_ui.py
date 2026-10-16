@@ -27,6 +27,19 @@ from nicegui.testing import User
 
 from chamber_web.security.auth import Role, SecurityStore
 
+@pytest.fixture(autouse=True)
+def _isolate_server_profile_service(monkeypatch):
+    """An in-process test swaps SecurityStore; production never does this.
+
+    Dashboard now initializes the shared runner host at login, so each test
+    must discard the previous test's server-owner security binding.
+    """
+    from chamber_web.pages import profiles as profile_pages
+    monkeypatch.setattr(profile_pages, "_execution_service", None)
+    profile_pages.get_profile_editor_service.cache_clear()
+
+
+
 
 async def test_profiles_page_requires_login_and_persists_between_sessions(
     create_user: Callable[[], User], monkeypatch, tmp_path,
