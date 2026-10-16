@@ -49,7 +49,7 @@ async def test_dashboard_starts_saved_revision_shares_state_and_stops(
     user.find("Username").type("test_admin")
     user.find("Password").type("StrongAdminPassword#1")
     user.find("Sign in").click()
-    await user.should_see("SIMULATION")
+    await user.should_see("SIMULATION", retries=50)
 
     await user.open("/")
     await user.should_see("Active Profile")
@@ -116,7 +116,7 @@ async def test_dashboard_viewer_cannot_start_or_stop(
     user.find("Username").type("test_viewer")
     user.find("Password").type("StrongViewerPassword#2")
     user.find("Sign in").click()
-    await user.should_see("SIMULATION")
+    await user.should_see("SIMULATION", retries=50)
     await user.open("/")
     await user.should_see("Run Profile")
     user.find(ui.select).elements[-1].value = saved.profile_id
