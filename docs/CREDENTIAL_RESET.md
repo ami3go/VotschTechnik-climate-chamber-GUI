@@ -34,6 +34,25 @@ From a source checkout with the existing Python environment:
 .venv/bin/python -m scripts.reset_credentials
 ~~~
 
+Alternatively, run the script directly from the complete checkout:
+
+~~~powershell
+# Windows (repository root)
+.venv\Scripts\python.exe scripts\reset_credentials.py
+~~~
+
+~~~bash
+# Linux (repository root)
+.venv/bin/python scripts/reset_credentials.py
+~~~
+
+Direct execution also works from a different working directory when the
+full path to `scripts/reset_credentials.py` is given. The script resolves
+`chamber_web` from its own checked-out repository, not the current directory
+or `PYTHONPATH`. **Do not copy only the script** to another folder: the
+complete GUI repository, installed dependencies and existing security
+database are required.
+
 The source script supports `--data-dir <existing-security-directory>`.
 
 For a frozen Windows offline distribution, no Python install is necessary:
