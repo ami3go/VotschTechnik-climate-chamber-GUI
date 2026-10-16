@@ -6,6 +6,19 @@ The new browser-based interface is being developed in `chamber_web/`, based on t
 
 **Safety:** The web scaffold is a DEMO only. It does not communicate with chamber hardware. Real device control will use the separate [Python driver](https://github.com/ami3go/VotschTechnik-climate-chamber-Python) in a later, tested integration. See [web setup and current limitations](README_WEB.md) and the [migration plan](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/3).
 
+## Offline administrator credential reset
+
+From a trusted local terminal, run `python -m scripts.reset_credentials` inside
+the installed Python environment, or
+`server/ClimateChamberServer.exe --reset-credentials` in a frozen Windows
+distribution. The prompt accepts the existing administrator password **or**
+a previously escrowed one-time recovery token. It resets the password,
+clears the administrator PIN, switches to General login, and revokes all
+sessions without deleting operator accounts or run data.
+
+See [offline credential reset and recovery](docs/CREDENTIAL_RESET.md).
+Neither an unauthenticated reset nor browser-based recovery is supported.
+
 ## Cross-platform Python setup (Windows/Linux)
 
 Install Python 3.10+ (CI-tested on 3.10 and 3.12) and Git. From a repository checkout, run:

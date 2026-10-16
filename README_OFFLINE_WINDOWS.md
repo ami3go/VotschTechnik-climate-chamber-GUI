@@ -96,6 +96,17 @@ checks loopback UI availability. This proves a connected Windows-runner
 prototype, **not** a clean disconnected VM. A passing unit test does not
 certify offline network independence, physical controls or released software.
 
+## Administrator password / PIN reset
+
+From a trusted **local interactive** PowerShell terminal in the extracted
+distribution, run `server/ClimateChamberServer.exe --reset-credentials`.
+You must know the existing administrator primary password or hold a valid
+one-time offline recovery token. The command restores General password
+login, removes the administrator PIN and revokes all sessions while
+preserving user and run data. It does **not** stop chamber hardware.
+See [credential-reset procedures](docs/CREDENTIAL_RESET.md) in the source
+repository. Never delete the security database/keys to bypass login.
+
 ## Required before W02 or real hardware
 
 - Generate a fully hash-locked, reviewed **transitive** wheel closure with
