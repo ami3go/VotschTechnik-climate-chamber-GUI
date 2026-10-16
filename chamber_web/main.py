@@ -3,7 +3,7 @@
 G05 exposes server-authorized manual control of one FakeBackend by default, or
 of ONE supervised physical Vötsch chamber when the server is launched with a
 complete CHAMBER_HIL_* authorization (loopback deployment only).
-G03-C provides persistent profile editing in /profiles; Dashboard preview is non-executable.
+G03-C stores immutable profiles in /profiles; Dashboard runs saved revisions through G06/G08.
 """
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import asyncio
 import os
 
 from datetime import datetime, timedelta
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from .security.paths import configure_nicegui_storage
@@ -29,32 +28,7 @@ from .ui_pages import (NavigationContext, install_navigation_resolver,
                        register_pages, render_navigation)
 from .ui_state import project_capabilities, project_telemetry, safe_view
 
-from .model import (
-    MAX_TEMP, MIN_TEMP, Step, default_steps,
-)
-
-
-@dataclass
-class ProfileDraft:
-    """Non-executable Dashboard preview; editing lives under G03-C."""
-    profile_name: str = "Temperature Cycle – Automotive"
-    steps: list[Step] = field(default_factory=default_steps)
-    logs: list[dict] = field(default_factory=list)
-    run_steps: list[Step] = field(default_factory=list)
-    step_index: int = 0
-    completed: bool = False
-
-    @property
-    def active_steps(self) -> list[Step]:
-        return self.steps
-
-    def log(self, message: str) -> None:
-        self.logs.insert(0, {
-            "id": str(datetime.now().timestamp()),
-            "time": datetime.now().strftime("%H:%M:%S"),
-            "level": "DRAFT", "message": message,
-        })
-        del self.logs[40:]
+from .model import MAX_TEMP, MIN_TEMP
 
 
 # One process-level device service, independent of any client/browser lifecycle.
@@ -129,8 +103,6 @@ def dashboard() -> None:
     if not require_authenticated_page():
         return
     service = get_dashboard_service()
-    # Local drafts are not executable runs or chamber state.
-    state = ProfileDraft()
 
     def scroll_to(section: str) -> None:
         # Section names are fixed in this module, never user-controlled.
@@ -316,43 +288,9 @@ def dashboard() -> None:
 
 
                     with ui.column().classes("panel"):
-                        with ui.row().classes("panel-head"):
-                            _panel_title("description", "Active Profile")
-                            with ui.row().classes("items-center gap-2"):
-                                step_indicator = ui.label("Step —").classes("text-xs")
-                                progress = ui.linear_progress(value=0, color="blue",
-                                                              show_value=False).style("width:100px")
-                                progress_label = ui.label("0%").classes("text-xs")
-                        with ui.column().classes("profile-intro gap-1"):
-                            active_name = ui.label("Profile: " + state.profile_name).classes("font-bold")
-                            elapsed_label = ui.label("Execution unavailable (G06)")
-                            ui.label("Draft preview only · no server-side profile runner").classes("text-xs")
-
-                        @ui.refreshable
-                        def step_overview():
-                            with ui.column().classes("w-full gap-0"):
-                                with ui.element("div").classes("profile-row header"):
-                                    for heading in ("#", "Step", "Target", "Dwell", "Status"):
-                                        ui.label(heading)
-                                for index, step in enumerate(state.active_steps):
-                                    css = "profile-row"
-                                    if state.run_steps and index == state.step_index:
-                                        css += " active-step"
-                                    with ui.element("div").classes(css):
-                                        ui.label(str(index + 1))
-                                        ui.label(step.description)
-                                        ui.label(f"{step.target:g} °C")
-                                        ui.label(f"{step.dwell // 60} min")
-                                        if not step.enabled:
-                                            message = "Skipped"
-                                        elif state.run_steps and index < state.step_index:
-                                            message = "✓ Done"
-                                        elif state.run_steps and index == state.step_index:
-                                            message = state.status
-                                        else:
-                                            message = "○ Pending"
-                                        ui.label(message)
-                        step_overview()
+                        # This is the same service/runner used by /profiles.
+                        from .pages.dashboard_profiles import render_dashboard_profile_card
+                        render_dashboard_profile_card()
 
                 with ui.column().classes("panel chart-panel"):
                     with ui.row().classes("panel-head"):
@@ -432,18 +370,9 @@ def dashboard() -> None:
 
                     with ui.column().classes("panel").props('id="event-log"'):
                         with ui.row().classes("panel-head"):
-                            _panel_title("list_alt", "Draft Events (not device log)")
-                            def clear_log() -> None:
-                                state.logs.clear()
-                                log_table.update_rows([])
-                            ui.button("Clear", icon="delete_outline", on_click=clear_log).props(
-                                "outline no-caps").classes("toolbar-button")
-                        log_table = ui.table(
-                            columns=_columns([("time", "Time"), ("level", "Level"),
-                                              ("message", "Message")]),
-                            rows=list(state.logs), row_key="id", pagination=0).props(
-                                "dense flat hide-bottom separator=horizontal").classes(
-                                    "small-table w-full")
+                            _panel_title("list_alt", "Live Telemetry Notes")
+                        ui.label("For authoritative run events and recordings, use Profiles "
+                                 "and Run History.").classes("text-xs text-grey-7")
 
     def refresh() -> None:
         if not require_authenticated_page(touch=False):
@@ -475,10 +404,6 @@ def dashboard() -> None:
         if view.capabilities:
             chart.options["yAxis"]["min"] = view.capabilities.temperature_min_c - 10
             chart.options["yAxis"]["max"] = view.capabilities.temperature_max_c + 10
-        step_indicator.set_text("Draft")
-        progress.value = 0
-        progress_label.set_text("0%")
-        active_name.set_text("Draft: " + state.profile_name)
         clock_label.set_text(f"Sample: {display.sampled_utc}")
         update_chart()
         try:
@@ -491,7 +416,6 @@ def dashboard() -> None:
             "target": f"{s.target_c:.1f}" if s.target_c is not None else "—",
             "status": "SIMULATED" if identity is None or identity.is_simulation else "PHYSICAL",
         } for index, s in enumerate(recent)])
-        log_table.update_rows(list(state.logs))
 
     ui.timer(1.0, refresh, immediate=False)
     ui.timer(1.0, refresh_manual, immediate=False)
