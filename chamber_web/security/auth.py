@@ -228,7 +228,13 @@ class SecurityStore(AccountOperations):
             # Add a separate salted PIN verifier without modifying legacy password hashes.
             columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
             if "pin_hash" not in columns:
-                db.execute("ALTER TABLE users ADD COLUMN pin_hash TEXT")
+                try:
+                    db.execute("ALTER TABLE users ADD COLUMN pin_hash TEXT")
+                except sqlite3.OperationalError as exc:
+                    # A concurrent first initializer added it between the
+                    # table_info check and this ALTER; the schema is correct.
+                    if "duplicate column name: pin_hash" not in str(exc):
+                        raise
             db.execute("INSERT OR IGNORE INTO security_policy(id,profile)"
                        " VALUES(1,'general')")
             version = db.execute("PRAGMA user_version").fetchone()[0]
