@@ -404,7 +404,7 @@ def profiles_page() -> None:
         if not view.simulation:
             run_mode_label.set_text("Profile execution is disabled in Physical HIL mode")
         elif view.stop_latched:
-            run_mode_label.set_text("STOP latch active · reconcile on the Dashboard first")
+            run_mode_label.set_text("STOP latch active · request STOP reconciliation in Admin → Operator Lease")
         else:
             run_mode_label.set_text(f"Simulation · controller {view.controller_state}")
         if view.state is None:
