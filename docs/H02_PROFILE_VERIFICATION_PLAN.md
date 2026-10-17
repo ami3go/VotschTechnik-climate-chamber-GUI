@@ -17,6 +17,19 @@ G06 ProfileRunner currently rejects non-simulation identity, and remains unchang
 
 No implementation of physical command dispatch is included, by design. This initial foundation is not physical admission; production configuration still does not create a ProfileRunner.
 
+## Branch integration and local verification (2026-10-17)
+
+The H02 branch was integrated with GUI main `1c324af` (factory administrator credentials, PR #49) in merge commit `9f51492`. The only conflict, in `docs/DEVELOPMENT_SEQUENCE.md`, was resolved by keeping both progress entries. The merge does not connect the H02 preflight to production: no composition root creates a ProfileRunner for physical execution.
+
+Local software verification after the merge (Linux, CPython 3.12.15):
+
+- `tests/test_h02_profile_admission.py` + `tests/test_h02_watchdog.py`: 9 tests OK.
+- `tests/test_profile_runner.py` 38 OK, `tests/test_run_recording_integration.py` 4 OK, `tests/test_h01_full_stack.py` 10 OK, `tests/test_h01_simulation.py` 9 OK, `tests/test_w02_release.py` 24 OK.
+- `python -m compileall -q chamber_web main.py scripts/h02_watchdog_command.py` OK; `ruff` clean on the H02 files.
+- `scripts/h02_watchdog_command.py` produced valid PID/timestamped stdout/stderr/JSONL evidence for a clean child exit (exit code 0).
+
+Branch CI (`h02-simulation-ci.yml`, Ubuntu/Windows Python 3.10/3.12 and Chromium) is pending. These are software-only results: physical HIL, H02 site permit and independent review remain ABSENT/BLOCKED, and the physical decision below is unchanged.
+
 ## Required closure phases
 
 | Phase | Gate | State |
@@ -41,7 +54,7 @@ Power interruption, intentional STOP failure, process kill, disconnect and senso
 
 | Area | Result |
 |---|---|
-| Signed H02 validator and watchdog tests | Added; CI result pending |
+| Signed H02 validator and watchdog tests | Added; local Linux 3.12 green 2026-10-17; Windows/Chromium CI pending |
 | Physical execution implementation | NOT IMPLEMENTED; G06 simulation-only |
 | G07 physical composition | NOT IMPLEMENTED |
 | Independent physical watchdog | NOT IMPLEMENTED, blocking |
