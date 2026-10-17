@@ -35,8 +35,14 @@ from .model import MAX_TEMP, MIN_TEMP
 # Physical I/O only via an explicit, complete launch-time HIL authorization.
 _HIL = hil_authorization_from_env(os.environ)
 check_hil_deployment(_HIL, deployment_policy, os.environ)
+_security = get_security()
+# Published factory credentials must not authorize physical chamber operation.
+if _HIL is not None and any(_security.factory_credentials_active()):
+    raise RuntimeError(
+        "Physical HIL requires changing both factory credentials in Admin "
+        "under local simulation before hardware authorization")
 _dashboard_service, _manual_service = create_demo_control_services(
-    get_security(), _HIL, simulated_slew_c_per_s=0.25,
+    _security, _HIL, simulated_slew_c_per_s=0.25,
 )
 _MODE = "Simulation" if _HIL is None else "Physical HIL"
 
@@ -192,6 +198,9 @@ def dashboard() -> None:
             capability_detail_label.set_text(
                 "Viewer access is read only — chamber commands are disabled")
 
+    from .pages.dashboard_profiles import DashboardProfileUI
+    profile_ui = DashboardProfileUI()
+
     with ui.row().classes("app-shell no-wrap"):
         with ui.column().classes("sidebar gap-1"):
             render_navigation("/")
@@ -268,6 +277,8 @@ def dashboard() -> None:
                                     ui.button("Fill target", icon="edit",
                                               on_click=use_suggestion).props(
                                                   "outline no-caps").classes("control-button")
+                                # Saved profiles: same service/runner as /profiles.
+                                profile_ui.render_controls()
                                 with ui.column().classes("gap-0"):
                                     ui.label("Simulated capability range (not site-certified)" if _HIL is None
                                              else "HIL software envelope (not site-certified)").classes(
@@ -288,9 +299,7 @@ def dashboard() -> None:
 
 
                     with ui.column().classes("panel"):
-                        # This is the same service/runner used by /profiles.
-                        from .pages.dashboard_profiles import render_dashboard_profile_card
-                        render_dashboard_profile_card()
+                        profile_ui.render_card()
 
                 with ui.column().classes("panel chart-panel"):
                     with ui.row().classes("panel-head"):
@@ -421,6 +430,7 @@ def dashboard() -> None:
     ui.timer(1.0, refresh_manual, immediate=False)
     refresh()
     refresh_manual()
+    profile_ui.begin_refresh()
 
 
 @ui.page("/admin")
@@ -527,6 +537,43 @@ def admin_page() -> None:
         if pin_account.value.casefold() == actor.username.casefold():
             logout()
 
+    async def update_admin_password() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        if new_password.value != repeat_password.value:
+            ui.notify("New passwords do not match.", color="negative")
+            return
+        try:
+            session, csrf = active_tokens()
+            await asyncio.to_thread(
+                get_security().change_password, session, csrf,
+                old_password.value, new_password.value)
+        except (AuthenticationError, AuthorizationError, ValueError):
+            ui.notify("Password change denied. Verify the current password "
+                      "and password length.", color="negative")
+            return
+        old_password.value = ""
+        new_password.value = ""
+        repeat_password.value = ""
+        ui.notify("Administrator password changed. Sign in again.", color="positive")
+        logout()
+
+    async def update_admin_username() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        try:
+            session, csrf = active_tokens()
+            await asyncio.to_thread(
+                get_security().change_admin_username, session, csrf,
+                rename_password.value, new_username.value)
+        except (AuthenticationError, AuthorizationError, ValueError):
+            ui.notify("Account rename denied. Verify password and username.",
+                      color="negative")
+            return
+        rename_password.value = ""
+        ui.notify("Administrator account renamed. Sign in again.", color="positive")
+        logout()
+
     async def apply_security_profile() -> None:
         if not require_authenticated_page(touch=False):
             return
@@ -617,6 +664,44 @@ def admin_page() -> None:
                                           "color=deep-orange")
 
                 if actor.role is Role.ADMIN:
+                    with ui.column().classes("panel gap-3"):
+                        _panel_title("manage_accounts", "Administrator Credentials")
+                        ui.label(
+                            "Factory setup uses admin / admin and PIN 12345678. "
+                            "Change both before LAN use. Changes are permanent, "
+                            "hashed in the security database, and revoke active sessions."
+                        ).classes("text-sm text-orange-9")
+                        weak_pw, weak_pin = get_security().factory_credentials_active()
+                        if weak_pw or weak_pin:
+                            ui.label("Factory password or PIN is still active.").classes(
+                                "text-negative font-bold")
+                        old_password = ui.input(
+                            "Current administrator password", password=True).props(
+                                "autocomplete=current-password").classes("w-full")
+                        new_password = ui.input(
+                            "New administrator password (12+ bytes)",
+                            password=True).props(
+                                "autocomplete=new-password").classes("w-full")
+                        repeat_password = ui.input(
+                            "Repeat new administrator password", password=True).props(
+                                "autocomplete=new-password").classes("w-full")
+                        ui.button("Change password", icon="lock_reset",
+                                  on_click=update_admin_password).props(
+                                      "outline no-caps")
+                        new_username = ui.input(
+                            "New administrator username", value=actor.username).classes(
+                                "w-full")
+                        rename_password = ui.input(
+                            "Current password to rename administrator",
+                            password=True).props(
+                                "autocomplete=current-password").classes("w-full")
+                        ui.button("Change username", icon="person",
+                                  on_click=update_admin_username).props(
+                                      "outline no-caps")
+                        ui.label(
+                            "To change the PIN, use Enroll account PIN below. "
+                            "Each credential change requires administrator authentication."
+                        ).classes("text-xs")
                     with ui.column().classes("panel gap-3"):
                         _panel_title("security", "Security Profiles")
                         ui.label(

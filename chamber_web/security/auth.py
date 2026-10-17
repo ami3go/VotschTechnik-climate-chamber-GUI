@@ -1,6 +1,6 @@
 """Offline identities, selectable session security policy, durable audit.
 
-No browser-supplied role is trusted. No default account or password exists.
+No browser-supplied role is trusted. Factory credentials are one-time only.
 The SQLite database and NiceGUI cookie signing secret are deployment-local.
 """
 from __future__ import annotations
@@ -228,7 +228,13 @@ class SecurityStore(AccountOperations):
             # Add a separate salted PIN verifier without modifying legacy password hashes.
             columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
             if "pin_hash" not in columns:
-                db.execute("ALTER TABLE users ADD COLUMN pin_hash TEXT")
+                try:
+                    db.execute("ALTER TABLE users ADD COLUMN pin_hash TEXT")
+                except sqlite3.OperationalError as exc:
+                    # A concurrent first initializer added it between the
+                    # table_info check and this ALTER; the schema is correct.
+                    if "duplicate column name: pin_hash" not in str(exc):
+                        raise
             db.execute("INSERT OR IGNORE INTO security_policy(id,profile)"
                        " VALUES(1,'general')")
             version = db.execute("PRAGMA user_version").fetchone()[0]
@@ -371,6 +377,10 @@ class SecurityStore(AccountOperations):
                                  (admin.user_id,)).fetchone()
             if current is None or current[0] != confirmed_hash:
                 raise AuthorizationError("Administrator credentials changed")
+            if profile is SecurityProfile.LARGE_NETWORK and _verify_password(
+                    "admin", current[0]):
+                raise AuthorizationError(
+                    "Change factory administrator password before Large Network mode")
             if profile is SecurityProfile.ISOLATED_LAN:
                 # Never lock out every administrator when PIN-only login is enabled.
                 enrolled = db.execute(
@@ -431,6 +441,56 @@ class SecurityStore(AccountOperations):
             return db.execute("SELECT 1 FROM bootstrap WHERE id=1").fetchone() is not None
         finally:
             db.close()
+
+
+    def provision_factory_admin(self) -> bool:
+        """One-time server startup provision: never reset an existing identity.
+
+        The intentionally weak factory password is an exception ONLY here:
+        normal password creation/changes retain the configured 12+ byte policy.
+        This is not exposed over HTTP and does not change the security profile.
+        """
+        password_hash = _hash_password(b"admin")
+        pin_hash = _hash_password(self._validate_pin("12345678"))
+        db = self._db()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("SELECT 1 FROM bootstrap WHERE id=1").fetchone():
+                db.commit()
+                return False
+            if db.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+                raise RuntimeError("Unprovisioned database has accounts; refusing factory reset")
+            cursor = db.execute(
+                "INSERT INTO users(username,password_hash,role,pin_hash)"
+                " VALUES(?,?,?,?)",
+                ("admin", password_hash, Role.ADMIN.value, pin_hash),
+            )
+            db.execute("INSERT INTO bootstrap(id,completed_at) VALUES(1,?)",
+                       (self.clock(),))
+            self._audit(db, Actor(cursor.lastrowid, "admin", Role.ADMIN),
+                        "bootstrap.factory", "SUCCESS")
+            db.commit()
+            return True
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def factory_credentials_active(self) -> tuple[bool, bool]:
+        """Recognize factory password/PIN even after an account rename."""
+        db = self._db()
+        try:
+            credentials = db.execute(
+                "SELECT password_hash,pin_hash FROM users"
+                " WHERE role='ADMIN' AND enabled=1"
+            ).fetchall()
+        finally:
+            db.close()
+        weak_password = any(_verify_password("admin", row[0]) for row in credentials)
+        weak_pin = any(_verify_password("12345678", row[1]) for row in credentials
+                       if row[1] is not None)
+        return weak_password, weak_pin
 
     def bootstrap_admin(self, username: str, password: str) -> None:
         """Trusted LOCAL CLI only; atomic one-time initialization, never an HTTP route."""

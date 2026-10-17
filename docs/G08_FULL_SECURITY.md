@@ -73,7 +73,7 @@ operator approval remain outstanding. Physical hardware still cannot connect.
 
 First administrator: `python -m chamber_web.security.bootstrap` or
 `ClimateChamberServer.exe --bootstrap-admin` in an interactive **local
-terminal**. No default password, no HTTP bootstrap. All roles remain
+terminal**. The GUI now supplies initial factory values (`admin` / `admin`, PIN `12345678`) for local commissioning; these are blocked from LAN exposure until replaced in Admin. No HTTP bootstrap exists. See [Factory Credentials](FACTORY_CREDENTIALS.md). All roles remain
 ADMIN/OPERATOR/VIEWER and all sensitive controller mutations pass the
 existing G08-min guards.
 

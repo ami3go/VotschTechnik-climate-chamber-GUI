@@ -25,6 +25,12 @@ def _trusted_loopback_test_client(monkeypatch):
     monkeypatch.setattr(User, "open", open_with_localhost)
 
 
+def _profile_select(user: User):
+    """The Chamber Control saved-profile selector (not the temperature presets)."""
+    return next(element for element in user.find(ui.select).elements
+                if element.props.get("label") == "Saved profile")
+
+
 async def test_dashboard_starts_saved_revision_shares_state_and_stops(
     create_user: Callable[[], User], monkeypatch, tmp_path,
 ) -> None:
@@ -57,9 +63,8 @@ async def test_dashboard_starts_saved_revision_shares_state_and_stops(
     await user.should_see("Saved profile")
     await user.should_see("Run Profile")
 
-    # The final dashboard select is the saved profile selector (the first is
-    # the manual temperature preset). This selects, but does NOT auto-start.
-    user.find(ui.select).elements[-1].value = saved.profile_id
+    # Selecting a profile does NOT auto-start it.
+    _profile_select(user).value = saved.profile_id
     await user.should_see("Dashboard run profile · rev 1", retries=50)
     execution = profiles_page.get_profile_execution_service()
     assert execution.runner is None
@@ -119,7 +124,7 @@ async def test_dashboard_viewer_cannot_start_or_stop(
     await user.should_see("SIMULATION", retries=50)
     await user.open("/")
     await user.should_see("Run Profile")
-    user.find(ui.select).elements[-1].value = saved.profile_id
+    _profile_select(user).value = saved.profile_id
     await user.should_see("New Temperature Profile · rev 1", retries=50)
     assert not profiles_page.get_profile_execution_service().view(
         security.login("test_viewer", "StrongViewerPassword#2").session
