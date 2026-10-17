@@ -12,7 +12,7 @@ import threading
 
 from nicegui import app, ui
 
-from .auth import AuthenticationError, SecurityStore
+from .auth import AuthenticationError, SecurityProfile, SecurityStore
 from .http import OriginMiddleware
 from .deployment import DeploymentPolicy
 from .paths import security_directory
@@ -26,7 +26,14 @@ def get_security() -> SecurityStore:
     global _store
     with _store_lock:
         if _store is None:
-            _store = SecurityStore.from_environment(security_directory())
+            store = SecurityStore.from_environment(security_directory())
+            store.provision_factory_admin()
+            # A known factory password or PIN must never be offered over LAN.
+            if deployment_policy.is_lan and any(store.factory_credentials_active()):
+                raise RuntimeError(
+                    "Factory administrator password/PIN active; change both via "
+                    "localhost Admin panel before enabling LAN access")
+            _store = store
         return _store
 
 
@@ -102,6 +109,8 @@ def login_page() -> None:
             session = get_security().login(
                 username.value, password.value,
                 client_id=peer if isinstance(peer, str) and peer else "unknown-peer",
+                use_pin=(get_security().get_security_profile()
+                         is SecurityProfile.ISOLATED_LAN),
             )
         except AuthenticationError:
             password.value = ""
@@ -116,14 +125,20 @@ def login_page() -> None:
 
     with ui.card().classes("absolute-center items-stretch").style("min-width: 330px"):
         ui.label("Climate Chamber — sign in").classes("text-h5")
-        ui.label("Offline local account · server-controlled simulation").classes("text-caption")
-        if not get_security().is_bootstrapped():
-            ui.label("No administrator provisioned. On the server, run:").classes(
-                "text-negative")
-            ui.code("python -m chamber_web.security.bootstrap")
+        isolated = get_security().get_security_profile() is SecurityProfile.ISOLATED_LAN
+        ui.label("Isolated workstation · PIN sign-in · no automatic logout"
+                 if isolated else "Offline local account · password sign-in").classes(
+                     "text-caption")
+        if any(get_security().factory_credentials_active()):
+            ui.label(
+                "Factory credentials in use. Change password and PIN from Admin "
+                "before connecting this server to a network."
+            ).classes("text-caption text-orange-9")
         username = ui.input("Username").props("autocomplete=username")
-        password = ui.input("Password", password=True).props(
-            "autocomplete=current-password")
+        password = ui.input("PIN (6–12 digits)" if isolated else "Password",
+                            password=True).props(
+            "autocomplete=off inputmode=numeric" if isolated
+            else "autocomplete=current-password")
         ui.button("Sign in", on_click=sign_in)
 
 

@@ -301,6 +301,34 @@ class RunnerTests(unittest.TestCase):
         self.runner.advance()
         self.terminal(RunState.COMPLETED)
 
+    def test_pause_resume_with_stopped_chamber_step(self):
+        """A v2 OFF step is resumable without silently starting the chamber."""
+        self.prepare(step(chamber_run="OFF", dwell="6"))
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.REACHING)
+        self.assertFalse(self.backend._running)
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.DWELLING)
+        self.runner.pause("unit-chamber")
+        self.assertEqual(self.runner.state, RunState.PAUSED)
+        self.clock.advance(1)
+        self.runner.advance()  # Paused OFF-state telemetry remains valid.
+        self.assertEqual(self.runner.state, RunState.PAUSED)
+        self.runner.resume("unit-chamber")
+        self.assertEqual(self.runner.state, RunState.REACHING)
+        self.assertFalse(self.backend._running)
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.DWELLING)
+        # Qualification requires continuous samples with gaps <= max_gap_s (5 s).
+        # A single 6-second leap correctly resets dwell instead of completing it.
+        self.clock.advance(3)
+        self.runner.advance()
+        self.assertEqual(self.runner.state, RunState.DWELLING)
+        self.clock.advance(3)
+        self.runner.advance()
+        self.terminal(RunState.COMPLETED)
+        self.assertFalse(self.backend._running)
+
     def test_pause_does_not_extend_whole_run_deadline(self):
         self.prepare(step(dwell="10", reach="20"),
                      params=RunParameters(max_run_s=3))

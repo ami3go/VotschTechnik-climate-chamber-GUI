@@ -1,19 +1,23 @@
 """G03-C NiceGUI profile editor; persistent data belongs only to ProfileStore.
 
-Only profile metadata/step drafts live in page closures. There are no chamber
-commands, browser-local authoritative copies, or automatic profile starts.
+Only profile metadata/step drafts live in page closures. Saved revisions may
+be run only in simulation through the server-owned ProfileExecutionService;
+there are no browser-local authoritative copies or automatic profile starts.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from functools import lru_cache
 from pathlib import Path
 
 from nicegui import ui
 
+from chamber_web.domain.chamber import ChamberSafetyError
 from chamber_web.security.auth import AuthenticationError, AuthorizationError, Role
 from chamber_web.security.guards import Permission
-from chamber_web.security.nicegui import (current_actor, require_authenticated_page,
+from chamber_web.security.nicegui import (active_tokens, current_actor, get_security,
+                                          require_authenticated_page,
                                           require_browser_permission)
 from chamber_web.domain.profile import MAX_BYTES, format_digital_outputs
 from chamber_web.persistence.profiles import (
@@ -23,6 +27,7 @@ from chamber_web.services.profile_editor import (
     DuplicateProfileError, EditorDraft, ProfileEditorService,
     compatibility_warnings,
 )
+from chamber_web.services.profile_execution import ProfileExecutionService, RunView
 
 
 def default_database_path() -> Path:
@@ -44,6 +49,34 @@ def get_profile_editor_service() -> ProfileEditorService:
     from chamber_web.main import get_dashboard_service
     chamber_id = get_dashboard_service().view().chamber_id
     return ProfileEditorService(ProfileStore(default_database_path()), chamber_id)
+
+
+_execution_service: ProfileExecutionService | None = None
+
+
+def get_profile_execution_service() -> ProfileExecutionService:
+    """One server-owned runner host; simulation mode comes from launch config only."""
+    global _execution_service
+    if _execution_service is None:
+        from chamber_web.main import get_dashboard_service, profile_execution_is_simulation
+        editor = get_profile_editor_service()
+        _execution_service = ProfileExecutionService(
+            get_dashboard_service().manager, editor.store, get_security(),
+            editor.chamber_id, simulation=profile_execution_is_simulation(),
+        )
+    return _execution_service
+
+
+async def shutdown_profile_execution() -> None:
+    """Server shutdown hook: STOP any active run before the backend disconnects."""
+    global _execution_service
+    service, _execution_service = _execution_service, None
+    if service is not None:
+        await service.shutdown()
+
+
+_RUN_ERRORS = (ChamberSafetyError, AuthenticationError, AuthorizationError,
+               ValueError, ProfileNotFoundError)
 
 
 def _grid_columns() -> list[dict]:
@@ -105,6 +138,7 @@ def profiles_page() -> None:
     if not require_authenticated_page():
         return
     service = get_profile_editor_service()
+    execution = get_profile_execution_service()
     can_mutate = current_actor().role in (Role.ADMIN, Role.OPERATOR)
 
     def require_read() -> None:
@@ -366,6 +400,77 @@ def profiles_page() -> None:
         offset = max(0, offset + 100 * delta)
         refresh_library()
 
+    def render_run(view: RunView) -> None:
+        if not view.simulation:
+            run_mode_label.set_text("Profile execution is disabled in Physical HIL mode")
+        elif view.stop_latched:
+            run_mode_label.set_text("STOP latch active · request STOP reconciliation in Admin → Operator Lease")
+        else:
+            run_mode_label.set_text(f"Simulation · controller {view.controller_state}")
+        if view.state is None:
+            run_state_label.set_text("No profile run since server start")
+            run_detail_label.set_text("")
+        else:
+            elapsed = ("" if view.elapsed_s is None else
+                       f" · elapsed {int(view.elapsed_s // 60)}:{int(view.elapsed_s % 60):02d}")
+            run_state_label.set_text(
+                f"{view.state} · {view.profile_name} rev {view.revision} · "
+                f"step {view.step}/{view.total_steps}" +
+                ("" if view.target_c is None else f" · target {view.target_c:g} °C") +
+                elapsed
+            )
+            run_detail_label.set_text(
+                f"Operator {view.operator} · run {view.run_id}" +
+                (f" · {view.reason}" if view.reason else "")
+            )
+        for button, allowed in ((run_button, view.can_start), (stop_run_button, view.can_stop),
+                                (pause_button, view.can_pause),
+                                (resume_button, view.can_resume)):
+            if allowed:
+                button.enable()
+            else:
+                button.disable()
+        run_events.rows = [
+            {"sequence": e.sequence, "kind": e.kind, "state": e.state, "step": e.step,
+             "detail": e.detail,
+             "temperature": "" if e.temperature_c is None else f"{e.temperature_c:.2f}"}
+            for e in reversed(view.events)
+        ]
+        run_events.update()
+
+    def refresh_run() -> None:
+        session, _ = active_tokens()
+        try:
+            view = execution.view(session)
+        except (AuthenticationError, AuthorizationError):
+            run_timer.deactivate()
+            ui.navigate.to("/login")
+            return
+        render_run(view)
+
+    async def run_action(name: str, call) -> None:
+        session, csrf = active_tokens()
+        try:
+            await call(session, csrf)
+            ui.notify(name, color="positive")
+        except _RUN_ERRORS as exc:
+            notice_error(exc)
+        refresh_run()
+
+    async def start_run() -> None:
+        if draft.profile_id is None or draft.dirty or not draft.viewed_revision:
+            ui.notify("Load a saved revision without unsaved edits to run it",
+                      color="warning")
+            return
+        profile_id, revision = draft.profile_id, draft.viewed_revision
+        await run_action(
+            f"Started revision {revision} in simulation",
+            lambda session, csrf: execution.start_async(session, csrf, profile_id, revision),
+        )
+
+    def threaded(method):
+        return lambda session, csrf: asyncio.to_thread(method, session, csrf)
+
     # Dynamic imports are not used: everything needed for Windows/offline
     # packaging is in the installed NiceGUI/Python dependency closure.
     columns_fields = {column["field"] for column in columns if column["field"] != "step"}
@@ -385,7 +490,8 @@ def profiles_page() -> None:
     from chamber_web.ui_pages import page_frame
     with page_frame("/profiles", get_dashboard_service(), title="Profiles"):
         ui.label("Persistent Profiles / Revisions").classes("panel-heading")
-        ui.label("SIMULATION · No execution controls").classes("text-xs text-orange-9")
+        ui.label("SIMULATION · Saved revisions run only against the simulated chamber"
+                 ).classes("text-xs text-orange-9")
         ui.label("Profiles are saved on the server. Editing never starts or controls "
                  "the physical chamber.").classes("demo-banner w-full")
         with ui.column().classes("panel gap-3"):
@@ -454,6 +560,41 @@ def profiles_page() -> None:
             provenance_label = ui.label("").classes("text-xs text-orange-9")
             compatibility_label = ui.label("").classes("text-xs text-orange-9")
         with ui.column().classes("panel gap-2"):
+            with ui.row().classes("panel-head"):
+                ui.label("Profile Run").classes("panel-heading")
+                with ui.row().classes("gap-2"):
+                    run_button = ui.button("Run Loaded Revision", icon="play_arrow",
+                                           on_click=start_run).props("no-caps")
+                    pause_button = ui.button(
+                        "Pause", icon="pause",
+                        on_click=lambda: run_action(
+                            "Run paused", threaded(execution.pause)),
+                    ).props("outline no-caps")
+                    resume_button = ui.button(
+                        "Resume", icon="play_circle",
+                        on_click=lambda: run_action(
+                            "Run resumed", threaded(execution.resume)),
+                    ).props("outline no-caps")
+                    stop_run_button = ui.button(
+                        "Stop Run", icon="stop",
+                        on_click=lambda: run_action(
+                            "STOP requested", threaded(execution.cancel)),
+                    ).props("no-caps color=negative")
+            run_mode_label = ui.label("").classes("text-xs text-orange-9")
+            run_state_label = ui.label("").classes("text-sm")
+            run_detail_label = ui.label("").classes("text-xs text-grey-7")
+            ui.label("The run belongs to the server: closing this page does not stop it. "
+                     "Pause only suspends qualification; the chamber keeps its setpoint. "
+                     "Stop Run ends the run with a verified STOP. Web STOP is not an "
+                     "emergency stop.").classes("text-xs text-grey-7")
+            run_events = ui.table(
+                columns=[{"name": key, "label": label, "field": key, "align": "left"}
+                         for key, label in (("sequence", "#"), ("kind", "Event"),
+                                            ("state", "State"), ("step", "Step"),
+                                            ("temperature", "°C"), ("detail", "Detail"))],
+                rows=[], row_key="sequence",
+            ).props("dense flat").classes("w-full").style("max-height:260px")
+        with ui.column().classes("panel gap-2"):
             ui.label("Immutable Revision History").classes("panel-heading")
             with ui.row().classes("items-center gap-2"):
                 version_input = ui.number("Revision #", min=1, step=1,
@@ -487,3 +628,5 @@ def profiles_page() -> None:
             button.disable()
     refresh_library()
     populate()
+    run_timer = ui.timer(1.0, refresh_run)
+    refresh_run()

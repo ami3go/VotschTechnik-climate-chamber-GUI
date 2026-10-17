@@ -10,7 +10,7 @@ Status: **ACTIVE / SOFTWARE INTEGRATED, PHYSICAL NO-GO** (updated 2026-10-13; PR
 - Server owns chamber state and profile execution independently of browser clients. Exactly one command owner per chamber and single authoritative server process; operator ownership does not obstruct an authorized STOP.
 - NO physical-device release until the actual B1–B4 findings in [READINESS_FINDINGS.md](READINESS_FINDINGS.md), approved site safety policy and chamber-in-the-loop (HIL) gate are closed. D01 driver fixes are merged/pinned but **not** physically certified.
 - Local physical emergency stop/manufacturer protections remain necessary. Web STOP is an attempted control command, not a certified emergency stop. A disconnected chamber cannot be asserted stopped.
-- Keep legacy Tkinter and historical releases usable until an explicitly approved cutover. Do not merge unreleased simulated/frozen builds as evidence of HIL certification.
+- The retired desktop GUI source, build outputs, and executable are preserved in Git history, not in the active tree. Existing field deployments must remain recoverable until an explicitly approved R01 cutover. Removing obsolete repository files is not HIL, W02, or production-release approval.
 
 ## Workstreams and prerequisites
 
@@ -155,7 +155,7 @@ The canonical reviewed issue IDs, owners, status and closure evidence are in [RE
 
 - **GO now:** G02-B UI completion, G03 storage/editor, W01-A simulator freeze delivered (W02 pending), G04-A merged mock-only controller, G08-min security and subsequent mocked G06/G07. D01 and G01 software foundations are already merged; do not reopen duplicate foundation implementation.
 - **CONDITIONAL GO:** any Vötsch real chamber command requires D01 merged/pinned, G08-min passed, signed STOP policy, certified identity/envelope and controller ownership; additional vendor control requires its own reviewed maintained driver, new adapter and separate HIL signoff, never bypassing the generic `ChamberBackend` port.
-- **NO-GO:** enabling hardware gradients until site HIL proves ranges/units/readback; any live hardware mutation without G04/G08-min/site STOP policy; physical-control release while B1–B4 or H01 is open; LAN mutation before full G08; legacy retirement before H01 and W02.
+- **NO-GO:** enabling hardware gradients until site HIL proves ranges/units/readback; any live hardware mutation without G04/G08-min/site STOP policy; physical-control release while B1–B4 or H01 is open; LAN mutation before full G08; decommissioning deployed legacy installations before H01 and W02.
 
 ## Far-future multi-chamber roadmap (not part of initial implementation)
 
@@ -260,7 +260,11 @@ The existing G07-A branch was integrated with `main` including merged H01 #32 an
 - H01 [draft PR #34](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/34): explicit launch-time `CHAMBER_HIL_*` authorization (loopback only, serial verified on every read, ≤ 30 °C software envelope). First session found that the VT 4011 setpoint readback (11002) ramps at the chamber gradient (5 K/min up, 3 K/min down); the immediate ±0.1 °C check failed safe (UNKNOWN + STOP latch, START never sent). Fixed by ramp-aware G04 checks and G05 convergence with a settle window; second session passed claim → 25 °C → START → ~90 s RUNNING (24.7 → 25.0 °C) → STOP, chamber restored to stopped / 23.0 °C.
 - Still open: owner/site safety signoff and signed HIL acceptance, profile execution on hardware, ramp (gradient) control, longer soaks and STOP-during-ramp on hardware.
 
+## Profile run UI (simulation) — 2026-10-15
 
+- Branch `feat/profile-run-ui`: `/profiles` gains a "Profile Run" panel backed by a server-owned `ProfileExecutionService` (one `ProfileRunner`, G08 session+CSRF on every action, STOP by any `profile.run` user, pause/resume by the run owner). Runs are refused outside simulation; Physical HIL shows the panel disabled. Server shutdown issues STOP before backend disconnect. The simulated FakeBackend now slews at 0.25 °C/s so runs make visible progress.
+- Tests: `tests/test_profile_execution_service.py` (authorization, CSRF, owner-only pause/resume, admin STOP, STOP latch, non-simulation refusal, shutdown STOP, fake slew) and a NiceGUI run/stop test in `tests/test_web_profiles_ui.py`.
+- Still open: durable G07 recording for browser-started runs, run history UI, profile execution on hardware.
 
 ## H02 progress note — 2026-10-15 (software draft, physical NO-GO)
 

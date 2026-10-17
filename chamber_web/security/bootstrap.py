@@ -6,7 +6,8 @@ import getpass
 import sys
 from pathlib import Path
 
-from .auth import AuthorizationError, SecurityStore
+from .auth import AuthorizationError, SecurityStore, _password_bytes
+from .paths import security_directory
 
 
 def interactive_bootstrap(directory: Path | None = None) -> int:
@@ -51,7 +52,7 @@ def interactive_recovery(*, issue: bool = False, directory: Path | None = None) 
     try:
         if issue:
             password = getpass.getpass("Current administrator password: ")
-            session = store.login(username, password)
+            session = store.login(username, password, offline_primary_password=True)
             try:
                 token = store.issue_recovery_token(session.session, session.csrf)
             finally:
@@ -72,6 +73,68 @@ def interactive_recovery(*, issue: bool = False, directory: Path | None = None) 
         print(f"Offline recovery rejected: {type(exc).__name__}", file=sys.stderr)
         return 2
 
+def interactive_reset_credentials(directory: Path | None = None) -> int:
+    """Recover the administrator without an insecure unauthenticated backdoor.
+
+    Current primary password (including in PIN-only mode) or a previously
+    escrowed recovery token is mandatory. This is never exposed via HTTP.
+    """
+    if not sys.stdin.isatty():
+        print("Credential reset requires an interactive local terminal",
+              file=sys.stderr)
+        return 2
+    root = (Path(directory).expanduser().resolve()
+            if directory is not None else security_directory())
+    if not (root / "security.sqlite3").is_file():
+        print("Existing security database not found; reset refused",
+              file=sys.stderr)
+        return 2
+    from .auth import AuthenticationError
+    try:
+        store = SecurityStore.from_environment(root)
+        if not store.is_bootstrapped():
+            print("No administrator provisioned; reset refused", file=sys.stderr)
+            return 2
+        username = input("Administrator account: ").strip()
+        method = input("Proof: current [p]assword or escrow [t]oken? [p/t]: ").strip().lower()
+        if method not in {"p", "t"}:
+            print("Choose p or t", file=sys.stderr)
+            return 2
+        proof = getpass.getpass(
+            "Current administrator password: " if method == "p"
+            else "Offline recovery credential: "
+        )
+        new_password = getpass.getpass("New administrator password: ")
+        repeat = getpass.getpass("Repeat new password: ")
+        if new_password != repeat:
+            print("Passwords do not match", file=sys.stderr)
+            return 2
+        # Invalid new passwords must not invalidate previously escrowed tokens.
+        _password_bytes(new_password, min_bytes=store.password_min_bytes)
+        if method == "p":
+            session = store.login(
+                username, proof, offline_primary_password=True,
+            )
+            try:
+                token = store.issue_recovery_token(session.session, session.csrf)
+            finally:
+                store.logout(session.session)
+        else:
+            token = proof
+        store.recover_admin_offline(
+            token, username, new_password, reset_credentials=True,
+        )
+        print("Administrator password reset; PIN cleared and security "
+              "profile restored to General. All sessions revoked.")
+        print("After signing in, issue and escrow a fresh recovery token.")
+        return 0
+    except (ValueError, PermissionError, AuthenticationError,
+            AuthorizationError, RuntimeError) as exc:
+        print(f"Offline credential reset rejected: {type(exc).__name__}",
+              file=sys.stderr)
+        return 2
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Offline climate chamber admin setup")
     parser.add_argument("--data-dir", type=Path, default=None,
@@ -79,7 +142,11 @@ def main() -> int:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--issue-recovery-token", action="store_true")
     group.add_argument("--recover-admin", action="store_true")
+    group.add_argument("--reset-credentials", action="store_true",
+                       help="Reset admin password/PIN; restore General login")
     options = parser.parse_args()
+    if options.reset_credentials:
+        return interactive_reset_credentials(options.data_dir)
     if options.issue_recovery_token or options.recover_admin:
         return interactive_recovery(issue=options.issue_recovery_token,
                                     directory=options.data_dir)

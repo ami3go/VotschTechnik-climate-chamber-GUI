@@ -14,6 +14,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 _ISOLATED_HOME = tempfile.mkdtemp(prefix="chamber-web-test-home-")
 # Captured before isolation: opt-in hardware tests share the REAL cross-process
 # device lock so they can never run concurrently with a live HIL server.
@@ -41,3 +43,17 @@ def pytest_configure(config) -> None:
 
 def pytest_unconfigure(config) -> None:
     shutil.rmtree(_ISOLATED_HOME, ignore_errors=True)
+
+@pytest.fixture(autouse=True)
+def _isolate_cached_browser_execution(monkeypatch) -> None:
+    """Per-test isolation when NiceGUI tests inject different SecurityStores.
+
+    In production the G08 authority is process-stable; tests replace it on
+    each browser test. A prior test's server-owned runner must never hold the
+    next test's authority or profile library. No forced NiceGUI imports for
+    hardware-only or domain-only test modules.
+    """
+    pages = sys.modules.get("chamber_web.pages.profiles")
+    if pages is not None:
+        monkeypatch.setattr(pages, "_execution_service", None)
+        pages.get_profile_editor_service.cache_clear()

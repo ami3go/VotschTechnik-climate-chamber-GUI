@@ -289,6 +289,7 @@ def server_main() -> int:
                         help="Interactive offline first administrator")
     parser.add_argument("--issue-recovery-token", action="store_true")
     parser.add_argument("--recover-admin", action="store_true")
+    parser.add_argument("--reset-credentials", action="store_true")
     parser.add_argument("--backup-security", type=Path)
     parser.add_argument("--verify-security", type=Path)
     parser.add_argument("--stage-restore-security", type=Path)
@@ -297,7 +298,8 @@ def server_main() -> int:
     args = parser.parse_args()
     try:
         modes = (args.bootstrap_admin, args.issue_recovery_token,
-                 args.recover_admin, args.backup_security is not None,
+                 args.recover_admin, args.reset_credentials,
+                 args.backup_security is not None,
                  args.verify_security is not None,
                  args.stage_restore_security is not None, args.self_test)
         if sum(bool(mode) for mode in modes) > 1:
@@ -308,6 +310,9 @@ def server_main() -> int:
         if args.issue_recovery_token or args.recover_admin:
             from chamber_web.security.bootstrap import interactive_recovery
             return interactive_recovery(issue=args.issue_recovery_token)
+        if args.reset_credentials:
+            from chamber_web.security.bootstrap import interactive_reset_credentials
+            return interactive_reset_credentials()
         if args.backup_security or args.verify_security or args.stage_restore_security:
             if not sys.stdin.isatty():
                 raise RuntimeError("Security backup/restore requires a local terminal")

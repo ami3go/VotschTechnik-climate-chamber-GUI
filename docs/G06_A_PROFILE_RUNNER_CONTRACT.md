@@ -33,7 +33,7 @@ G04 currently has no verified gradient **readback/set/restore-baseline** API. Th
 | STABILIZING | Eligible first sample recorded; require second distinct sample and continuous in-band window | DWELLING, REACHING (excursion), STOP_REQUESTED |
 | DWELLING | Credit only consecutive eligible observation brackets | TRANSITIONING, REACHING (excursion or gap), STOP_REQUESTED |
 | TRANSITIONING | Previous step qualified; pending next setpoint | REACHING, STOP_REQUESTED |
-| PAUSED | **Logical observation pause only**; hardware remains RUNNING and retains setpoint | REACHING (resume), STOP_REQUESTED |
+| PAUSED | **Logical observation pause only**; simulator retains the step's commanded RUNNING/STOPPED state and setpoint | REACHING (resume), STOP_REQUESTED |
 | STOP_REQUESTED | G04 STOP intent fenced; async serialized STOP + authoritative readback pending | COMPLETED, CANCELLED, FAULT (only when STOP verified), UNKNOWN |
 | COMPLETED/CANCELLED/FAULT | Terminal only after fresh G04 VERIFIED_STOPPED; controller STOP latch **remains set** | none; later start requires separate explicit reconciliation |
 | UNKNOWN | STOP, controller generation/identity/quality, recording or operator lease cannot be verified | none; local/operator reconciliation mandatory |
@@ -60,6 +60,17 @@ If an adapter's synchronous I/O was already admitted, G04 cannot preempt it. STO
 `EventSink.prepare(ExecutionSnapshot)` must synchronously commit immutable PREPARED metadata before any command. `EventSink.emit(RunEvent)` is the version-one append-only event handoff. Each event includes immutable run ID/chamber ID, monotonically increasing event sequence per run, `kind`, execution `state`, `monotonic_elapsed_s`, timezone-aware UTC `observed_at_utc`, step index, detail, optional measured °C and reading quality. Each `SAMPLE` additionally carries a per-run monotonically increasing `sample_index` and source hardware/simulator `source_sampled_at_utc` timestamp; duplicate source timestamps never earn dwell/stabilization credit. Expected ordered event types: `PREPARED`, `START_INTENT`, `SETPOINT_INTENT`, optional `OUTPUT_INTENT` / `RUN_STATE_INTENT`, `STATE`, `SAMPLE`, `STEP_COMPLETED`, `STOP_INTENT`, `TERMINAL`. The START_INTENT precedes the **first setpoint** as well as simulated run/output dispatch; the sink must durably commit each intent before its command dispatch and must not silently swallow errors. In particular, G07 must implement durable PREPARED snapshot, START_INTENT command-intent transaction, timestamped samples and crash reconciliation per P00 (including SQLite/filesystem fsync/rename boundaries). This module retains only the most recent 1024 events in an ephemeral diagnostic ring buffer (separate monotonic sequence counter) and does **not** implement a SQLite run recorder. Until that persistence interface is installed, no durable run/history guarantee or physical rollout is claimed.
 
 G07 must store `ExecutionSnapshot` inside `prepare()` with PREPARED, bind events to the run UUID and `chamber_id`, keep sequence idempotent, and mark recovered partially executed runs INTERRUPTED/UNKNOWN pending site-authorized verification. EventSink errors are never silently treated as success; the runner requests STOP and reports UNKNOWN if durable event recording fails.
+
+## Browser execution (simulation only)
+
+`chamber_web.services.profile_execution.ProfileExecutionService` hosts one `ProfileRunner` per server and exposes it on `/profiles` ("Profile Run" panel). Behaviour:
+
+- **Simulation only.** The composition root passes `simulation=True` only when no `CHAMBER_HIL_*` authorization is present; the service refuses `start` otherwise, and `ProfileRunner` independently rejects non-simulated chamber identities. In Physical HIL mode the panel is shown but disabled.
+- **Authorization.** Every start/pause/resume/stop re-authenticates the session and CSRF token and requires `profile.run` (ADMIN, OPERATOR); viewers see state only. Any `profile.run` user may stop a run; pause/resume are reserved for the operator who started it. Passive refresh (`view`) never renews a session and never exposes lease tokens.
+- **Exact revision.** "Run Loaded Revision" runs the saved revision currently loaded in the editor; unsaved drafts cannot run.
+- **Server-owned lifecycle.** The run task belongs to the server: closing or reloading a browser does not stop it. On server shutdown a trusted STOP is issued before the dashboard disconnects the backend.
+- **Simulated progress.** The production FakeBackend slews measured temperature at 0.25 °C/s while running (`simulated_slew_c_per_s`); tests keep the deterministic default of 0.
+- **Not yet wired:** a durable G07 `RunRecorder` sink (the panel shows the in-memory diagnostic event ring only), run history pages, and startup reconciliation of interrupted runs.
 
 ## Validation matrix and release blockers
 

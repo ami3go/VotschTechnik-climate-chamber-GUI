@@ -3,7 +3,7 @@
 G05 exposes server-authorized manual control of one FakeBackend by default, or
 of ONE supervised physical Vötsch chamber when the server is launched with a
 complete CHAMBER_HIL_* authorization (loopback deployment only).
-G03-C provides persistent profile editing in /profiles; Dashboard preview is non-executable.
+G03-C stores immutable profiles in /profiles; Dashboard runs saved revisions through G06/G08.
 """
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import asyncio
 import os
 
 from datetime import datetime, timedelta
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from .security.paths import configure_nicegui_storage
@@ -24,46 +23,43 @@ from .bootstrap import create_demo_control_services
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
 from .security.nicegui import (active_tokens, cookie_secret, current_actor, deployment_policy,
                                get_security, logout, require_authenticated_page)
-from .security.auth import Role
+from .security.auth import AuthenticationError, AuthorizationError, Role, SecurityProfile
 from .ui_pages import (NavigationContext, install_navigation_resolver,
                        register_pages, render_navigation)
 from .ui_state import project_capabilities, project_telemetry, safe_view
 
-from .model import (
-    MAX_TEMP, MIN_TEMP, Step, default_steps,
-)
-
-
-@dataclass
-class ProfileDraft:
-    """Non-executable Dashboard preview; editing lives under G03-C."""
-    profile_name: str = "Temperature Cycle – Automotive"
-    steps: list[Step] = field(default_factory=default_steps)
-    logs: list[dict] = field(default_factory=list)
-    run_steps: list[Step] = field(default_factory=list)
-    step_index: int = 0
-    completed: bool = False
-
-    @property
-    def active_steps(self) -> list[Step]:
-        return self.steps
-
-    def log(self, message: str) -> None:
-        self.logs.insert(0, {
-            "id": str(datetime.now().timestamp()),
-            "time": datetime.now().strftime("%H:%M:%S"),
-            "level": "DRAFT", "message": message,
-        })
-        del self.logs[40:]
+from .model import MAX_TEMP, MIN_TEMP
 
 
 # One process-level device service, independent of any client/browser lifecycle.
 # Physical I/O only via an explicit, complete launch-time HIL authorization.
 _HIL = hil_authorization_from_env(os.environ)
 check_hil_deployment(_HIL, deployment_policy, os.environ)
-_dashboard_service, _manual_service = create_demo_control_services(get_security(), _HIL)
+_security = get_security()
+# Published factory credentials must not authorize physical chamber operation.
+if _HIL is not None and any(_security.factory_credentials_active()):
+    raise RuntimeError(
+        "Physical HIL requires changing both factory credentials in Admin "
+        "under local simulation before hardware authorization")
+_dashboard_service, _manual_service = create_demo_control_services(
+    _security, _HIL, simulated_slew_c_per_s=0.25,
+)
 _MODE = "Simulation" if _HIL is None else "Physical HIL"
+
+
+def profile_execution_is_simulation() -> bool:
+    """Trusted composition flag; browser input cannot enable profile execution."""
+    return _HIL is None
+
+
+async def _shutdown_profile_runs() -> None:
+    from .pages.profiles import shutdown_profile_execution
+    await shutdown_profile_execution()
+
+
 app.on_startup(_dashboard_service.start)
+# STOP a simulated profile before the dashboard disconnects its backend.
+app.on_shutdown(_shutdown_profile_runs)
 app.on_shutdown(_dashboard_service.close)
 
 
@@ -113,8 +109,6 @@ def dashboard() -> None:
     if not require_authenticated_page():
         return
     service = get_dashboard_service()
-    # Local drafts are not executable runs or chamber state.
-    state = ProfileDraft()
 
     def scroll_to(section: str) -> None:
         # Section names are fixed in this module, never user-controlled.
@@ -204,6 +198,9 @@ def dashboard() -> None:
             capability_detail_label.set_text(
                 "Viewer access is read only — chamber commands are disabled")
 
+    from .pages.dashboard_profiles import DashboardProfileUI
+    profile_ui = DashboardProfileUI()
+
     with ui.row().classes("app-shell no-wrap"):
         with ui.column().classes("sidebar gap-1"):
             render_navigation("/")
@@ -280,6 +277,8 @@ def dashboard() -> None:
                                     ui.button("Fill target", icon="edit",
                                               on_click=use_suggestion).props(
                                                   "outline no-caps").classes("control-button")
+                                # Saved profiles: same service/runner as /profiles.
+                                profile_ui.render_controls()
                                 with ui.column().classes("gap-0"):
                                     ui.label("Simulated capability range (not site-certified)" if _HIL is None
                                              else "HIL software envelope (not site-certified)").classes(
@@ -300,43 +299,7 @@ def dashboard() -> None:
 
 
                     with ui.column().classes("panel"):
-                        with ui.row().classes("panel-head"):
-                            _panel_title("description", "Active Profile")
-                            with ui.row().classes("items-center gap-2"):
-                                step_indicator = ui.label("Step —").classes("text-xs")
-                                progress = ui.linear_progress(value=0, color="blue",
-                                                              show_value=False).style("width:100px")
-                                progress_label = ui.label("0%").classes("text-xs")
-                        with ui.column().classes("profile-intro gap-1"):
-                            active_name = ui.label("Profile: " + state.profile_name).classes("font-bold")
-                            elapsed_label = ui.label("Execution unavailable (G06)")
-                            ui.label("Draft preview only · no server-side profile runner").classes("text-xs")
-
-                        @ui.refreshable
-                        def step_overview():
-                            with ui.column().classes("w-full gap-0"):
-                                with ui.element("div").classes("profile-row header"):
-                                    for heading in ("#", "Step", "Target", "Dwell", "Status"):
-                                        ui.label(heading)
-                                for index, step in enumerate(state.active_steps):
-                                    css = "profile-row"
-                                    if state.run_steps and index == state.step_index:
-                                        css += " active-step"
-                                    with ui.element("div").classes(css):
-                                        ui.label(str(index + 1))
-                                        ui.label(step.description)
-                                        ui.label(f"{step.target:g} °C")
-                                        ui.label(f"{step.dwell // 60} min")
-                                        if not step.enabled:
-                                            message = "Skipped"
-                                        elif state.run_steps and index < state.step_index:
-                                            message = "✓ Done"
-                                        elif state.run_steps and index == state.step_index:
-                                            message = state.status
-                                        else:
-                                            message = "○ Pending"
-                                        ui.label(message)
-                        step_overview()
+                        profile_ui.render_card()
 
                 with ui.column().classes("panel chart-panel"):
                     with ui.row().classes("panel-head"):
@@ -416,18 +379,9 @@ def dashboard() -> None:
 
                     with ui.column().classes("panel").props('id="event-log"'):
                         with ui.row().classes("panel-head"):
-                            _panel_title("list_alt", "Draft Events (not device log)")
-                            def clear_log() -> None:
-                                state.logs.clear()
-                                log_table.update_rows([])
-                            ui.button("Clear", icon="delete_outline", on_click=clear_log).props(
-                                "outline no-caps").classes("toolbar-button")
-                        log_table = ui.table(
-                            columns=_columns([("time", "Time"), ("level", "Level"),
-                                              ("message", "Message")]),
-                            rows=list(state.logs), row_key="id", pagination=0).props(
-                                "dense flat hide-bottom separator=horizontal").classes(
-                                    "small-table w-full")
+                            _panel_title("list_alt", "Live Telemetry Notes")
+                        ui.label("For authoritative run events and recordings, use Profiles "
+                                 "and Run History.").classes("text-xs text-grey-7")
 
     def refresh() -> None:
         if not require_authenticated_page(touch=False):
@@ -459,10 +413,6 @@ def dashboard() -> None:
         if view.capabilities:
             chart.options["yAxis"]["min"] = view.capabilities.temperature_min_c - 10
             chart.options["yAxis"]["max"] = view.capabilities.temperature_max_c + 10
-        step_indicator.set_text("Draft")
-        progress.value = 0
-        progress_label.set_text("0%")
-        active_name.set_text("Draft: " + state.profile_name)
         clock_label.set_text(f"Sample: {display.sampled_utc}")
         update_chart()
         try:
@@ -475,12 +425,12 @@ def dashboard() -> None:
             "target": f"{s.target_c:.1f}" if s.target_c is not None else "—",
             "status": "SIMULATED" if identity is None or identity.is_simulation else "PHYSICAL",
         } for index, s in enumerate(recent)])
-        log_table.update_rows(list(state.logs))
 
     ui.timer(1.0, refresh, immediate=False)
     ui.timer(1.0, refresh_manual, immediate=False)
     refresh()
     refresh_manual()
+    profile_ui.begin_refresh()
 
 
 @ui.page("/admin")
@@ -569,6 +519,78 @@ def admin_page() -> None:
                 f"{data.last_command.state.value} · {data.last_command.action} · "
                 f"{data.last_command.message}")
 
+    async def set_user_pin() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        try:
+            session, csrf = active_tokens()
+            await asyncio.to_thread(
+                get_security().configure_user_pin, session, csrf,
+                confirm_password.value, pin_account.value, user_pin.value)
+        except (AuthenticationError, AuthorizationError, ValueError):
+            ui.notify("PIN enrollment denied. Check administrator password and account.",
+                      color="negative")
+            return
+        confirm_password.value = ""
+        user_pin.value = ""
+        ui.notify("PIN enrolled. Sessions for that account were revoked.", color="positive")
+        if pin_account.value.casefold() == actor.username.casefold():
+            logout()
+
+    async def update_admin_password() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        if new_password.value != repeat_password.value:
+            ui.notify("New passwords do not match.", color="negative")
+            return
+        try:
+            session, csrf = active_tokens()
+            await asyncio.to_thread(
+                get_security().change_password, session, csrf,
+                old_password.value, new_password.value)
+        except (AuthenticationError, AuthorizationError, ValueError):
+            ui.notify("Password change denied. Verify the current password "
+                      "and password length.", color="negative")
+            return
+        old_password.value = ""
+        new_password.value = ""
+        repeat_password.value = ""
+        ui.notify("Administrator password changed. Sign in again.", color="positive")
+        logout()
+
+    async def update_admin_username() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        try:
+            session, csrf = active_tokens()
+            await asyncio.to_thread(
+                get_security().change_admin_username, session, csrf,
+                rename_password.value, new_username.value)
+        except (AuthenticationError, AuthorizationError, ValueError):
+            ui.notify("Account rename denied. Verify password and username.",
+                      color="negative")
+            return
+        rename_password.value = ""
+        ui.notify("Administrator account renamed. Sign in again.", color="positive")
+        logout()
+
+    async def apply_security_profile() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        try:
+            session, csrf = active_tokens()
+            await asyncio.to_thread(
+                get_security().set_security_profile, session, csrf,
+                confirm_password.value, SecurityProfile(profile_select.value))
+        except (AuthenticationError, AuthorizationError, ValueError):
+            ui.notify("Security profile change denied. Verify password and PIN setup.",
+                      color="negative")
+            return
+        confirm_password.value = ""
+        ui.notify("Security profile saved. All sessions must sign in again.",
+                  color="positive")
+        logout()
+
     with ui.row().classes("app-shell no-wrap"):
         with ui.column().classes("sidebar gap-1"):
             render_navigation("/admin")
@@ -641,6 +663,96 @@ def admin_page() -> None:
                                       on_click=confirm_reconciliation).props(
                                           "color=deep-orange")
 
+                if actor.role is Role.ADMIN:
+                    with ui.column().classes("panel gap-3"):
+                        _panel_title("manage_accounts", "Administrator Credentials")
+                        ui.label(
+                            "Factory setup uses admin / admin and PIN 12345678. "
+                            "Change both before LAN use. Changes are permanent, "
+                            "hashed in the security database, and revoke active sessions."
+                        ).classes("text-sm text-orange-9")
+                        weak_pw, weak_pin = get_security().factory_credentials_active()
+                        if weak_pw or weak_pin:
+                            ui.label("Factory password or PIN is still active.").classes(
+                                "text-negative font-bold")
+                        old_password = ui.input(
+                            "Current administrator password", password=True).props(
+                                "autocomplete=current-password").classes("w-full")
+                        new_password = ui.input(
+                            "New administrator password (12+ bytes)",
+                            password=True).props(
+                                "autocomplete=new-password").classes("w-full")
+                        repeat_password = ui.input(
+                            "Repeat new administrator password", password=True).props(
+                                "autocomplete=new-password").classes("w-full")
+                        ui.button("Change password", icon="lock_reset",
+                                  on_click=update_admin_password).props(
+                                      "outline no-caps")
+                        new_username = ui.input(
+                            "New administrator username", value=actor.username).classes(
+                                "w-full")
+                        rename_password = ui.input(
+                            "Current password to rename administrator",
+                            password=True).props(
+                                "autocomplete=current-password").classes("w-full")
+                        ui.button("Change username", icon="person",
+                                  on_click=update_admin_username).props(
+                                      "outline no-caps")
+                        ui.label(
+                            "To change the PIN, use Enroll account PIN below. "
+                            "Each credential change requires administrator authentication."
+                        ).classes("text-xs")
+                    with ui.column().classes("panel gap-3"):
+                        _panel_title("security", "Security Profiles")
+                        ui.label(
+                            "Security profile controls authentication and session lifetime; "
+                            "it never disables controller safety, STOP fencing, audit or "
+                            "network listener restrictions."
+                        ).classes("text-sm")
+                        active_profile = get_security().get_security_profile()
+                        ui.label("Active profile: " + active_profile.value).classes(
+                            "font-bold")
+                        profile_select = ui.select({
+                            "general": "General — existing G08 security (30 min / 8 h)",
+                            "isolated_lan": "Isolated LAN — PIN, no session timeouts",
+                            "large_network": "Large network — password, 1 h / 12 h",
+                        }, value=active_profile.value, label="Security profile").classes(
+                            "w-full")
+                        ui.label(
+                            "Isolated LAN is intended for a physically controlled single-PC "
+                            "installation. PIN-only access is weaker; manually lock the "
+                            "workstation when unattended. The server cannot guarantee "
+                            "browser-cookie persistence after storage clearing."
+                        ).classes("text-xs text-orange-9")
+                        pin_account = ui.input(
+                            "Account to enroll for PIN login",
+                            value=actor.username).classes("w-full")
+                        user_pin = ui.input("New 6–12 digit PIN", password=True).props(
+                            "autocomplete=off inputmode=numeric").classes("w-full")
+                        confirm_password = ui.input(
+                            "Current administrator password (required to apply changes)",
+                            password=True).props(
+                                "autocomplete=current-password").classes("w-full")
+                        with ui.row().classes("control-row wrap"):
+                            ui.button("Enroll account PIN", icon="pin",
+                                      on_click=set_user_pin).props("outline no-caps")
+                            ui.button("Apply security profile", icon="verified_user",
+                                      on_click=lambda: security_confirm.open()).props(
+                                          "unelevated no-caps")
+                        with ui.dialog() as security_confirm:
+                            with ui.card():
+                                ui.label("Confirm security profile change").classes(
+                                    "font-bold")
+                                ui.label("All users will be logged out immediately. "
+                                         "Switching to PIN mode reduces sign-in security "
+                                         "but never authorizes physical chamber operations.")
+                                with ui.row():
+                                    ui.button("Cancel", on_click=security_confirm.close)
+                                    async def confirm_profile_change():
+                                        security_confirm.close()
+                                        await apply_security_profile()
+                                    ui.button("Confirm", on_click=confirm_profile_change)
+
     ui.timer(1.0, refresh_lease, immediate=False)
     refresh_lease()
 
@@ -661,7 +773,10 @@ def run() -> None:
            host=deployment_policy.bind_host, port=deployment_policy.port,
            reload=False, show=False, storage_secret=cookie_secret(),
            session_middleware_kwargs={
-               "same_site": "strict", "max_age": 28800,
+               "same_site": "strict",
+               # The DB enforces General/Large timeouts. A persistent browser
+               # cookie allows isolated workstation sessions to remain logged in.
+               "max_age": 10 * 365 * 24 * 3600,
                "https_only": deployment_policy.is_lan,
            }, **options)
 

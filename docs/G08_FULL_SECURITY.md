@@ -73,7 +73,7 @@ operator approval remain outstanding. Physical hardware still cannot connect.
 
 First administrator: `python -m chamber_web.security.bootstrap` or
 `ClimateChamberServer.exe --bootstrap-admin` in an interactive **local
-terminal**. No default password, no HTTP bootstrap. All roles remain
+terminal**. The GUI now supplies initial factory values (`admin` / `admin`, PIN `12345678`) for local commissioning; these are blocked from LAN exposure until replaced in Admin. No HTTP bootstrap exists. See [Factory Credentials](FACTORY_CREDENTIALS.md). All roles remain
 ADMIN/OPERATOR/VIEWER and all sensitive controller mutations pass the
 existing G08-min guards.
 
@@ -205,3 +205,74 @@ A new defense-in-depth audit validation rejects deletion of the newest audit row
 ### Fail-closed security-database recovery
 
 An existing audit or backup signing key is durable evidence of a previously initialized security store. If the SQLite security database is missing, startup refuses implicit re-bootstrap and requires an approved offline restore. Once an HMAC key exists, absence of the checkpoint is not treated as a new G08-min migration. Legacy databases with no HMAC key still support the one-time explicit migration path, covered by adversarial tests. These are local software protections only; separately secured key escrow, signed restore policy and Windows ACL certification remain mandatory for LAN deployment.
+
+
+## Selectable administrator security profiles (2026-10-15)
+
+The **Admin → Security Profiles** setting is persisted in the local security
+SQLite database; it is not a browser-only preference or an untrusted URL flag.
+All installations default to `general` after migration. Only a currently
+authenticated ADMIN with a valid CSRF token and re-entered **primary password**
+may enroll account PINs or change the profile. Each change is audited, and
+changing the profile revokes all active browser sessions. A PIN enrollment
+revokes sessions for that account. The administrator must enroll at least one
+enabled ADMIN account PIN before activating PIN-only mode. Existing primary
+password hashes, offline recovery and password administration remain intact.
+
+| Profile | Sign-in | Idle timeout | Absolute timeout | Intended scope |
+|---|---|---:|---:|---|
+| `general` (default) | Username + existing password | Current G08 configuration; 30 min default | Current G08 configuration; 8 h default | Current G08 security contract, unchanged |
+| `isolated_lan` | Username + locally enrolled 6–12 digit PIN | Disabled | Disabled | Dedicated physically controlled workstation / isolated LAN with no internet |
+| `large_network` | Username + existing password | 60 min | 12 h | Larger private organizational LAN; moderate usability/security balance |
+
+**PINs** are per-user, locally enrolled by a password-verified administrator,
+salted and scrypt-hashed independently of passwords; neither PIN nor password
+is stored or logged in plaintext. Existing per-account lockout, client-peer
+throttling, CSRF, RBAC, event authorization, account disable and audit mechanisms
+remain in force for all profiles. Accounts without a PIN cannot sign in under
+`isolated_lan`; prepare required operators before switching. There is no
+default PIN or unauthenticated bootstrap. A user with a PIN receives only their
+existing role/permissions, not an implicit administrator grant.
+
+**No timeout** means no application-enforced idle or absolute expiry while the
+session remains valid, including through refresh or a controlled restart.
+Explicit logout, disable, password change, revocation, data loss, browser
+cookie deletion and session-secret rotation can still end the login. The browser
+session cookie has a long finite retention limit (ten years) rather than an
+infinite browser guarantee. Admin should explicitly sign out or physically
+lock the dedicated workstation when unattended.
+
+**Network configuration is independent of authentication profile.** Selecting
+`isolated_lan` does not automatically bind a network interface, enable
+insecure HTTP, waive origin/peer checks, or enable physical hardware. Existing
+`CHAMBER_NETWORK_MODE=localhost` default and explicit `lan` HTTPS certificate,
+private bind, specific client CIDR, host/origin restrictions, firewall and
+offline-trust provisions remain required. Both LAN deployment modes remain
+subject to the separately stated release/security site assessment gates.
+The `large_network` profile is **not** internet-facing permission.
+
+Neither low-assurance PIN access nor a long-running browser session is a
+physical-operation permit: G04 STOP/lease fencing, G06/G07 interlocks,
+independent H01/H02 site-specific approvals, safety readback and fault
+handling remain unchanged. Physical HIL is still loopback-limited in the
+current launch policy. Web STOP is not an emergency stop.
+
+### Profile acceptance/regression gates
+
+1. New and upgraded databases boot in `general`; existing password/session
+   behavior and audit chain integrity remain intact.
+2. Anonymous, VIEWER and OPERATOR sessions cannot change profile or PIN
+   enrollment; forged/missing CSRF, stale sessions, and wrong reauthentication
+   passwords fail closed.
+3. An administrator cannot enter PIN-only mode without a pre-enrolled admin
+   PIN; PINs are validated (6–12 ASCII digits), independently salted/hashed,
+   and never copied to audit details.
+4. PIN-only mode rejects password sign-in and unauthenticated PINs; rate
+   limiting and per-role permissions still apply.
+5. Isolated sessions remain valid beyond usual idle and absolute windows, even
+   on restart, unless explicitly revoked; General/Large expiry is enforced
+   according to profile.
+6. Switching any profile revokes all sessions transactionally, survives restart,
+   and never changes network binding, TLS, CSRF, authorization or HIL gates.
+7. Run bounded security tests with an external CI watchdog, final-head Windows
+   CI and disconnected browser smoke tests before operational deployment.
