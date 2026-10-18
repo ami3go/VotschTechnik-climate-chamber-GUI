@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from nicegui import app, ui  # noqa: E402
 from .bootstrap import create_demo_control_services
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
 from .hil.supervised_profile import SupervisedProfileRuntime, supervised_runtime_from_env
+from .hil.supervision import SupervisionHost
 from .security.nicegui import (active_tokens, cookie_secret, current_actor, deployment_policy,
                                get_security, logout, require_authenticated_page)
 from .security.auth import AuthenticationError, AuthorizationError, Role, SecurityProfile
@@ -49,11 +51,16 @@ _MODE = "Simulation" if _HIL is None else "Physical HIL"
 # Server-side supervised physical admission. A site-signed H02 permit enables
 # supervised profile runs; a partial or broken permit configuration refuses to
 # start (fail closed), and an unconfigured physical launch keeps profile
-# execution disabled. H02-C owns the independent watchdog, so the production
-# supervisor check stays fail-closed.
+# execution disabled. The H02-C independent watchdog must additionally be
+# alive; until `_startup_supervision` proves it, physical starts are refused.
 _SUPERVISED = supervised_runtime_from_env(
     os.environ, hil_present=_HIL is not None, supervisor_alive=lambda: False,
 )
+_SUPERVISION: SupervisionHost | None = None
+
+
+def _supervisor_alive() -> bool:
+    return _SUPERVISION is not None and _SUPERVISION.alive()
 
 
 def profile_execution_is_simulation() -> bool:
@@ -64,6 +71,38 @@ def profile_execution_is_simulation() -> bool:
 def profile_execution_supervision() -> SupervisedProfileRuntime | None:
     """Trusted composition context for H02 supervised physical runs."""
     return _SUPERVISED
+
+
+def get_supervision_host() -> SupervisionHost | None:
+    return _SUPERVISION
+
+
+async def _startup_supervision() -> None:
+    """Start the H02-C independent watchdog for supervised physical launches.
+
+    A restart latch, spawn failure or missing configuration leaves the host
+    fail-closed (alive() false), which refuses every physical profile start.
+    """
+    global _SUPERVISION, _SUPERVISED
+    if _SUPERVISED is None or _HIL is None:
+        return
+    from .services.profile_runtime import run_journal_directory
+    host = SupervisionHost(
+        _SUPERVISED.permit.watchdog,
+        evidence_dir=run_journal_directory() / "watchdog",
+        chamber_id=_HIL.chamber_id, serial_number=_HIL.expected_serial,
+    )
+    host.start()
+    _SUPERVISION = host
+    _SUPERVISED = replace(
+        _SUPERVISED, supervision=host, supervisor_alive=_supervisor_alive,
+    )
+
+
+async def _shutdown_supervision() -> None:
+    host = _SUPERVISION
+    if host is not None:
+        host.close()
 
 
 async def _startup_profile_recording() -> None:
@@ -79,9 +118,12 @@ async def _shutdown_profile_runs() -> None:
 
 
 app.on_startup(_startup_profile_recording)
+app.on_startup(_startup_supervision)
 app.on_startup(_dashboard_service.start)
-# STOP a simulated profile before the dashboard disconnects its backend.
+# STOP a running profile before the dashboard disconnects its backend; the
+# independent watchdog closes last so it supervises the whole shutdown.
 app.on_shutdown(_shutdown_profile_runs)
+app.on_shutdown(_shutdown_supervision)
 app.on_shutdown(_dashboard_service.close)
 
 

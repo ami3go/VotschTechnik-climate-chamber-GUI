@@ -26,6 +26,7 @@ from chamber_web.domain.chamber import ChamberSafetyError
 from chamber_web.hil.profile_admission import (
     AdmissionDenied, H02LiveChecks, H02WatchdogLimits, verify_signed_permit,
 )
+from chamber_web.hil.supervision import SupervisionHost
 
 ENV_PERMIT_FILE = "CHAMBER_H02_PERMIT_FILE"
 ENV_TRUSTED_KEY = "CHAMBER_H02_TRUSTED_KEY"
@@ -121,6 +122,7 @@ class SupervisedProfileRuntime:
     supervisor_alive: Callable[[], bool]
     gui_commit: str
     driver_commit: str
+    supervision: SupervisionHost | None = None
 
     def live_checks(self, *, authenticated_authorized: bool,
                     connected: bool, verified_stopped: bool, no_stop_latch: bool,
@@ -141,6 +143,7 @@ class SupervisedProfileRuntime:
 def supervised_runtime_from_env(
     env: Mapping[str, str], *, hil_present: bool,
     supervisor_alive: Callable[[], bool] | None = None,
+    supervision: SupervisionHost | None = None,
 ) -> SupervisedProfileRuntime | None:
     """Build the supervised runtime for a physical-HIL launch, or None.
 
@@ -159,4 +162,5 @@ def supervised_runtime_from_env(
         supervisor_alive=supervisor_alive or (lambda: False),
         gui_commit=env.get(ENV_GUI_COMMIT, "").strip(),
         driver_commit=env.get(ENV_DRIVER_COMMIT, "").strip(),
+        supervision=supervision,
     )
