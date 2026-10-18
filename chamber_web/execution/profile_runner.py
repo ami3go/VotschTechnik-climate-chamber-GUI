@@ -1,9 +1,14 @@
 """G06-A: single-device simulated execution through the G04 ChamberManager.
 
-This is NOT a physical control or persistence implementation. Every public
-mutation requires a server-injected G08 authorization decision. Synchronous
-entrypoints must be called off the NiceGUI event loop; async wrappers use
-asyncio.to_thread. STOP remains owned/fenced by G04, not by this scheduler.
+Physical execution exists only through the narrowly-scoped SupervisedRun
+context: an H02 signed-permit admission whose revalidation runs before every
+dispatch tick; steps are restricted to chamber_run=ON without output or
+gradient mutations and START uses the certified G04 start path once.
+
+Every public mutation requires a server-injected G08 authorization decision.
+Synchronous entrypoints must be called off the NiceGUI event loop; async
+wrappers use asyncio.to_thread. STOP remains owned/fenced by G04, not by this
+scheduler.
 """
 from __future__ import annotations
 
@@ -146,6 +151,33 @@ class EventSink(Protocol):
     def emit(self, event: RunEvent) -> None: ...
 
 
+@dataclass(frozen=True)
+class SupervisedRun:
+    """Server-side supervised-physical run context; never browser-supplied.
+
+    ``revalidate`` re-verifies the signed site permit (signature, window,
+    unchanged bytes) and is invoked before every dispatch tick; any failure
+    stops further physical dispatch and latches UNKNOWN.
+    """
+    permit_sha256: str
+    operator: str
+    revalidate: Callable[[], None]
+
+
+def step_budget(step: ProfileStep, params: RunParameters) -> float:
+    """Finite per-step schedule used for permit preflight and watchdogs."""
+    reach = float(step.reach_timeout_s)
+    if not math.isfinite(reach) or reach <= 0 or reach > 1_209_600:
+        raise ValueError("Invalid finite profile reach")
+    total = reach
+    for value, name in ((step.stabilize_s, "stabilize"), (step.dwell_s, "dwell")):
+        number = float(value)
+        if not math.isfinite(number) or number < 0 or number > 1_209_600:
+            raise ValueError("Invalid finite profile " + name)
+        total += number
+    return total + params.step_margin_s
+
+
 # Authorizer must resolve an authenticated server-side principal by itself.
 # An arbitrary browser-supplied user name or operator token is NOT authorization.
 Authorizer = Callable[[str, str], str]
@@ -164,16 +196,26 @@ class ProfileRunner:
         authorize: Authorizer | None = None,
         sink: EventSink | None = None,
         clock: Clock | None = None,
+        supervised: SupervisedRun | None = None,
     ):
         ids = manager.configured_ids()
         if len(ids) != 1:
             raise ChamberSafetyError("Only a single chamber runner is supported")
+        if supervised is not None and (
+                not isinstance(supervised, SupervisedRun) or
+                not isinstance(supervised.permit_sha256, str) or
+                len(supervised.permit_sha256) != 64 or
+                not isinstance(supervised.operator, str) or
+                not supervised.operator.strip() or
+                not callable(supervised.revalidate)):
+            raise ChamberSafetyError("Invalid supervised run context")
         self._id = ids[0]
         self._manager = manager
         self._store = store
         self._authorize = authorize
         self._sink = sink
         self._clock = clock or RealClock()
+        self._supervised = supervised
         self._mutex = threading.RLock()
         self._advance_lock = threading.Lock()
         self._stop_guard = threading.Lock()
@@ -261,9 +303,7 @@ class ProfileRunner:
         return number
 
     def _step_budget(self, step: ProfileStep, params: RunParameters) -> float:
-        return (self._duration(step.reach_timeout_s, "reach", positive=True) +
-                self._duration(step.stabilize_s, "stabilize") +
-                self._duration(step.dwell_s, "dwell") + params.step_margin_s)
+        return step_budget(step, params)
 
     def _emit(self, kind: str, detail: str = "", *,
               temperature: float | None = None,
@@ -299,6 +339,9 @@ class ProfileRunner:
         if chamber_id != self._id:
             raise ChamberSafetyError("Wrong chamber for profile run")
         principal = self._permission("profile.start")
+        if (self._supervised is not None and
+                principal != self._supervised.operator):
+            raise ChamberSafetyError("Supervised physical run is bound to the permit operator")
         params = parameters or RunParameters()
         if not isinstance(params, RunParameters):
             raise ValueError("Invalid run parameters")
@@ -316,12 +359,21 @@ class ProfileRunner:
             caps = self._manager.capabilities(self._id)
             health = self._manager.health(self._id)
             status = self._manager.status(self._id)
+            if self._supervised is None:
+                identity_allowed = status.identity.is_simulation
+            else:
+                # Supervised runs are physical only, on the exact authorized
+                # Vötsch backend with a reported serial.
+                identity_allowed = (
+                    not status.identity.is_simulation and
+                    status.identity.backend_id == "votsch" and
+                    bool(status.identity.serial_number))
             if (not health.connected or health.stop_latched or
                 health.state not in ("VERIFIED_STOPPED",) or
                 status.quality is not ReadingQuality.GOOD or
                 status.operation_state is not OperationState.STOPPED or
                 status.identity.chamber_id != self._id or
-                not status.identity.is_simulation):
+                not identity_allowed):
                 raise ChamberSafetyError("Profile requires reconciled simulated STOPPED chamber")
             if not (caps.supports_start_stop and caps.supports_running_readback and
                     caps.supports_setpoint_readback):
@@ -357,6 +409,15 @@ class ProfileRunner:
                     raise ChamberSafetyError(
                         "Profile requests unsupported/unverified digital outputs"
                     )
+                if self._supervised is not None and (
+                        step.chamber_run != "ON" or step.digital_outputs or
+                        step.compressed_air != "UNCHANGED" or
+                        step.dryer != "UNCHANGED" or
+                        step.ramp_up_c_per_min is not None or
+                        step.ramp_down_c_per_min is not None):
+                    raise ChamberSafetyError(
+                        "Supervised physical profiles run chamber_run=ON "
+                        "steps without output or gradient mutations")
             total = sum(self._step_budget(s, params) for s in enabled) * record.profile.repeat_count + 30
             if not math.isfinite(total) or total > 1_209_600:
                 raise ChamberSafetyError("Profile exceeds finite run watchdog limit")
@@ -472,11 +533,20 @@ class ProfileRunner:
             if self._cancel_requested:
                 return
             requested_running = step.chamber_run == "ON"
-            self._emit("RUN_STATE_INTENT", "ON" if requested_running else "OFF")
-            self._manager.set_profile_running(
-                self._id, requested_running, operator_token=self._owner_token,
-            )
-            self._profile_running = requested_running
+            if self._supervised is not None:
+                # Physical chambers start once through the certified START path;
+                # per-step simulated run toggling is never used. Steps after the
+                # first require the chamber to already be running.
+                if not self._profile_running:
+                    self._emit("RUN_STATE_INTENT", "ON (certified START)")
+                    self._manager.start(self._id, operator_token=self._owner_token)
+                    self._profile_running = True
+            else:
+                self._emit("RUN_STATE_INTENT", "ON" if requested_running else "OFF")
+                self._manager.set_profile_running(
+                    self._id, requested_running, operator_token=self._owner_token,
+                )
+                self._profile_running = requested_running
         self._reach_deadline = self._now() + self._duration(
             step.reach_timeout_s, "reach", positive=True,
         )
@@ -674,6 +744,16 @@ class ProfileRunner:
             if self._cancel_requested:
                 self._begin_stop(RunState.CANCELLED, "Operator cancellation")
                 return self._state
+            if (self._supervised is not None and self._stop_future is None and
+                    self._state is not None and self._state not in TERMINAL):
+                try:
+                    self._supervised.revalidate()
+                except Exception as exc:
+                    self._begin_stop(
+                        RunState.UNKNOWN,
+                        "Supervised permit revalidation failed: " + type(exc).__name__,
+                    )
+                    return self._state
             now = self._now()
             if now > self._run_deadline:
                 self._begin_stop(RunState.FAULT, "Whole-run watchdog exceeded")
