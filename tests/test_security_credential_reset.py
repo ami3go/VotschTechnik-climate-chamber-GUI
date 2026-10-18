@@ -163,7 +163,7 @@ class OfflineCredentialResetTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT count(*) FROM users").fetchone()[0], 2)
             self.assertEqual(db.execute(
                 "SELECT count(*) FROM sessions WHERE revoked=0"
-            ).fetchone()[0], 1)  # Only the new post-reset admin login.
+            ).fetchone()[0], 2)  # Admin and operator logins after reset.
             row = db.execute(
                 "SELECT password_hash,pin_hash,enabled FROM users WHERE username='admin'"
             ).fetchone()
@@ -238,8 +238,8 @@ class OfflineCredentialResetTests(unittest.TestCase):
                     self.assertFalse(_local_reset_console())
     def test_missing_database_refused_without_creating_authority(self):
         unknown = self.path.parent / "wrong-data-directory"
-        with patch("chamber_web.security.bootstrap.sys.stdin") as stdin:
-            stdin.isatty.return_value = True
+        with patch("chamber_web.security.bootstrap._local_reset_console",
+                   return_value=True):
             self.assertEqual(interactive_reset_credentials(unknown), 2)
         self.assertFalse(unknown.exists())
 
