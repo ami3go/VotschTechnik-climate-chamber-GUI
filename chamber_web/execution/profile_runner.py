@@ -135,6 +135,10 @@ class RunEvent:
     observed_at_utc: str = ""
     source_sampled_at_utc: str | None = None
     sample_index: int | None = None
+    # Independently observed device readback, never the intended setpoint.
+    setpoint_temperature_c: float | None = None
+    # G04 generation the event was observed under (crash reconciliation).
+    controller_generation: int | None = None
 
 
 class EventSink(Protocol):
@@ -201,6 +205,10 @@ class ProfileRunner:
         self._stop_future: Future | None = None
         self._terminal_after_stop = RunState.UNKNOWN
         self._profile_running = False
+        # Ramp-aware setpoint convergence supervision for the current step.
+        self._setpoint_best = math.inf
+        self._setpoint_observed: float | None = None
+        self._setpoint_frozen = 0
 
     @property
     def state(self) -> RunState | None:
@@ -260,7 +268,8 @@ class ProfileRunner:
     def _emit(self, kind: str, detail: str = "", *,
               temperature: float | None = None,
               quality: ReadingQuality | None = None,
-              source_sampled_at_utc: datetime | None = None) -> None:
+              source_sampled_at_utc: datetime | None = None,
+              setpoint: float | None = None) -> None:
         assert self._snapshot is not None and self._state is not None
         with self._event_guard:
             self._event_sequence += 1
@@ -273,6 +282,7 @@ class ProfileRunner:
                 datetime.now(timezone.utc).isoformat(timespec="microseconds"),
                 source_sampled_at_utc.isoformat() if source_sampled_at_utc else None,
                 self._sample_index if kind == "SAMPLE" else None,
+                setpoint, self._snapshot.controller_generation,
             )
             if self._sink is not None:
                 self._sink.emit(event)  # fail closed; not best-effort logging
@@ -385,6 +395,9 @@ class ProfileRunner:
                 self._stable_count = 0
                 self._dwell_elapsed = 0.0
                 self._profile_running = False
+                self._setpoint_best = math.inf
+                self._setpoint_observed = None
+                self._setpoint_frozen = 0
                 if self._sink is not None:
                     # G07 must commit PREPARED snapshot before any mutation.
                     self._sink.prepare(self._snapshot)
@@ -429,6 +442,9 @@ class ProfileRunner:
         self._step_started = self._now()
         self._step_deadline = self._step_started + self._step_budget(step, self._snapshot.parameters)
         target = float(step.target_temperature_c)
+        self._setpoint_best = math.inf
+        self._setpoint_observed = None
+        self._setpoint_frozen = 0
         if self._step_index == 0:
             # START_INTENT fences the entire first mutating sequence,
             # including its setpoint, for G07 crash reconciliation.
@@ -515,6 +531,38 @@ class ProfileRunner:
         assert self._snapshot is not None
         return -1 <= age <= self._snapshot.parameters.max_age_s
 
+    def _accept_setpoint(self, observed: float | None, target: float) -> bool:
+        """Supervise independently observed setpoint readback during a ramp.
+
+        A physical chamber may report an intermediate setpoint while it ramps
+        toward the commanded target, so the readback is not required to equal
+        the target immediately. It must however keep converging: a readback
+        that moves away from the target (beyond readback noise) or that stays
+        frozen short of the target for consecutive fresh samples fails closed.
+        Returns True only when the observed setpoint has settled at the target;
+        step qualification additionally requires that convergence.
+        """
+        if observed is None or not math.isfinite(observed):
+            raise ChamberSafetyError("Setpoint readback unavailable")
+        distance = abs(observed - target)
+        if distance <= 0.1:
+            self._setpoint_best = 0.0
+            self._setpoint_observed = observed
+            self._setpoint_frozen = 0
+            return True
+        if (self._setpoint_observed is not None and
+                abs(observed - self._setpoint_observed) <= 0.02):
+            self._setpoint_frozen += 1
+        else:
+            self._setpoint_frozen = 0
+        self._setpoint_observed = observed
+        if self._setpoint_frozen >= 3:
+            raise ChamberSafetyError("Setpoint readback frozen before target")
+        if distance > self._setpoint_best + 0.2:
+            raise ChamberSafetyError("Setpoint readback moved away from target")
+        self._setpoint_best = min(self._setpoint_best, distance)
+        return False
+
     def _observe(self) -> None:
         assert self._snapshot is not None
         self._healthy(running=self._profile_running)
@@ -536,14 +584,14 @@ class ProfileRunner:
             raise ChamberSafetyError("Telemetry quality/identity/state invalid")
         step = self._step()
         target = float(step.target_temperature_c)
-        if abs(sample.setpoint_temperature_c - target) > 0.1:
-            raise ChamberSafetyError("Readback setpoint changed")
+        setpoint_settled = self._accept_setpoint(sample.setpoint_temperature_c, target)
         finite_temperature(sample.measured_temperature_c,
                            self._snapshot.capabilities.temperature_min_c,
                            self._snapshot.capabilities.temperature_max_c)
         self._emit("SAMPLE", temperature=sample.measured_temperature_c,
                    quality=sample.quality,
-                   source_sampled_at_utc=sample.sampled_at_utc)
+                   source_sampled_at_utc=sample.sampled_at_utc,
+                   setpoint=sample.setpoint_temperature_c)
         source_time = sample.sampled_at_utc
         assert source_time is not None
         if self._last_source_timestamp is not None:
@@ -562,7 +610,10 @@ class ProfileRunner:
             self._dwell_elapsed = 0.0
             if self._state is RunState.DWELLING:
                 self._transition(RunState.REACHING, "Observation gap reset dwell")
-        in_band = abs(sample.measured_temperature_c - target) <= float(step.tolerance_c)
+        # A step qualifies only once the observed setpoint has settled at the
+        # target; a mid-ramp readback keeps the run in REACHING without credit.
+        in_band = (setpoint_settled and
+                   abs(sample.measured_temperature_c - target) <= float(step.tolerance_c))
         if not in_band:
             self._stable_from = None
             self._stable_count = 0
@@ -644,12 +695,12 @@ class ProfileRunner:
                             not self._sample_fresh(sample) or
                             sample.identity != self._snapshot.identity or
                             sample.operation_state is not expected_operation or
-                            sample.measured_temperature_c is None or
-                            sample.setpoint_temperature_c is None or
-                            not math.isfinite(sample.setpoint_temperature_c) or
-                            abs(sample.setpoint_temperature_c -
-                                float(self._step().target_temperature_c)) > 0.1):
+                            sample.measured_temperature_c is None):
                         raise ChamberSafetyError("Telemetry invalid while paused")
+                    self._accept_setpoint(
+                        sample.setpoint_temperature_c,
+                        float(self._step().target_temperature_c),
+                    )
                     finite_temperature(
                         sample.measured_temperature_c,
                         self._snapshot.capabilities.temperature_min_c,

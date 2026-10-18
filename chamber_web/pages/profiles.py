@@ -28,6 +28,7 @@ from chamber_web.services.profile_editor import (
     compatibility_warnings,
 )
 from chamber_web.services.profile_execution import ProfileExecutionService, RunView
+from chamber_web.services.profile_runtime import ProfileRunRuntime, run_journal_directory
 
 
 def default_database_path() -> Path:
@@ -51,7 +52,16 @@ def get_profile_editor_service() -> ProfileEditorService:
     return ProfileEditorService(ProfileStore(default_database_path()), chamber_id)
 
 
+_profile_runtime: ProfileRunRuntime | None = None
 _execution_service: ProfileExecutionService | None = None
+
+
+def get_profile_runtime() -> ProfileRunRuntime:
+    """Composition-owned G07 journal; reconciled once before runs are accepted."""
+    global _profile_runtime
+    if _profile_runtime is None:
+        _profile_runtime = ProfileRunRuntime(run_journal_directory())
+    return _profile_runtime
 
 
 def get_profile_execution_service() -> ProfileExecutionService:
@@ -60,9 +70,12 @@ def get_profile_execution_service() -> ProfileExecutionService:
     if _execution_service is None:
         from chamber_web.main import get_dashboard_service, profile_execution_is_simulation
         editor = get_profile_editor_service()
+        runtime = get_profile_runtime()
         _execution_service = ProfileExecutionService(
             get_dashboard_service().manager, editor.store, get_security(),
             editor.chamber_id, simulation=profile_execution_is_simulation(),
+            sink_factory=runtime.sink_factory,
+            start_blocker=runtime.start_blocker,
         )
     return _execution_service
 

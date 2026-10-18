@@ -63,7 +63,8 @@ class ProfileExecutionService:
                  security: SecurityStore, chamber_id: str, *, simulation: bool,
                  sink_factory: Callable[[], EventSink | None] | None = None,
                  parameters: RunParameters | None = None,
-                 clock: Clock | None = None):
+                 clock: Clock | None = None,
+                 start_blocker: Callable[[], str] | None = None):
         if chamber_id not in manager.configured_ids():
             raise ChamberSafetyError("Profile execution chamber is not configured")
         if type(simulation) is not bool:
@@ -77,6 +78,7 @@ class ProfileExecutionService:
         self._sink_factory = sink_factory
         self._parameters = parameters or RunParameters()
         self._clock = clock
+        self._start_blocker = start_blocker
         self._lock = threading.RLock()
         self._caller = threading.local()
         self._runner: ProfileRunner | None = None
@@ -118,12 +120,24 @@ class ProfileExecutionService:
             raise ChamberSafetyError("No active profile run")
         return runner
 
+    def _blocked_reason(self) -> str:
+        """Fail-closed composition blocker, e.g. an unavailable run journal."""
+        if self._start_blocker is None:
+            return ""
+        try:
+            return self._start_blocker()
+        except Exception:
+            return "Run journal unavailable"
+
     def start(self, session: str | None, csrf: str | None,
               profile_id: str, revision: int) -> ExecutionSnapshot:
         """Authorize and prepare an exact saved revision; call off the event loop."""
         self._preauthorize(session, csrf)
         if not self._simulation:
             raise ChamberSafetyError("Profile execution is disabled outside simulation")
+        blocker = self._blocked_reason()
+        if blocker:
+            raise ChamberSafetyError(blocker)
         if type(revision) is not int or revision < 1:
             raise ValueError("Choose a saved revision")
         with self._lock:
@@ -182,6 +196,7 @@ class ProfileExecutionService:
         """Return cached controller/run state; passive refresh never renews a session."""
         actor = self._security.authenticate(session, touch=False)
         require_permission(actor, Permission.READ)
+        blocker = self._blocked_reason()
         health = self._manager.health(self._chamber_id)
         with self._lock:
             runner, started_at = self._runner, self._started_at
@@ -212,9 +227,10 @@ class ProfileExecutionService:
             snapshot.operator_id if snapshot else None,
             min(step + 1, total), total, target,
             (time.monotonic() - started_at) if started_at is not None and snapshot else None,
-            runner.reason if runner is not None else "",
+            blocker if blocker and not active else (runner.reason if runner is not None else ""),
             health.stop_latched, health.state, self._simulation,
-            may_run and self._simulation and not active and not health.stop_latched and
+            may_run and self._simulation and not blocker and not active and
+            not health.stop_latched and
             health.connected and health.state == "VERIFIED_STOPPED",
             may_run and active and state is not RunState.STOP_REQUESTED,
             may_run and mine and state in (
