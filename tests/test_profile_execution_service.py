@@ -153,9 +153,18 @@ class ProfileExecutionServiceTests(unittest.TestCase):
         self.assertFalse(self.backend._running)
 
     def test_server_task_runs_and_shutdown_issues_stop(self):
+        # A zero-dwell profile can finish (and issue its own verified STOP)
+        # between the liveness check and shutdown's STOP; the controller then
+        # fails closed with "STOP superseded by another fault or STOP". A long
+        # dwell keeps the run deterministically active so shutdown itself must
+        # be the one that stops it.
+        editor = ProfileEditorService(self.store, CHAMBER)
+        draft = editor.edit_step(editor.new_draft(), 0, "dwell_s", "60")
+        long_run = editor.save(draft)
+
         async def scenario():
             await self.service.start_async(
-                self.operator.session, self.operator.csrf, self.saved.profile_id, 1,
+                self.operator.session, self.operator.csrf, long_run.profile_id, 1,
             )
             for _ in range(200):
                 if self.backend._running:
