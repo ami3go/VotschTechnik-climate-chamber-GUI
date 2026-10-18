@@ -1,12 +1,12 @@
 # G08 — Full security architecture, threat model and operations
 
-**Status (2026-10-13): CANDIDATE / integration testing against current `main`. [G08-min PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25) is merged; [G08 PR #29](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/29) is draft and NOT approved for production LAN or physical hardware.**
+**Status (reconciled 2026-10-18): [G08 PR #29](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/29) MERGED (software only) 2026-10-15 as `2fdd143cb743fe52b30223f65ce7fe88cb4ff5e7`; [G08-min PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25) is merged. Independent security review was NOT obtained and this is NOT approved for production LAN or physical hardware.**
 
 Full G08 **extends** the existing `SecurityStore`, NiceGUI sign-in and
 `AuthorizedChamber`; there is no replacement authentication mechanism.
-The G08 implementation began on the G08-min PR #25 branch. PR #25 is now
-merged; this G08 candidate has been reconciled with current main and must
-remain draft until final integrated tests and review pass.
+The G08 implementation began on the G08-min PR #25 branch. PR #25 is merged;
+this G08 work was reconciled with main, passed its PR-head integrated tests and
+merged to `main` on 2026-10-15. Independent review is still absent.
 Neither a green simulated CI nor a signed package releases hardware.
 
 ## Trust boundaries and threat model

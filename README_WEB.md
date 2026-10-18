@@ -1,4 +1,4 @@
-# NiceGUI climate chamber — G02-A server-backed simulation
+# NiceGUI climate chamber — web application
 
 The dashboard now obtains **read-only server-owned telemetry** through
 `DashboardService → ChamberManager(chamber_id) → ChamberBackend`. The server
@@ -8,15 +8,21 @@ Backend polling runs independently of browser clients, in worker threads,
 and failed/stale reads show **UNKNOWN/unverified** rather than the last
 measured value. The domain/manager are manufacturer-neutral.
 
-**No physical hardware control is enabled.** Start, Stop, Hold and manual
-setpoint controls are deliberately disabled. G04/G08-min and site safety/HIL
-approval are prerequisites for any live mutation. The external Vötsch
-driver is not imported by the NiceGUI page or generic services.
+**Manual controls (claim, target, start, stop) run against the simulated
+backend only.** Any physical mutation requires the supervised HIL opt-in
+below plus signed site authorization. The external Vötsch driver is
+imported only by the dedicated `VotschBackend` adapter; G04 fencing and
+server-side authorization guard every command.
 
-The profile editor and CSV import/export are **page-local drafts**, not
-a persisted revision store or executable profile; G03-C will connect those
-to the existing server-side SQLite profile services. Run History and
-device logs are also not implemented. Draft events are not hardware logs.
+Profiles are persisted server-side with immutable revisions (G03-C) and can
+be run from the browser in simulation through the server-owned profile
+runner. Run History reads recorded G07 run journals; the Logs page shows
+events while G07/G08-audit integration remains partially pending. Recorded
+run data is not the live chart cache.
+
+Current release state and blockers: [readiness findings
+ledger](docs/READINESS_FINDINGS.md); ordered remaining milestones:
+[development task plan](docs/REMAINING_DEVELOPMENT_TASKS.md).
 
 ## Automatic environment setup (Windows / Linux)
 
@@ -128,12 +134,13 @@ tests cover the same read-only service. They run in separate single-chamber
 instances and do not certify any physical hardware. Production Vötsch
 connections remain blocked by the G01 adapter.
 
-## Early Windows packaging feasibility (W01-A)
+## Windows packaging (W01/W02)
 
-The separate [W01-A Windows guide](README_OFFLINE_WINDOWS.md) documents an early
-Windows launcher and simulated NiceGUI offline ZIP build. The bundle has a
-pinned external Vötsch dependency (unless explicitly built in simulation-only
-mode), but the service selects **FakeBackend only** and real hardware I/O stays
-disabled. W01 records frozen assets and dependency versions/integrity hashes;
-a clean air-gapped Windows certification and full transitive hash lock remain
-release-blocking W02 tasks.
+The separate [Windows guide](README_OFFLINE_WINDOWS.md) documents the Windows
+launcher and simulated NiceGUI offline ZIP build. The bundle has a pinned
+external Vötsch dependency (unless explicitly built in simulation-only mode),
+but the service selects **FakeBackend only** and real hardware I/O stays
+disabled. The W02 signed offline-release foundation merged 2026-10-15
+(simulation-only, [release NO-GO](docs/W02_OFFLINE_RELEASE.md)); clean
+air-gapped Windows certification, site-pinned publisher keys and the full
+transitive hash lock remain release-blocking W02 tasks.

@@ -53,18 +53,14 @@ independent human signoff.** Physical chambers were never connected.
 - Out-of-band approved signed bundle provenance with SBOM/transitive wheel
   hashes. No physical write until P00 site-signed and H01 HIL.
 
-**Merge decision: BLOCKED.** G08-min PR #25 is merged. PR #29 remains draft
-and has been reconciled against main for CI. Do not merge until a reviewed
-final diff, clean final-source CI and all code-level BLOCKER/HIGH fixes are
-independently verified. Final operational LAN/physical release is independently
-NO-GO even after software CI.
+**Merge decision (2026-10-13): BLOCKED. Closure (2026-10-18):** [PR #29](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/29) merged 2026-10-15 as `2fdd143cb743fe52b30223f65ce7fe88cb4ff5e7` after green PR-head CI. G08-min PR #25 is merged. The independent verification of the reviewed final diff and all code-level BLOCKER/HIGH fixes was **NOT** obtained and remains OPEN; final operational LAN/physical release is independently NO-GO even after software CI.
 
 ## 2026-10-13 final-head re-review checkpoint
 
 - Head before CI correction: `e8b54c0f3d0f1b8cfd132750615bbd8852cedb61`. On GitHub Actions run [38452378497](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38452378497), the Python 3.10 job failed and Python 3.12 job ended cancelled; **both** job logs show two failed G03-C NiceGUI UI tests at `User.open('/profiles')` or `User.open('/login')` with HTTP 403. The previous security tests and profile service tests passed.
 - Root cause: G08 full Host validation permits loopback `127.0.0.1:8080` / `localhost:8080`, whereas NiceGUI's in-process `User` fixture defaults to the `testserver` authority. The middleware correctly rejects that untrusted hostname. Tests now configure the fixture's HTTP client to use the loopback authority rather than weakening Host validation. A negative ASGI test explicitly requires `testserver` to remain rejected in production middleware.
 - Corrective commits: `bac2bde65c7bc78260440426a944eaad44a05217`, `286ef01ba32c7396b0b04f1bf3b8995d5d018ffd`, `d8968d6dd07ec60aef69ac8937749fed4cb7f055`. Final-head CI must be rerun and **completed**; in-flight or older-head workflows are not passing evidence.
-- **Still OPEN HIGH:** audit tail-truncation not anchored outside SQLite; historical G08-min audit authenticity cannot be established retroactively; signed backup replay/rollback policy missing; Windows DACL/owner enforcement not implemented. These are material security issues, not documentation-only closure. Review independently before merge.
+- **Still OPEN HIGH:** audit tail-truncation not anchored outside SQLite; historical G08-min audit authenticity cannot be established retroactively; signed backup replay/rollback policy missing; Windows DACL/owner enforcement not implemented. These are material security issues, not documentation-only closure. Independent review was still absent after the 2026-10-15 software merge and remains **OPEN**.
 - Independent human/security approval is still absent. `main` merge and LAN/physical deployment are NOT authorized.
 
 ## 2026-10-14 follow-up findings and CI integration
@@ -76,7 +72,7 @@ NO-GO even after software CI.
 | G08-R13 — signed backup rollback | HIGH, OPEN | Manifest HMAC verifies authenticity, not whether an older valid snapshot is acceptable. Explicit operator-authorized recovery freshness/anti-rollback policy and external escrow remain release gates. |
 | G08-R14 — Windows NTFS key protection | HIGH, OPEN | POSIX file-mode validation is not an NTFS owner/DACL audit. Independently assess the launcher/service account, effective permissions, and host key protection before LAN use. |
 
-Merged H01 #32 and cross-platform setup #33 were integrated through commit `cd59d5e`, with no G04 hardware activation. G05 #28 and G07-A #27 remain draft/open. **This is AI-assisted self-review, not independent external human approval.** PR #29 must remain unmerged until final-head CI, independent security review, and all code-level HIGH/BLOCKER gates are resolved. Physical HIL, site LAN approval, W02 release certification and actual hardware enablement remain separately NO-GO.
+Merged H01 #32 and cross-platform setup #33 were integrated through commit `cd59d5e`, with no G04 hardware activation. **Closure (2026-10-18): G05 #28, G07-A #27 and G08 #29 merged 2026-10-15 after green final-head CI; the independent security review and all code-level HIGH/BLOCKER release gates below remain OPEN.** **This is AI-assisted self-review, not independent external human approval.** Physical HIL, site LAN approval, W02 release certification and actual hardware enablement remain separately NO-GO.
 
 ### Additional HIGH data-loss/recovery defects — 2026-10-14
 

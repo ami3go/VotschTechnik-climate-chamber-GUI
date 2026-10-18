@@ -1,6 +1,6 @@
 # W02 — Windows offline signed-release foundation and acceptance ledger
 
-**Status: SOFTWARE IMPLEMENTATION PARTIAL / RELEASE NO-GO / PR #30 DRAFT.**
+**Status: SOFTWARE FOUNDATION MERGED / RELEASE NO-GO.** [PR #30](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/30) merged 2026-10-15 as `0e9e9cd546cc675f06734272a67c4a8ce7a9da70` after its PR-head Windows checks passed; the certification gates in this document remain OPEN.
 This extends W01-A; no second launcher, no new chamber I/O owner and no enablement of physical Vötsch communication. W01's frozen PyInstaller executable remains a **simulation-only** portable prototype. A green connected Windows Actions job does not certify disconnected Windows 10/11 or release signing.
 
 ## Build and architecture
@@ -78,6 +78,6 @@ On **clean** isolated x64 VMs with Python, Git, Node and build tools absent, rec
 
 **Do not use an internet-connected Actions runner as replacement for this procedure.** No physical chamber is connected and Web STOP is not a physical emergency stop.
 
-## Integration/merge decision
+## Integration/merge decision — closed 2026-10-15 / gates re-affirmed 2026-10-18
 
-The existing [W02 PR #30](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/30) has incorporated the merged H01 simulated CI and PR #33 developer setup from current `main`. G05 [#28](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/28), G07-A [#27](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/27) and G08-full [#29](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/29) remain separate draft integrations. **Do not merge PR #30 while its software BLOCKER/HIGH findings or required merge gates remain open.** Independent Windows VM, signed release and operational approval are distinct stages; neither PR merge nor unit-test success grants hardware enablement.
+[W02 PR #30](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/30) merged 2026-10-15 as `0e9e9cd546cc675f06734272a67c4a8ce7a9da70` after its PR-head Windows checks passed; G05 [#28](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/28), G07-A [#27](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/27) and G08-full [#29](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/29) merged the same day. This was a software-foundation integration only. Independent Windows clean-VM certification, site-approved publisher keys, signed release artifacts and operational approval remain **OPEN / NO-GO**; neither PR merge nor unit-test success grants hardware enablement or a certified W02 release.
