@@ -26,11 +26,13 @@ Open http://127.0.0.1:8080 after starting the server. The setup creates or reuse
 
 ## Offline administrator credential reset
 
-From a trusted local terminal in the installed Python environment, run:
+From the **complete GUI repository checkout**, use the installed Python environment to run `python -m scripts.reset_credentials` or execute `python scripts/reset_credentials.py` directly:
 
 ```bash
 python -m scripts.reset_credentials
 ```
+
+Direct execution resolves `chamber_web` from the checked-out repository, so it also works from an unrelated working directory. Running a standalone copy of the script without the `chamber_web/` directory is not supported.
 
 For a frozen Windows deployment, run `server/ClimateChamberServer.exe --reset-credentials`. Recovery requires the existing administrator password or a previously escrowed one-time recovery token. It resets the password, clears the admin PIN, switches to General login, and revokes sessions without deleting operator accounts or run data. See [credential recovery](docs/CREDENTIAL_RESET.md). Unauthenticated and browser recovery are not supported.
 
