@@ -1,4 +1,4 @@
-"""Trusted host-only administrator credential reset; no hardware or network I/O.
+"""Host-console-only factory credential recovery; no hardware or network I/O.
 
 Source checkout: python -m scripts.reset_credentials OR python scripts/reset_credentials.py
 Frozen Windows install: ClimateChamberServer.exe --reset-credentials
@@ -26,7 +26,7 @@ from chamber_web.security.bootstrap import interactive_reset_credentials
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Reset admin password and PIN with the current password or offline recovery token"
+        description="Restore admin/admin and PIN 12345678 locally without the old password"
     )
     parser.add_argument(
         "--data-dir", type=Path, default=None,

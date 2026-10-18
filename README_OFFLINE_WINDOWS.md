@@ -104,10 +104,11 @@ The first NiceGUI launch provisions `admin` / `admin` and default PIN `12345678`
 
 From a trusted **local interactive** PowerShell terminal in the extracted
 distribution, run `server/ClimateChamberServer.exe --reset-credentials`.
-You must know the existing administrator primary password or hold a valid
-one-time offline recovery token. The command restores General password
-login, removes the administrator PIN and revokes all sessions while
-preserving user and run data. It does **not** stop chamber hardware.
+The script requires no previous password, PIN or recovery token; type
+`RESET` at the server computer to confirm. It restores the factory
+administrator username, password and PIN, selects General password login,
+and revokes all existing sessions. Other user and run data are preserved.
+It does **not** stop chamber hardware. Change defaults before LAN use.
 See [credential-reset procedures](docs/CREDENTIAL_RESET.md) in the source
 repository. Never delete the security database/keys to bypass login.
 

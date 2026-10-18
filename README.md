@@ -34,7 +34,7 @@ python -m scripts.reset_credentials
 
 Direct execution resolves `chamber_web` from the checked-out repository, so it also works from an unrelated working directory. Running a standalone copy of the script without the `chamber_web/` directory is not supported.
 
-For a frozen Windows deployment, run `server/ClimateChamberServer.exe --reset-credentials`. Recovery requires the existing administrator password or a previously escrowed one-time recovery token. It resets the password, clears the admin PIN, switches to General login, and revokes sessions without deleting operator accounts or run data. See [credential recovery](docs/CREDENTIAL_RESET.md). Unauthenticated and browser recovery are not supported.
+For a frozen Windows deployment, run `server/ClimateChamberServer.exe --reset-credentials`. This server-host-only recovery does not require the old password, PIN, or recovery token. After explicit interactive confirmation, it restores factory administrator values and General login, revokes sessions and preserves other users and run data. It is not available through the browser; the server OS account must have permission to access the security database. See [credential recovery](docs/CREDENTIAL_RESET.md).
 
 ## Desktop GUI retirement
 

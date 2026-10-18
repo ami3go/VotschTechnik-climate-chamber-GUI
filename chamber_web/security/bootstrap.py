@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
+import sqlite3
 import sys
 from pathlib import Path
 
-from .auth import AuthorizationError, SecurityStore, _password_bytes
+from .auth import AuthorizationError, SecurityStore
 from .paths import security_directory
 
 
@@ -73,15 +75,38 @@ def interactive_recovery(*, issue: bool = False, directory: Path | None = None) 
         print(f"Offline recovery rejected: {type(exc).__name__}", file=sys.stderr)
         return 2
 
-def interactive_reset_credentials(directory: Path | None = None) -> int:
-    """Recover the administrator without an insecure unauthenticated backdoor.
+def _local_reset_console() -> bool:
+    """Best-effort remote-session rejection; filesystem ACLs are authoritative.
 
-    Current primary password (including in PIN-only mode) or a previously
-    escrowed recovery token is mandatory. This is never exposed via HTTP.
+    Never offer this operation as an HTTP, RPC, or web-admin callback.
+    TTY alone does not distinguish an on-host terminal emulator from SSH,
+    hence the additional common remote-session indicators.
     """
     if not sys.stdin.isatty():
-        print("Credential reset requires an interactive local terminal",
-              file=sys.stderr)
+        return False
+    if any(os.environ.get(key) for key in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY")):
+        return False
+    if os.environ.get("SESSIONNAME", "").upper().startswith("RDP-"):
+        return False
+    if os.name == "nt":
+        try:
+            import ctypes
+            if ctypes.windll.user32.GetSystemMetrics(0x1000):
+                return False
+        except (AttributeError, OSError):
+            return False
+    return True
+
+
+def interactive_reset_credentials(directory: Path | None = None) -> int:
+    """Host-console-only factory credential recovery, without old credentials.
+
+    This privileged maintenance operation requires OS access to the existing
+    deployment identity database. Explicit confirmation is mandatory.
+    """
+    if not _local_reset_console():
+        print("Factory credential reset requires an interactive console on the "
+              "server PC (SSH/RDP/unattended sessions refused)", file=sys.stderr)
         return 2
     root = (Path(directory).expanduser().resolve()
             if directory is not None else security_directory())
@@ -89,51 +114,30 @@ def interactive_reset_credentials(directory: Path | None = None) -> int:
         print("Existing security database not found; reset refused",
               file=sys.stderr)
         return 2
-    from .auth import AuthenticationError
     try:
         store = SecurityStore.from_environment(root)
         if not store.is_bootstrapped():
             print("No administrator provisioned; reset refused", file=sys.stderr)
             return 2
-        username = input("Administrator account: ").strip()
-        method = input("Proof: current [p]assword or escrow [t]oken? [p/t]: ").strip().lower()
-        if method not in {"p", "t"}:
-            print("Choose p or t", file=sys.stderr)
+        print("WARNING: Restore factory administrator username/password/PIN: "
+              "admin / admin / 12345678.")
+        print("This restores General login and revokes ALL user sessions. "
+              "It does NOT stop chamber hardware or erase test data.")
+        print("First bring the chamber to a verified safe state and stop "
+              "the server using approved local procedures.")
+        if input("Type RESET to restore factory credentials: ").strip() != "RESET":
+            print("Reset cancelled; no credentials changed.", file=sys.stderr)
             return 2
-        proof = getpass.getpass(
-            "Current administrator password: " if method == "p"
-            else "Offline recovery credential: "
-        )
-        new_password = getpass.getpass("New administrator password: ")
-        repeat = getpass.getpass("Repeat new password: ")
-        if new_password != repeat:
-            print("Passwords do not match", file=sys.stderr)
-            return 2
-        # Invalid new passwords must not invalidate previously escrowed tokens.
-        _password_bytes(new_password, min_bytes=store.password_min_bytes)
-        if method == "p":
-            session = store.login(
-                username, proof, offline_primary_password=True,
-            )
-            try:
-                token = store.issue_recovery_token(session.session, session.csrf)
-            finally:
-                store.logout(session.session)
-        else:
-            token = proof
-        store.recover_admin_offline(
-            token, username, new_password, reset_credentials=True,
-        )
-        print("Administrator password reset; PIN cleared and security "
-              "profile restored to General. All sessions revoked.")
-        print("After signing in, issue and escrow a fresh recovery token.")
+        store.reset_factory_credentials_offline()
+        print("Factory credentials restored: username admin, password admin, "
+              "PIN 12345678, profile General. Sessions revoked.")
+        print("Change the factory password and PIN immediately before LAN use.")
         return 0
-    except (ValueError, PermissionError, AuthenticationError,
-            AuthorizationError, RuntimeError) as exc:
-        print(f"Offline credential reset rejected: {type(exc).__name__}",
+    except (ValueError, PermissionError, AuthorizationError,
+            RuntimeError, OSError, sqlite3.Error) as exc:
+        print(f"Factory credential reset rejected: {type(exc).__name__}",
               file=sys.stderr)
         return 2
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Offline climate chamber admin setup")
@@ -143,7 +147,7 @@ def main() -> int:
     group.add_argument("--issue-recovery-token", action="store_true")
     group.add_argument("--recover-admin", action="store_true")
     group.add_argument("--reset-credentials", action="store_true",
-                       help="Reset admin password/PIN; restore General login")
+                       help="Host-console-only recovery to factory admin/admin and PIN 12345678")
     options = parser.parse_args()
     if options.reset_credentials:
         return interactive_reset_credentials(options.data_dir)

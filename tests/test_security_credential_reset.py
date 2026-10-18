@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from chamber_web.security.auth import (
-    AuthenticationError, Role, SecurityProfile, SecurityStore,
+    AuthenticationError, AuthorizationError, Role, SecurityProfile, SecurityStore,
 )
 from chamber_web.security.bootstrap import interactive_reset_credentials
 
@@ -131,45 +131,115 @@ class OfflineCredentialResetTests(unittest.TestCase):
             "admin_user", "123456", use_pin=True,
         ).session)
 
-    def test_password_proof_works_in_pin_only_mode(self):
-        self._isolated_lan()
-        with patch.dict(os.environ, {"CHAMBER_SECURITY_DIR": str(self.path)}), \
-             patch("chamber_web.security.bootstrap.sys.stdin") as stdin, \
-             patch("builtins.input", side_effect=["admin_user", "p"]), \
-             patch("chamber_web.security.bootstrap.getpass.getpass",
-                   side_effect=[self.OLD_PASSWORD, self.NEW_PASSWORD, self.NEW_PASSWORD]), \
-             redirect_stdout(StringIO()) as output:
-            stdin.isatty.return_value = True
-            self.assertEqual(interactive_reset_credentials(), 0)
-            self.assertNotIn(self.OLD_PASSWORD, output.getvalue())
-        self.assertEqual(self.store.get_security_profile(), SecurityProfile.GENERAL)
-        self.assertIsNotNone(self.store.login(
-            "admin_user", self.NEW_PASSWORD,
-        ).session)
-
-    def test_token_proof_and_refuse_noninteractive(self):
-        token = self.store.issue_recovery_token(
+    def test_factory_reset_without_password_restores_renamed_admin_and_preserves_users(self):
+        operator = self._isolated_lan()
+        issued = self.store.issue_recovery_token(
             self.admin.session, self.admin.csrf,
         )
+        self.store.change_admin_username(
+            self.admin.session, self.admin.csrf,
+            self.OLD_PASSWORD, "renamed_admin",
+        )
+        self.store.reset_factory_credentials_offline()
+
+        self.assertEqual(self.store.get_security_profile(), SecurityProfile.GENERAL)
+        self.assertEqual(self.store.factory_credentials_active(), (True, True))
+        admin = self.store.login("admin", "admin")
+        self.assertEqual(self.store.authenticate(admin.session).role, Role.ADMIN)
+        with self.assertRaises(AuthenticationError):
+            self.store.login("renamed_admin", self.OLD_PASSWORD)
+        with self.assertRaises(AuthenticationError):
+            self.store.login("admin", "12345678", use_pin=True)
+        with self.assertRaises(AuthenticationError):
+            self.store.authenticate(operator.session)
+        self.assertIsNotNone(self.store.login(
+            "operator_user", "StrongOperatorPassword#789"
+        ).session)
+        with self.assertRaises(AuthenticationError):
+            self.store.recover_admin_offline(
+                issued, "admin", self.NEW_PASSWORD, reset_credentials=True,
+            )
+        with closing(sqlite3.connect(self.store.database)) as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM users").fetchone()[0], 2)
+            self.assertEqual(db.execute(
+                "SELECT count(*) FROM sessions WHERE revoked=0"
+            ).fetchone()[0], 2)  # Admin and operator logins after reset.
+            row = db.execute(
+                "SELECT password_hash,pin_hash,enabled FROM users WHERE username='admin'"
+            ).fetchone()
+            self.assertEqual(row[2], 1)
+            self.assertTrue(row[0].startswith("scrypt:"))
+            self.assertTrue(row[1].startswith("scrypt:"))
+            self.assertNotEqual(row[0], "admin")
+            self.assertNotEqual(row[1], "12345678")
+        self.assertGreater(self.store.verify_audit_integrity(), 0)
+        self.assertIn("recovery.factory.reset", str(self.store.audit_records()))
+
+    def test_local_reset_refuses_nonadmin_username_collision_atomically(self):
+        self.store.create_user(
+            self.admin.session, self.admin.csrf,
+            "admin", "StrongOperatorPassword#789", Role.OPERATOR,
+        )
+        baseline = self.store.audit_records()
+        with self.assertRaises(AuthorizationError):
+            self.store.reset_factory_credentials_offline()
+        self.assertEqual(self.store.audit_records(), baseline)
+        self.assertIsNotNone(self.store.login("admin_user", self.OLD_PASSWORD).session)
+        self.assertEqual(self.store.get_security_profile(), SecurityProfile.GENERAL)
+
+    def test_local_reset_refuses_ambiguous_admin_and_unbootstrapped_store(self):
+        self.store.create_user(
+            self.admin.session, self.admin.csrf,
+            "other_admin", "StrongSecondAdminPass#789", Role.ADMIN,
+        )
+        with self.assertRaises(AuthorizationError):
+            self.store.reset_factory_credentials_offline()
+        with tempfile.TemporaryDirectory() as directory:
+            empty = SecurityStore(Path(directory) / "security")
+            with self.assertRaises(AuthorizationError):
+                empty.reset_factory_credentials_offline()
+            self.assertFalse(empty.is_bootstrapped())
+
+    def test_factory_reset_works_without_proof_in_pin_only_mode(self):
+        self._isolated_lan()
+        with patch.dict(os.environ, {"CHAMBER_SECURITY_DIR": str(self.path)}), \
+             patch("chamber_web.security.bootstrap._local_reset_console",
+                   return_value=True), \
+             patch("builtins.input", side_effect=["RESET"]) as response, \
+             redirect_stdout(StringIO()) as output:
+            self.assertEqual(interactive_reset_credentials(), 0)
+            self.assertEqual(response.call_count, 1)
+            self.assertNotIn(self.OLD_PASSWORD, output.getvalue())
+        self.assertEqual(self.store.get_security_profile(), SecurityProfile.GENERAL)
+        self.assertIsNotNone(self.store.login("admin", "admin").session)
+
+    def test_local_reset_refuses_noninteractive_and_cancelled_confirmation(self):
         with patch("chamber_web.security.bootstrap.sys.stdin") as stdin:
             stdin.isatty.return_value = False
             self.assertEqual(interactive_reset_credentials(self.path), 2)
-        with patch("chamber_web.security.bootstrap.sys.stdin") as stdin, \
-             patch("builtins.input", side_effect=["admin_user", "t"]), \
-             patch("chamber_web.security.bootstrap.getpass.getpass",
-                   side_effect=[token, self.NEW_PASSWORD, self.NEW_PASSWORD]), \
-             redirect_stdout(StringIO()) as output:
-            stdin.isatty.return_value = True
-            self.assertEqual(interactive_reset_credentials(self.path), 0)
-            self.assertNotIn(token, output.getvalue())
+        with patch("chamber_web.security.bootstrap._local_reset_console",
+                   return_value=True), \
+             patch("builtins.input", return_value="NO"), \
+             redirect_stdout(StringIO()):
+            self.assertEqual(interactive_reset_credentials(self.path), 2)
+        self.assertEqual(self.store.factory_credentials_active(), (False, False))
         self.assertIsNotNone(self.store.login(
-            "admin_user", self.NEW_PASSWORD,
+            "admin_user", self.OLD_PASSWORD,
         ).session)
 
-    def test_missing_database_refused_without_creating_authority(self):
-        unknown = self.path.parent / "wrong-data-directory"
+    def test_reject_ssh_and_rdp_remote_session_markers(self):
+        from chamber_web.security.bootstrap import _local_reset_console
         with patch("chamber_web.security.bootstrap.sys.stdin") as stdin:
             stdin.isatty.return_value = True
+            for env in ({"SSH_CONNECTION": "192.0.2.1 7777 192.0.2.2 22"},
+                        {"SSH_TTY": "/dev/pts/1"},
+                        {"SESSIONNAME": "RDP-Tcp#4"}):
+                with self.subTest(env=env), patch.dict(os.environ, env):
+                    self.assertFalse(_local_reset_console())
+    def test_missing_database_refused_without_creating_authority(self):
+        unknown = self.path.parent / "wrong-data-directory"
+        with patch("chamber_web.security.bootstrap._local_reset_console",
+                   return_value=True):
             self.assertEqual(interactive_reset_credentials(unknown), 2)
         self.assertFalse(unknown.exists())
 
@@ -202,7 +272,7 @@ class DirectScriptInvocationTests(unittest.TestCase):
                 timeout=30, check=False,
             )
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn("interactive local terminal", result.stderr)
+        self.assertIn("interactive console", result.stderr)
         self.assertNotIn("ModuleNotFoundError", result.stderr)
 
     def test_standalone_copied_script_exits_with_clear_diagnostic(self):
