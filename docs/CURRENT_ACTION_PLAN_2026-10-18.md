@@ -7,8 +7,8 @@
 **Canonical release blockers:** [READINESS_FINDINGS.md](READINESS_FINDINGS.md)  
 **GUI repo:** https://github.com/ami3go/VotschTechnik-climate-chamber-GUI  
 **External driver repo:** https://github.com/ami3go/VotschTechnik-climate-chamber-Python  
-**Inspected GUI \`main\`:** \`2f63d5896fc83e04f82cd709986b0a45caeda2b1\`  
-**Inspected driver \`main\`:** \`9323e3701f3befedcc23b45170a851fd327f0bcc\`
+**Inspected GUI `main`:** `2f63d5896fc83e04f82cd709986b0a45caeda2b1`  
+**Inspected driver `main`:** `9323e3701f3befedcc23b45170a851fd327f0bcc`
 
 > **This is an execution plan, not physical equipment authorization.** Source/CI status is a time-bounded snapshot. Re-fetch branch heads, reviews, safety policies and GitHub checks before each action. Passing CI does not establish hardware certification or external site approval.
 
@@ -20,7 +20,7 @@
 | DOC-01 tracker and readiness reconciliation | [PR #53](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/53) merged 2026-10-18 | **COMPLETE** (update ledger on each later merge) |
 | T01 NiceGUI order-independent test isolation/security regressions | [PR #54](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/54) merged 2026-10-18 | **COMPLETE** baseline; continue regressions |
 | H02-B part 1 — G07 journal composition, measured setpoint and generation, ramp-aware runner | [PR #55](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/55) merged 2026-10-18 | **COMPLETE** |
-| H02-B part 2 — supervised signed-permit path | [PR #56](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/56), head \`bbf6c9b5ac2fbd473ed54805123384f51ecae9e6\` | **OPEN**; no recorded independent approval; CI in progress at snapshot |
+| H02-B part 2 — supervised signed-permit path | [PR #56](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/56), head `bbf6c9b5ac2fbd473ed54805123384f51ecae9e6` | **OPEN**; no recorded independent approval; CI in progress at snapshot |
 | H02-C separate *physical* watchdog | No merged dedicated implementation identified | **BLOCKER** |
 | H03 typed driver/output and gradient support | Driver main unchanged at inspected SHA; simulation profile v2 from #38 | **NOT STARTED** for physical acceptance |
 | G07-B evidence/history security and fidelity | Recorder merged and browser/history foundation present | **FOLLOW-UP**; operational review open |
@@ -33,26 +33,26 @@ At snapshot, GUI main's three check runs were successful: Windows Python 3.10 an
 
 ### Exact PR #56 checkpoint
 
-- **Branch:** \`feat/h02-b-supervised-permit-path\`.
+- **Branch:** `feat/h02-b-supervised-permit-path`.
 - **Current contents:** server-only H02 permit and trust key loading; launch-time fail-closed configuration; scope/operator/witness/driver/GUI revision binding; permit revalidation; restricted G06 physical run path, capability preflight and single G04 START; browser state reporting; mock-only regression tests.
 - **Safety boundary:** no general physical profile authorization; the independent H02-C supervisor does **not** exist, so live supervisor validation must refuse physical starts. Real H02 hardware tests **NOT RUN**.
 - **Local test evidence reported by PR:** Python 3.10 and 3.12: 453 passed, 9 skipped, 161 subtests on each tested version.
 - **GitHub exact-head observation during review:** 16 checks, initially 11 PASS / 5 RUNNING / 0 FAIL; more jobs may complete after snapshot. Confirm exact current results before merging.
 - **Review state:** No recorded PR reviews at snapshot. Independent code/safety review is not supplied by CI success.
-- **Mergeability:** no reported conflict; GitHub \`unstable\` while checks were pending.
+- **Mergeability:** no reported conflict; GitHub `unstable` while checks were pending.
 
 ## 2. Execution queue
 
 | Order | Work package | Suggested PR / branch | Dependencies | Exit / blocked state |
 |---|---|---|---|---|
 | 01 | Complete existing H02-B part 2 | Existing [PR #56](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/56) | #55, #39 | Exact-head checks, code review, no unauthorized physical start |
-| 02 | Independent H02-C watchdog | \`feat/h02-c-independent-watchdog\` | Stable #56 interface | Bounded independent monitor and STOP/UNKNOWN faults validated; independent review |
-| 03 | H02-D cross-component acceptance in simulation | \`test/h02-d-full-execution-acceptance\` | H02-B and H02-C | Full G04/G06/G07/G08 and NiceGUI/Chromium scenario matrix |
-| 04 | H03-A typed manufacturer driver/API | Driver: \`feat/h03-typed-output-apis\`; GUI adapter follow-up | Driver API inventory | Mocked driver plus GUI conformance; no new physical writes |
-| 05 | H03-B outputs, gradients and safe restoration | \`feat/h03-b-output-restoration\` | H03-A, site policy | Simulated STOP races/restoration and signed site policy required for physical operation |
-| 06 | G07-B authenticated evidence & History | \`feat/g07-b-evidence-and-history\` | Existing G07/G08 | Verified authorized exports and no missed extrema |
-| 07 | W02-B reproducible signed air-gap build | \`feat/w02-b-offline-supply-chain\` | W02 foundation | Trusted verifier, pinned wheelhouse/SBOM, offline evidence |
-| 08 | W02-C Windows lifecycle/data recovery | \`feat/w02-c-windows-lifecycle\` | W02-B, G03/G07/G08 data contracts | Offline Windows install/restart/upgrade/rollback acceptance |
+| 02 | Independent H02-C watchdog | `feat/h02-c-independent-watchdog` | Stable #56 interface | Bounded independent monitor and STOP/UNKNOWN faults validated; independent review |
+| 03 | H02-D cross-component acceptance in simulation | `test/h02-d-full-execution-acceptance` | H02-B and H02-C | Full G04/G06/G07/G08 and NiceGUI/Chromium scenario matrix |
+| 04 | H03-A typed manufacturer driver/API | Driver: `feat/h03-typed-output-apis`; GUI adapter follow-up | Driver API inventory | Mocked driver plus GUI conformance; no new physical writes |
+| 05 | H03-B outputs, gradients and safe restoration | `feat/h03-b-output-restoration` | H03-A, site policy | Simulated STOP races/restoration and signed site policy required for physical operation |
+| 06 | G07-B authenticated evidence & History | `feat/g07-b-evidence-and-history` | Existing G07/G08 | Verified authorized exports and no missed extrema |
+| 07 | W02-B reproducible signed air-gap build | `feat/w02-b-offline-supply-chain` | W02 foundation | Trusted verifier, pinned wheelhouse/SBOM, offline evidence |
+| 08 | W02-C Windows lifecycle/data recovery | `feat/w02-c-windows-lifecycle` | W02-B, G03/G07/G08 data contracts | Offline Windows install/restart/upgrade/rollback acceptance |
 | 09 | G08-OPS independent operational security | Review package; focused remediation PR if needed | G08, W02 deployment | Reviewed LAN/credential/backup/audit security and site policy |
 | 10 | H01-A physical site acceptance | Signed site procedure/evidence, no default implementation PR | H02/H03 approved software, P00 | Separately authorized signed hardware tests; independent STOP evidence |
 | 11 | R01 production release/cutover | Tagged signed release + approval record | All applicable release and site gates | Signed GO decision |
@@ -62,22 +62,22 @@ H03-A, G07-B, W02-B, and G08 review preparation are good parallel workstreams. D
 ## 3. Package 01 — Finish H02-B PR #56
 
 **Immediate actions**
-1. Re-fetch latest \`main\`, PR head, review comments, all required checks and GitHub mergeability. Confirm no newer implementation supersedes the PR.
-2. Review the full diff in \`chamber_web/hil/supervised_profile.py\`, \`chamber_web/main.py\`, \`chamber_web/services/profile_execution.py\`, \`chamber_web/execution/profile_runner.py\`, affected pages and tests.
+1. Re-fetch latest `main`, PR head, review comments, all required checks and GitHub mergeability. Confirm no newer implementation supersedes the PR.
+2. Review the full diff in `chamber_web/hil/supervised_profile.py`, `chamber_web/main.py`, `chamber_web/services/profile_execution.py`, `chamber_web/execution/profile_runner.py`, affected pages and tests.
 3. Check signed Ed25519 permit canonicalization, trusted public-key provenance, precise scope, strict H02 launch-time configuration, expiry/replay defenses, pinned 40-hex GUI/driver commits, chamber serial/model/identity, immutable G03 profile SHA, G08 actor and witness.
 4. Verify server-derived live checks rather than browser flags; enforce preflight before runner creation and revalidation before every mutation.
 5. Confirm *every* path with H02-C missing refuses physical START; no H01-only opt-in, browser-only toggle or simulation impersonation can bypass the gate.
 6. Verify G04 single owner, STOP priority and generation fencing, G07 intent-before-write, uncertainty propagation, recorder errors and monitored ramped setpoint behavior; ensure profile v2 auxiliary outputs and gradients reject.
 7. Finish all exact-head Python 3.10/3.12 Windows/Linux H02/G06/H01/NiceGUI/Chromium and W01 frozen simulator workflows; inspect any failures, fix root causes and rerun on changed source.
 8. Obtain required independent technical review (AI self-review is not qualified human approval). Merge via normal branch protection only when mandatory approvals and checks pass.
-9. Recheck post-merge \`main\`; update H02 and consolidated readiness ledgers.
+9. Recheck post-merge `main`; update H02 and consolidated readiness ledgers.
 
 **Exit:** Software merge accepted, hardware remains **NO-GO** until H02-C and signed site gates. If review/CI remains unavailable, leave PR open and state precise blocker.
 
 ## 4. Package 02 — H02-C independent physical watchdog
 
 **Design**
-- Reuse the existing *development command* watchdog \`scripts/h02_watchdog_command.py\` for commands; do not pretend it supervises real chamber safety.
+- Reuse the existing *development command* watchdog `scripts/h02_watchdog_command.py` for commands; do not pretend it supervises real chamber safety.
 - Provide a separately supervised process with mutually checked heartbeat and authenticated IPC, while G04 remains the sole device command authority. Supervisor may only request the approved STOP path, not become an independent second controller.
 - Bind run/permit/identity, G04 generation, ownership, G07 recorder health, live telemetry freshness and approved temperature/step/whole-run bounds to supervision state.
 - Use monotonic deadlines, bounded STOP verification and fail-closed restart latch.
@@ -90,7 +90,7 @@ H03-A, G07-B, W02-B, and G08 review preparation are good parallel workstreams. D
 
 ## 5. Package 03 — H02-D simulated integration + NiceGUI evidence
 
-Build on \`tests/test_h02_supervised_profile.py\`, \`tests/test_profile_runtime.py\`, H01 HIL/Chromium tests and the T01 isolation baseline.
+Build on `tests/test_h02_supervised_profile.py`, `tests/test_profile_runtime.py`, H01 HIL/Chromium tests and the T01 isolation baseline.
 
 - Simulate complete single-step, multistep, repeat, ramped readback, stabilization/dwell, pause/resume, cancel, and STOP; verify monotonic deadlines.
 - Record immutable G03 profile identity and ordered G07 PREPARED/START_INTENT/SETPOINT_INTENT/STOP_INTENT, fresh measured and observed setpoint, controller generation, terminal verdict and SHA-256 run artifacts.
@@ -102,11 +102,11 @@ Build on \`tests/test_h02_supervised_profile.py\`, \`tests/test_profile_runtime.
 
 ## 6. Package 04 — H03-A typed output and gradient driver support
 
-1. Review external \`VotschTechnikClimateChamber/ClimateChamber.py\` dryer, compressed air, gradient up/down and numbered outputs; confirm actual supported OEM units/ranges/options.
+1. Review external `VotschTechnikClimateChamber/ClimateChamber.py` dryer, compressed air, gradient up/down and numbered outputs; confirm actual supported OEM units/ranges/options.
 2. Introduce typed and validated numbered-output API **in the external driver** when needed. Add mocked transport, error and readback tests; preserve package-at-repository-root layout.
-3. Change GUI \`chamber_web/adapters/votsch.py\` to rely on the driver rather than raw manufacturer query strings.
+3. Change GUI `chamber_web/adapters/votsch.py` to rely on the driver rather than raw manufacturer query strings.
 4. Advertise only installed/verified physical output capabilities. Do not assume outputs 1–64 exist; preserve profile reserved mappings (run 1, compressed air 7, dryer 8) only where verified.
-5. Keep setpoint *ramp readback* separate from programmable gradient mutation. Unsupported gradient units/limits must raise \`UnsupportedCapability\` and remain disabled.
+5. Keep setpoint *ramp readback* separate from programmable gradient mutation. Unsupported gradient units/limits must raise `UnsupportedCapability` and remain disabled.
 6. Pin the reviewed driver SHA in GUI, verify alternate backend contract, Python 3.10/3.12, Windows/Linux and existing H01 simulation regression.
 
 **Exit:** separate reviewed driver and GUI PRs; hardware outputs remain off limits without site procedure.
@@ -154,7 +154,7 @@ Build on \`tests/test_h02_supervised_profile.py\`, \`tests/test_profile_runtime.
 
 - Validate General / Isolated LAN PIN/no-expiry / Large Network role/session policy under real browsers and appropriate site network restrictions.
 - Review HTTPS/WSS certificates, Host/Origin/DNS rebinding/CSRF, WebSocket logout/revocation, Windows firewall and client-allowlist enforcement.
-- Verify factory password + PIN changed before LAN binding; test local-console \`reset_credentials.py\` / frozen \`--reset-credentials\`, recovery audit and server-host-only controls with session revocation.
+- Verify factory password + PIN changed before LAN binding; test local-console `reset_credentials.py` / frozen `--reset-credentials`, recovery audit and server-host-only controls with session revocation.
 - Independently assess backup/restore, off-device audit anchoring, NTFS private keys, signing key escrow, replay/rollback and credential-safe logging.
 - Obtain qualified human assessment, document HIGH/BLOCKER remediations, residual risk and deployment approval.
 
@@ -201,7 +201,7 @@ Build on \`tests/test_h02_supervised_profile.py\`, \`tests/test_profile_runtime.
 
 ## 14. Required execution watchdog (all task prompts)
 
-The existing \`scripts/h02_watchdog_command.py\` is the preferred **development/test subprocess watchdog**. For long-running test, browser, PyInstaller, Git or CI-poll stages:
+The existing `scripts/h02_watchdog_command.py` is the preferred **development/test subprocess watchdog**. For long-running test, browser, PyInstaller, Git or CI-poll stages:
 
 1. Use a finite per-command timeout, finite idle/heartbeat timeout and bounded cleanup deadline.
 2. Capture PID/process group, timestamps, separate stdout/stderr logs and JSONL/summary evidence.
