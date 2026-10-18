@@ -202,10 +202,10 @@ class OfflineCredentialResetTests(unittest.TestCase):
 
     def test_factory_reset_works_without_proof_in_pin_only_mode(self):
         self._isolated_lan()
-        with patch.dict(os.environ, {"CHAMBER_SECURITY_DIR": str(self.path)}), \\
+        with patch.dict(os.environ, {"CHAMBER_SECURITY_DIR": str(self.path)}), \
              patch("chamber_web.security.bootstrap._local_reset_console",
-                   return_value=True), \\
-             patch("builtins.input", side_effect=["RESET"]) as response, \\
+                   return_value=True), \
+             patch("builtins.input", side_effect=["RESET"]) as response, \
              redirect_stdout(StringIO()) as output:
             self.assertEqual(interactive_reset_credentials(), 0)
             self.assertEqual(response.call_count, 1)
@@ -218,8 +218,8 @@ class OfflineCredentialResetTests(unittest.TestCase):
             stdin.isatty.return_value = False
             self.assertEqual(interactive_reset_credentials(self.path), 2)
         with patch("chamber_web.security.bootstrap._local_reset_console",
-                   return_value=True), \\
-             patch("builtins.input", return_value="NO"), \\
+                   return_value=True), \
+             patch("builtins.input", return_value="NO"), \
              redirect_stdout(StringIO()):
             self.assertEqual(interactive_reset_credentials(self.path), 2)
         self.assertEqual(self.store.factory_credentials_active(), (False, False))
