@@ -1,10 +1,10 @@
 # G07-A PR #27 — merge-gate audit (2026-10-13)
 
-Status: **DRAFT / NOT MERGED / SIMULATOR ONLY**. This review records verified evidence and outstanding gates. Do not interpret GitHub mergeability or green automated checks as approval for physical operation.
+Status: **MERGED 2026-10-15 AS `fa77998faff9343c1751e6c0bf5d5a78bb4712af` / SIMULATOR ONLY (software); the release gates below remain OPEN.** This review records verified evidence and outstanding gates. Do not interpret GitHub mergeability or green automated checks as approval for physical operation.
 
 - PR: https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/27
 - Reviewed head: `157f66e20ff1430d4a7a0a31e54830b7310de3ef`
-- Current main at audit: `64c3d8c2d41bd40173428aaec4ca5125af60dd95`; branch diverged (2 main commits behind), requiring re-synchronization and fresh exact-head CI before merge.
+- Current main at audit: `64c3d8c2d41bd40173428aaec4ca5125af60dd95`; branch diverged (2 main commits behind), requiring re-synchronization and fresh exact-head CI before merge (subsequently re-synchronized and merged 2026-10-15).
 - GitHub reports mergeable but draft; submitted review is COMMENTED, no recorded independent human approval; no unresolved inline review threads.
 
 ## Exact-head successful GitHub Actions evidence (head 157f66e)
@@ -35,7 +35,7 @@ The review shows an isolated standard-library recorder, SQLite synchronous=FULL 
 
 Physical hardware I/O **remains disabled**. G04 stays the exclusive chamber I/O owner. The recorder neither imports manufacturer drivers nor owns a second execution engine, and startup recovery must never command or automatically resume equipment.
 
-**Merge decision: HOLD.** Do not claim merge completion, a merge SHA, passing post-sync CI or independent approval until those events are actually verified.
+**Merge decision (2026-10-13): HOLD. Closure (2026-10-18):** PR #27 merged 2026-10-15 as `fa77998faff9343c1751e6c0bf5d5a78bb4712af` after the synchronized head passed all G07/G06/NiceGUI/W01 Windows checks. Independent human approval was NOT obtained; every release item in the tables below remains OPEN.
 
 ## 2026-10-15 candidate revision and corrective action (not independent approval)
 

@@ -1,6 +1,6 @@
 # H02 — Physical profile execution and verification
 
-**Status (2026-10-15): PARTIAL IMPLEMENTATION / PHYSICAL NO-GO.**
+**Status (2026-10-18): SOFTWARE FOUNDATION MERGED (PR #39, `1dae5ade00f67318f01c763e395f0e85f5310c6a`, all PR checks green) / PHYSICAL NO-GO.**
 
 Inspected GUI main 875c1e078578ca52ee41461383ed582544cd717f and driver main 9323e3701f3befedcc23b45170a851fd327f0bcc. Existing GUI PRs #27, #28, #29, #30, #34, #36, #37 and #38 are merged. These SHAs are the inspection baseline, not authorization to operate hardware.
 
@@ -28,7 +28,7 @@ Local software verification after the merge (Linux, CPython 3.12.15):
 - `python -m compileall -q chamber_web main.py scripts/h02_watchdog_command.py` OK; `ruff` clean on the H02 files.
 - `scripts/h02_watchdog_command.py` produced valid PID/timestamped stdout/stderr/JSONL evidence for a clean child exit (exit code 0).
 
-Branch CI (`h02-simulation-ci.yml`, Ubuntu/Windows Python 3.10/3.12 and Chromium) is pending. These are software-only results: physical HIL, H02 site permit and independent review remain ABSENT/BLOCKED, and the physical decision below is unchanged.
+Branch CI (`h02-simulation-ci.yml`, Ubuntu/Windows Python 3.10/3.12 and Chromium) passed on the merged head: [PR #39](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/39) merged 2026-10-18 as `1dae5ade00f67318f01c763e395f0e85f5310c6a` with all checks green. These are software-only results: physical HIL, H02 site permit and independent review remain ABSENT/BLOCKED, and the physical decision below is unchanged.
 
 ## Required closure phases
 
@@ -54,7 +54,7 @@ Power interruption, intentional STOP failure, process kill, disconnect and senso
 
 | Area | Result |
 |---|---|
-| Signed H02 validator and watchdog tests | Added; local Linux 3.12 green 2026-10-17; Windows/Chromium CI pending |
+| Signed H02 validator and watchdog tests | Added; merged via PR #39 (`1dae5ad`, 2026-10-18) with green Ubuntu/Windows 3.10/3.12 + Chromium CI; local Linux 3.12 green 2026-10-17 |
 | Physical execution implementation | NOT IMPLEMENTED; G06 simulation-only |
 | G07 physical composition | NOT IMPLEMENTED |
 | Independent physical watchdog | NOT IMPLEMENTED, blocking |

@@ -1,23 +1,45 @@
 # Migration readiness findings — canonical closure ledger
 
-Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status rechecked against GUI `7a5d643` (PR #19 G04-A mock-only controller merge) and driver `9323e37`. **Original review SHAs are historical, not the current implementation.** `B`/`H`/`M` are the only valid IDs for the 2026-10-12 readiness review. Older unidentified `BLOCKER-01`–`HIGH-10` tags in previous plans have been retired rather than guessed into equivalence. See [P00 contracts](P00_DECISION_CONTRACTS.md).
+Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status rechecked 2026-10-18 against GUI `9e6c892` (main after PRs #24–#52 merged, including G05 #28, G07-A #27, G08-full #29, W02 foundation #30, H01 #34/#36/#37, H02 #39, factory admin #49/#51 and CI de-flake #50) and driver `9323e3701f3befedcc23b45170a851fd327f0bcc`. **Original review SHAs are historical, not the current implementation.** `B`/`H`/`M` are the only valid IDs for the 2026-10-12 readiness review. Older unidentified `BLOCKER-01`–`HIGH-10` tags in previous plans have been retired rather than guessed into equivalence. Dated sections remain historical records; current consolidated status is in the [2026-10-18 ledger](#consolidated-blockerhigh-ledger--2026-10-18). See [P00 contracts](P00_DECISION_CONTRACTS.md).
+
+## Consolidated BLOCKER/HIGH ledger — 2026-10-18
+
+Release-state definitions used here and in the reconciled reviews: **implemented** (code merged to `main`); **tested in simulation** (mock/simulator CI and browser tests on the merged head, no physical I/O); **tested on physical hardware** (executed against the real Vötsch VT 4011 under supervised HIL with recorded evidence — the 2026-10-15 sessions are the only such evidence and are not certification); **independently approved** (qualified external human review of the exact accepted revision — not obtained for any finding); **certified for release** (signed site acceptance, W02 packaging/data approval and R01 GO — not obtained).
+
+| ID | Severity | Finding / risk | Owner | Dependencies | Verification evidence (current) | Signoff | Closure status |
+|---|---|---|---|---|---|---|---|
+| B1 | BLOCKER (hardware) | Unbounded/ambiguous TCP exchange | Driver (D01) | — | Driver PR #2 merged `9323e37`; mocked transport/refusal tests; real commands exercised in supervised HIL 2026-10-15 | None (site) | Software merged, HIL exercised; **physical framing certification OPEN** |
+| B2 | BLOCKER (hardware) | STOP verification and uncertainty | G04/G05 + H01 | B1 | G04 mock STOP fencing (#19); H01 STOP-during-ramp and soak evidence (#34, #36 merged) | None (site) | Software merged; **physical STOP/site authority OPEN** |
+| B3 | BLOCKER (hardware) | Unsigned model envelope and failure response | Site + P00 | Signed site permit | `H01_HARDWARE_ACCEPTANCE_CHECKLIST.md` unexecuted; site data not supplied | Site signature absent | **OPEN — SITE** |
+| B4 | BLOCKER (release) | Controller/persistence/auth/HIL incomplete | GUI program | B1–B3 | G04/G06/G07/G08-min/G05/G08-full/H02 software all merged (#24–#39); H01 supervised session passed 2026-10-15 | Independent review + site absent | **OPEN — release NO-GO; software scope largely merged** |
+| H2 | HIGH | Null gradient inherits prior hardware state | G06/P00 | Site gradient envelope | Explicit baseline semantics plus G06 simulation tests | HIL gradient signoff absent | Simulation verified; **HIL OPEN** |
+| H4 | HIGH | Loopback hardware auth gate too late | G08 | — | #25/#29 merged; G05/G07/G08 endpoints guard every mutation | None | Software merged; physical use gated by HIL/site policy |
+| H7 | HIGH | SQLite/filesystem crash gap | G07 | Windows volume testing | #27 merged with journal/recovery/fault tests (mock) | Independent durability review absent | Software merged, mock-tested; **Windows power-cut certification OPEN** |
+| H8 | HIGH | CI/dependency/driver pin insufficient | Release/W02 | Wheelhouse/hash lock | Direct pins + driver commit pin; W02 foundation #30 merged (connected CI only) | Independent supply-chain review absent | **OPEN — W02 certification gates** |
+| H01-OPEN | RELEASE | Site safety signoff, signed HIL acceptance, hardware profiles/gradients/long soak | Site + GUI | H02 plan | 2026-10-15 supervised sessions (8/8 hardware tests, soak PASS) | Signatures absent | **OPEN** |
+| H02-WD | BLOCKER (physical) | Runtime composition and separate physical watchdog absent | GUI (H02-B/C) | Signed H02 permit | Preflight validator + test watchdog merged (#39 `1dae5ad`) | Independent safety review absent | Software foundation merged; runtime/watchdog **OPEN** ([task plan](REMAINING_DEVELOPMENT_TASKS.md)) |
+| G07-R items | HIGH (release) | Power-cut durability, measured-setpoint evidence, authenticated export anchoring, independent review | G07/G06/G08 | Windows volume + review | #27 merged ([merge-gate audit](G07_A_MERGE_GATE_AUDIT.md)) | None | **OPEN** as itemized in the audit |
+| G08 review | HIGH (review) | Off-device audit anchoring, backup rollback, NTFS ACLs, LAN penetration | Security | External reviewer | #29 merged; adversarial tests green at merge | Independent reviewer absent | Software merged; **independent approval OPEN** |
+| W02 | HIGH (release) | Air-gap wheel closure, reviewed SBOM/licenses, target verifier certification | Release/W02 | Signing station/QA | Foundation merged `0e9e9cd`; connected CI green | QA/site absent | **RELEASE NO-GO** ([W02 ledger](W02_OFFLINE_RELEASE.md)) |
+
+### Historical 2026-10-12 review ledger (retained; statuses above supersede)
 
 | ID | Severity | Finding | Work item / closure evidence | Status |
 |---|---|---|---|---|
 | B1 | BLOCKER (hardware) | Unbounded/ambiguous TCP exchange | Driver PR #2 merged as `9323e37` with 3.9/3.12 CI; H01 framing certification | SOFTWARE FIX MERGED; HIL OPEN |
 | B2 | BLOCKER (hardware) | STOP verification and uncertainty | Driver PR #2 `9323e37` plus mock-only G04-A [PR #19](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/19): STOP-generation fencing and fresh readback, [Windows mock CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38282962585). Hardware STOP/HIL and site authority remain outstanding | DRIVER/G04-A SOFTWARE MERGED AND TESTED; HIL/SITE OPEN |
 | B3 | BLOCKER (hardware) | Unsigned model envelope and failure response | P00 signed site limits/policy and H01 | OPEN: SITE |
-| B4 | BLOCKER (release) | Controller, run persistence, authentication and HIL incomplete | G04-A mock-only controller PR #19 and G06-A simulated runner PR #24 merged as `28377a4eb0c7f651063c87ad5789810b036380fe`; G08-min mock-only authorization PR #25 merged `61d8aefaadcdb6f5035b6683410bee0abf76e9d1`; G07, G05, G08-full, H01, W02 and R01 pending | OPEN — NO HARDWARE ACTIVATION |
+| B4 | BLOCKER (release) | Controller, run persistence, authentication and HIL incomplete | G04-A mock-only controller PR #19 and G06-A simulated runner PR #24 merged as `28377a4eb0c7f651063c87ad5789810b036380fe`; G08-min mock-only authorization PR #25 merged `61d8aefaadcdb6f5035b6683410bee0abf76e9d1`; G07-A #27, G05 #28 and G08-full #29 merged 2026-10-15; H02 software foundation #39 merged `1dae5ad`; H01 supervised HIL passed (site signoff absent); W02 foundation #30 merged; R01 pending | OPEN — NO PHYSICAL/R01 AUTHORIZATION |
 | H1 | HIGH | Non-finite driver numeric inputs | Driver PR #2 `9323e37` and unit tests | SOFTWARE FIX MERGED |
 | H2 | HIGH | Null gradient inherits prior hardware state | P00 explicit baseline semantics + G06 tests/HIL | ENGINEERING CONTRACT DRAFTED; HIL PENDING |
 | H3 | HIGH | Zero-stability, gaps, deadline ambiguity | P00 virtual-clock semantics + G06-A PR #24 simulation-only tests; Windows Python 3.10/3.12 [run 38289290272](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38289290272) green | SOFTWARE VERIFIED IN SIMULATION; HIL/SITE OPEN |
-| H4 | HIGH | Loopback hardware authentication gate too late | G08-min [PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25) merged `61d8aefaadcdb6f5035b6683410bee0abf76e9d1`; [3.10/3.12 CI 38438666305](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38438666305) passed; dependent endpoints must integrate its guards before writes | AUTH CORE SOFTWARE VERIFIED; LIVE INTEGRATION/HIL OPEN |
+| H4 | HIGH | Loopback hardware authentication gate too late | G08-min [PR #25](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/25) merged `61d8aefaadcdb6f5035b6683410bee0abf76e9d1`; [3.10/3.12 CI 38438666305](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38438666305) passed; dependent endpoints must integrate its guards before writes | AUTH CORE + G05/G07/G08 GUARD WIRING MERGED; PHYSICAL/SITE OPEN |
 | H5 | HIGH | Previous finding IDs undefined | This ledger and sequence linkage, P00 PR #6 | CLOSED (documentation) |
 | H6 | HIGH | Legacy demo CSV migration ambiguous | GUI PR #8 `2ef81b6` adds strict parser and legacy-source-preserving ZIP; [GUI PR #12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/12) adds transactional SQLite revisions with strict schema checks. G03-C authenticated editor PR #26 merged `fee88ab7929b414e02ac11d81881450e8c9ac365` | CORE + AUTHENTICATED EDITOR SOFTWARE VERIFIED; final-head Windows 3.10/3.12 NiceGUI [38441138681](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38441138681) green; HIL/G07 OPEN |
-| H7 | HIGH | SQLite/filesystem crash gap | G07 journal/recovery/fault tests | ENGINEERING CONTRACT DRAFTED; CODE OPEN |
-| H8 | HIGH | CI/dependency/driver pin insufficient | [GUI #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10) `ef473e1` pins direct dependencies and driver revision; [Windows CI green](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38261039285). Hash-locked transitive freeze, typing and offline VM gates pending | PARTIAL — release gate OPEN |
+| H7 | HIGH | SQLite/filesystem crash gap | G07 journal/recovery/fault tests | G07-A PR #27 MERGED (SIMULATION); Windows power-cut certification OPEN |
+| H8 | HIGH | CI/dependency/driver pin insufficient | [GUI #10](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/10) `ef473e1` pins direct dependencies and driver revision; [Windows CI green](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38261039285). W02 signed-release foundation #30 merged `0e9e9cd` (connected CI only); hash-locked transitive freeze, typing and offline VM gates pending | PARTIAL — W02 RELEASE GATE OPEN |
 | M1 | MEDIUM | One-device multi-vendor architecture unproven | GUI PRs #7/#9 G01, PR #14 single-device Dashboard and G04-A PR #19 fake/alternate/Vötsch-mock substitution with mock-only serialized backend controller | G01/G02-A/G04-A MOCK SOFTWARE MERGED; G02-B/HIL OPEN |
-| M2 | MEDIUM | Windows freezing/offline unverified | [GUI PR #18](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/18) Windows prototype + [packaging CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38283556276); W02 disconnected clean Win10/11 VM required | W01-A EARLY FEASIBILITY SOFTWARE VERIFIED; W02 AIR-GAP CERTIFICATION OPEN |
+| M2 | MEDIUM | Windows freezing/offline unverified | [GUI PR #18](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/18) Windows prototype + [packaging CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38283556276); W02 foundation PR #30 merged `0e9e9cd`; disconnected clean Win10/11 VM still required | W01-A + W02 FOUNDATION SOFTWARE MERGED (SIMULATION ONLY); W02 AIR-GAP CERTIFICATION OPEN |
 
 **Definition of closure:** a merged PR and passing unit/static/integration checks alone close a code finding only to **software-verified** status. Safety-related findings require signed site documentation and physical HIL. Each future PR must update the row's status, exact merged commit/test run link, and owner/approver; never claim HIL from mocks. Hardware remains disabled in the current demo.
 
@@ -70,7 +92,7 @@ All release, HIL, Windows offline and operational security gates remain mandator
 
 ## Active status/next-PR source of truth
 
-See [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md) for per-delivery-unit progress, G02-A merged and remaining G08-min-A/G02-B/G03-C PR order (W01-A feasibility delivered; G04-A merged, W02 pending), acceptance and review/merge loops. **No site approval or HIL is recorded.** Hardware remains disabled. Status updates must distinguish phase-complete evidence from a merged foundation or demo.
+See [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md) for per-delivery-unit progress (2026-10-18: all software PRs through #52 merged; W02 certification pending), and [REMAINING_DEVELOPMENT_TASKS.md](REMAINING_DEVELOPMENT_TASKS.md) for the ordered closure program. **No site approval or HIL is recorded.** Hardware remains disabled. Status updates must distinguish phase-complete evidence from a merged foundation or demo.
 
 ## G08-min security checkpoint (implementation candidate)
 
@@ -97,19 +119,23 @@ B1 transport physical framing/timeout; B2 actual STOP and local emergency proced
 
 ## W02 signed offline Windows packaging checkpoint — 2026-10-14
 
-- [PR #30](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/30) remains **DRAFT / NOT MERGED**. The existing branch includes merged H01 extended simulation/browser tests and PR #33 cross-platform *developer* setup, but not unmerged G05/G07-A/G08 full code.
+- **Historical (2026-10-14):** [PR #30](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/30) was still draft at this checkpoint. **Closure: PR #30 merged 2026-10-15 as `0e9e9cd546cc675f06734272a67c4a8ce7a9da70`** after passing PR-head Windows checks; every W02 release gate below remains OPEN. The branch included merged H01 extended simulation/browser tests and PR #33 cross-platform *developer* setup.
 - **W02-R01–R06 software remediations:** original 3.10/3.12 Ruff F401 failures repaired, pytest NiceGUI dependency installed, Python 3.10 hashing compatibility repaired, explicit signed-sidecar W01 cross-check, Windows path/key/copy protections and regression tests. Signed-inventory [Windows 3.10/3.12 run 38618267798](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38618267798) passed on intermediate head `29b6b73772dcc3d7a382367f55ae99806053ed36`; final commit matrix MUST be checked separately.
 - **H8/W02 release BLOCKERS OPEN:** transitive hash-locked wheel closure, *reviewed* runtime SBOM and third-party license approvals, independent publisher keys and Python-free on-target verified signature chain, durable minimum-version trust state, atomic updater and profile/G07/G08 database snapshots/migrations/rollback, Windows NTFS/firewall/restart/logoff/credential handling, connected-vs-isolated egress proof, clean network-denied Win10/11 x64 VM and human security/supply-chain/QA acceptance. Initial CycloneDX and license/provenance output are explicitly labeled *provisional build-environment only*.
 - **Site/physical status:** B1–B4 and H01 physical remain unchanged and **NO-GO**. Neither an unsigned frozen simulator nor a passing software CI runner enables hardware operation. See [W02 matrix](W02_OFFLINE_RELEASE.md) and [security review](W02_SECURITY_REVIEW.md).
 ## G08 full-security integration candidate (2026-10-13)
 
-[PR #29](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/29) contains a mock-only G08 security implementation based on the **merged** G08-min PR #25 and is submitted for integration testing. The branch reconciliation preserves newer mainline profile/editor work. See [G08 threat model](G08_FULL_SECURITY.md), [review ledger](G08_SECURITY_REVIEW.md), and [unresolved tasks](G08_REMAINING_WORK.md). Final-head Windows 3.10/3.12, offline packaging and independent review results remain **PENDING**; no G08 production-security closure, LAN deployment authorization or physical-operation release is asserted.
+**Closure (2026-10-18):** [PR #29](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/29) merged 2026-10-15 as `2fdd143cb743fe52b30223f65ce7fe88cb4ff5e7` after green PR-head checks. It contained a mock-only G08 security implementation based on the **merged** G08-min PR #25; the independent review, LAN and physical gates below remain OPEN. The branch reconciliation preserves newer mainline profile/editor work. See [G08 threat model](G08_FULL_SECURITY.md), [review ledger](G08_SECURITY_REVIEW.md), and [unresolved tasks](G08_REMAINING_WORK.md). Final-head Windows 3.10/3.12 and offline packaging checks passed before the merge; independent review was **NOT obtained** and remains OPEN; no G08 production-security closure, LAN deployment authorization or physical-operation release is asserted.
 
 ## G08 integration follow-up (2026-10-14)
+
+**Closure (2026-10-18): PR #29 merged 2026-10-15 as `2fdd143c`; independent security review remains OPEN.** The text below is the historical checkpoint.
 
 G08 PR #29 remains software-only, with physical I/O disabled. H01 #32 and cross-platform setup #33 are now merged into main; this branch incorporates both without introducing hardware enablement. Windows NiceGUI testing exposed a previously missed G02-B test `Host: testserver` mismatch; test fixture corrected without relaxing middleware host enforcement. Final Windows CI and independent human security approval are still required. G05 #28 and G07-A #27 remain separate open PRs; their unmerged interfaces are not assumed available.
 
 ## G08-full review and mainline integration checkpoint — 2026-10-14
+
+**Closure (2026-10-18): PR #29 merged 2026-10-15 as `2fdd143c`; the independent-review, LAN and signed P00/H01 gates below remain OPEN.** The text below is the historical checkpoint.
 
 G08-full [PR #29](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/29) reconciled the merged H01 verification **preparation** #32 and environment setup #33 against `main`. Draft G05 #28 and G07-A #27 were not silently integrated. Python 3.10/3.12 [NiceGUI run 38457405604](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38457405604) exposed a test-client Host mismatch; the test now uses permitted loopback host instead of weakening production defenses.
 
@@ -119,22 +145,30 @@ Additional G08-full HIGH software findings: losing the security DB while retaini
 
 ### G05 PR #28 integration checkpoint (2026-10-13)
 
+**Closure (2026-10-18): PR #28 merged 2026-10-15 as `9ca7f5f67666ea2df7170b79682f1f8ab30372a6`; the independent-review and physical gates below remain OPEN.** The text below is the historical checkpoint.
+
 G05 is a **mock-only software candidate with all five final-head Windows CI checks passed** at `3dc72ec7f8df73136a8822f7a201eac082320fab` ([G05/G08/G03-C Windows 3.10/3.12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38453093551), [G06 3.10/3.12](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38453093490), [W01 packaging](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38453093491)). Independent review approval and PR merge remain pending. G03-C profile editing is retained. No real device activation is authorized. Site-approved chamber identity/limits, physical STOP procedures and HIL, driver capability/readback qualification, G07 recording integration, G08-full, W02 offline release and final site certification remain **OPEN**.
 
 
 ## G05 pre-merge rebase/synchronization — 2026-10-14
 
-The existing G05 branch was integrated with latest `main`, preserving merged H01 #32 and environment setup #33. G07-A #27 has not merged: after its independently approved merge G05 must integrate that final `main` again, and rerun Windows 3.10/3.12 G05/G06/G07/G08/NiceGUI/H01/frozen packaging checks. No merged-runner/recorder production claim or site physical authorization exists. All physical I/O remains disabled, including on loopback.
+**Closure (2026-10-18): G05 #28 and G07-A #27 both merged 2026-10-15; post-merge integrated checks ran in the later PRs. Text below is historical.**
+
+The existing G05 branch was integrated with latest `main`, preserving merged H01 #32 and environment setup #33. G07-A #27 had not merged at this checkpoint (merged 2026-10-15, as were G05 and G08; see the consolidated ledger above). No merged-runner/recorder production claim or site physical authorization exists. All physical I/O remains disabled, including on loopback.
 
 
 ## G05 final-head review requirements — 2026-10-14
+
+**Closure (2026-10-18): PR #28 merged 2026-10-15 as `9ca7f5f6` after its final-head Windows/browser checks passed. The independent human approval item was NOT obtained and remains OPEN; RELEASE NO-GO unchanged. Text below is historical.**
 
 - Existing draft PR #28 now includes the H01 #32/setup #33 merge, actual NiceGUI conditional-button initialization fix, role-guarded degraded STOP visibility, G06/manual exclusive-lease regression and H01 real-browser manual workflow assertions. Prior Chromium CI revealed an actual UI defect; exact final-head green browser and Windows CI are still required. Do not infer acceptance from earlier-head green CI.
 - **UNRESOLVED MERGE GATES:** independent qualified human approval; exact final-head G05/G06/G08/NiceGUI/H01 Windows 3.10/3.12 and frozen Windows package checks; G07 #27 merge and subsequent G05 resynchronization/test; authenticated profile runner and G07 recording composition into the live app; engineering review of real browser session/Origin/CSRF deployment boundaries.
 - **RELEASE NO-GO:** G08-full, W02, physical H01 signed site acceptance/STOP/operating limits, validated physical driver, Windows power-loss evidence. Simulation-only FakeBackend remains unconditional. Web STOP is not physical E-STOP.
 ## G07-A current readiness — 2026-10-13
 
-- [Draft PR #27](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/27) source `c586bd563b60830130d1d098c0bf21ef3ab47a23` has recorded passing [G07 recorder + 1M samples](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440410962), [G06](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440410835), [NiceGUI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440411011) and [W01](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440410963) workflows. These checks precede synchronization with `main` `7a481d1125148fdcd610c0e9fea1dd7621ac938a`; exact integrated-branch verification remains required.
+**Closure (2026-10-18): PR #27 merged 2026-10-15 as `fa77998faff9343c1751e6c0bf5d5a78bb4712af`; the RELEASE HIGH/MEDIUM items below remain OPEN.** The text below is the historical checkpoint.
+
+- [PR #27](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/27) source `c586bd563b60830130d1d098c0bf21ef3ab47a23` has recorded passing [G07 recorder + 1M samples](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440410962), [G06](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440410835), [NiceGUI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440411011) and [W01](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38440410963) workflows. These checks precede synchronization with `main` `7a481d1125148fdcd610c0e9fea1dd7621ac938a`; exact integrated-branch verification remains required.
 - **RELEASE HIGH (open):** Windows power-loss/rename durability, G06 independently observed setpoint readback, G08 authorization and audit for any future G07 History/Logs/download routes, offline corruption disposition and independent human architecture/security approval. Existing Python-only read services do not constitute authenticated web routes.
 - **MEDIUM (open):** stride-based plotting can miss extrema; CSV/ZIP hard bounds reject large runs. Simulator-only integration does not close H7, B1–B4, site STOP approval, H01 or W02.
 - **NO MERGE** until reviewed final integrated head passes all G07/G06/G08/NiceGUI/W01 Windows gates, branch is GitHub-mergeable, and required independent approval is obtained. UNKNOWN/INTERRUPTED must never be reported as verified STOPPED; recovery must never issue chamber I/O.
@@ -142,15 +176,17 @@ The existing G05 branch was integrated with latest `main`, preserving merged H01
 
 ## G07-A integration sync — 2026-10-14
 
+**Closure (2026-10-18): PR #27 merged 2026-10-15 as `fa77998f`; the independent human durability/security acceptance item remains OPEN. Text below is historical.**
+
 The existing G07-A branch was integrated with `main` including merged H01 #32 and environment setup #33. Original earlier-head CI evidence remains historical; final merge requires exact updated-head G07/G06/G08/NiceGUI/H01/Windows packaging checks and independent human architecture/durability/security acceptance. Physical hardware remains disabled; H01 site physical certification, G08-full, W02 and signed site safety approval remain NO-GO.
 
 ## G07-A remediation / outstanding release findings — 2026-10-15
 
 | ID | Severity | Finding and closure | Status |
 |---|---|---|---|
-| G07-R9 | HIGH (software) | Missing SQLite DB with surviving run files or `-wal/-journal/-shm` sidecars previously recreated an empty history. Fail-closed preconnection guard and missing-DB, orphan-WAL regressions added on PR #27. | CODE FIX PUSHED; FINAL-HEAD WINDOWS CI REQUIRED |
-| G07-R10 | HIGH (software lifecycle) | START_INTENT and STOP_INTENT recovery must avoid fabricated success or restart; STOP/cancel + UNKNOWN reconciliation + tamper denial integration test added. | CODE/TEST PUSHED; FINAL-HEAD CI REQUIRED |
-| G07-R1/R2/R3/R4/R7/R8 | HIGH (release/acceptance) | Windows power-cut directory durability, G06 measured-setpoint/generation evidence, future G08-min authenticated History/Logs/export routes, independent archival integrity/backup, exclusive startup ownership and independent human review. | **OPEN; PR #27 DRAFT / DO NOT MERGE** |
+| G07-R9 | HIGH (software) | Missing SQLite DB with surviving run files or `-wal/-journal/-shm` sidecars previously recreated an empty history. Fail-closed preconnection guard and missing-DB, orphan-WAL regressions added on PR #27. | FIXED AND MERGED AS PART OF PR #27 (2026-10-15) |
+| G07-R10 | HIGH (software lifecycle) | START_INTENT and STOP_INTENT recovery must avoid fabricated success or restart; STOP/cancel + UNKNOWN reconciliation + tamper denial integration test added. | FIXED AND MERGED AS PART OF PR #27 (2026-10-15) |
+| G07-R1/R2/R3/R4/R7/R8 | HIGH (release/acceptance) | Windows power-cut directory durability, G06 measured-setpoint/generation evidence, future G08-min authenticated History/Logs/export routes, independent archival integrity/backup, exclusive startup ownership and independent human review. | **OPEN (release items); PR #27 MERGED 2026-10-15 `fa77998f` — items remain OPEN** |
 
 The validated prior-source CI for `007e6053258680dd8df16175e66dfb00847c535d` was [G07 Windows/million samples](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38613839443) and [H01 Windows/Linux/Chromium](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38613839547); that evidence is not a result for the updated branch. Hardware activation, physical HIL, W02 Windows release and G08-full remain disabled/open. Do not interpret mock STOP as an emergency stop.
 
@@ -178,4 +214,6 @@ VT 4011 SN 58566207770010, supervised, envelope 20–30 °C.
 
 ## H02 outstanding review and readiness — 2026-10-15
 
-Hardware blockers B1/B2/B3/B4 and H2/H4/H7/H8 must not be treated as closed by simulation results. The H02 draft adds permit validation and a software command watchdog, but physical-profile runner dispatch, supervision, G07 composition, independent review, signed site method and STOP evidence are still missing. See [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md). **GO/NO-GO: NO-GO. Hardware test result: NOT RUN.**
+Hardware blockers B1/B2/B3/B4 and H2/H4/H7/H8 must not be treated as closed by simulation results. The H02 software foundation adds permit validation and a software command watchdog, but physical-profile runner dispatch, supervision, G07 composition, independent review, signed site method and STOP evidence are still missing. See [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md).
+
+**Update 2026-10-18:** the H02 software foundation merged as PR #39 `1dae5ade00f67318f01c763e395f0e85f5310c6a` with all PR checks green (preflight validator and test watchdog only — no physical connection). Runtime composition (H02-B), the separate physical watchdog (H02-C) and site permits remain OPEN per [REMAINING_DEVELOPMENT_TASKS.md](REMAINING_DEVELOPMENT_TASKS.md). **GO/NO-GO unchanged: NO-GO. Hardware test result: NOT RUN.**
