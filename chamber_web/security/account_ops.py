@@ -202,3 +202,67 @@ class AccountOperations:
             raise
         finally:
             db.close()
+
+    def reset_factory_credentials_offline(self) -> None:
+        """Explicit HOST-ONLY recovery; restore one existing admin to factory values.
+
+        This method is never exposed as an HTTP/WS action. The trusted CLI
+        enforces local-interactive execution and an operator confirmation.
+        Database ownership/OS permissions are the actual authority.
+        Never create an account in a missing or unprovisioned security store.
+        """
+        from .auth import Actor, AuthorizationError, Role, SecurityProfile, _hash_password
+
+        password_hash = _hash_password(b"admin")
+        pin_hash = _hash_password(self._validate_pin("12345678"))
+        db = self._db()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            # Do not reseal damaged audit evidence under newly known credentials.
+            self._audit_ledger.verify(db)
+            if not db.execute("SELECT 1 FROM bootstrap WHERE id=1").fetchone():
+                raise AuthorizationError("No completed administrator provisioning")
+
+            admins = db.execute(
+                "SELECT id,username,enabled FROM users WHERE role='ADMIN'"
+            ).fetchall()
+            named = db.execute(
+                "SELECT id,role FROM users WHERE username='admin'"
+            ).fetchone()
+            if named is not None:
+                if named[1] != Role.ADMIN.value:
+                    raise AuthorizationError(
+                        "Username admin belongs to a non-administrator; "
+                        "refusing to elevate or overwrite it"
+                    )
+                selected_id = named[0]
+            elif len(admins) == 1:
+                selected_id = admins[0][0]
+            else:
+                raise AuthorizationError(
+                    "No unambiguous administrator account for factory recovery"
+                )
+
+            db.execute(
+                "UPDATE users SET username='admin',password_hash=?,pin_hash=?,"
+                "role='ADMIN',enabled=1 WHERE id=?",
+                (password_hash, pin_hash, selected_id),
+            )
+            db.execute("UPDATE security_policy SET profile=? WHERE id=1",
+                       (SecurityProfile.GENERAL.value,))
+            # Revoke all existing principals after a factory-credential restore.
+            db.execute("UPDATE sessions SET revoked=1")
+            db.execute("DELETE FROM recovery_tokens")
+            db.execute("DELETE FROM login_failures")
+            db.execute("DELETE FROM login_clients")
+            self._audit(
+                db, Actor(selected_id, "admin", Role.ADMIN),
+                "recovery.factory.reset", "SUCCESS",
+                detail="local operator recovery; all sessions revoked",
+            )
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
