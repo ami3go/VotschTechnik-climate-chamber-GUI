@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+import ipaddress
+import os
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from chamber_web.security.auth import (
     AuthenticationError, AuthorizationError, Role, SecurityProfile, SecurityStore,
@@ -54,6 +57,22 @@ class FactoryCredentialTests(unittest.TestCase):
         self.assertEqual(restarted.get_security_profile(), SecurityProfile.ISOLATED_LAN)
         self.assertFalse(restarted.provision_factory_admin())
         self.assertIsNotNone(restarted.login("admin", "12345678", use_pin=True).session)
+
+    def test_composition_refuses_lan_startup_while_factory_credentials_active(self):
+        """LAN must never be served while the factory password/PIN still work."""
+        from chamber_web.security import nicegui as security_ui
+        from chamber_web.security.deployment import DeploymentPolicy
+
+        policy = DeploymentPolicy(
+            mode="lan", bind_host="192.168.0.23", port=8443,
+            allowed_origins=frozenset({"https://chamber.example:8443"}),
+            client_networks=(ipaddress.ip_network("192.168.0.0/24"),),
+        )
+        with patch.dict(os.environ, {"CHAMBER_SECURITY_DIR": str(self.path)}), \
+                patch.object(security_ui, "deployment_policy", policy), \
+                patch.object(security_ui, "_store", None):
+            with self.assertRaisesRegex(RuntimeError, "Factory administrator password"):
+                security_ui.get_security()
 
     def test_admin_can_change_both_credentials_and_restart_does_not_reset(self):
         self.store.provision_factory_admin()

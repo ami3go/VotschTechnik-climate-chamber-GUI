@@ -1,8 +1,13 @@
 """G03-C/G08-min NiceGUI browser-session integration (simulated backend only)."""
 import asyncio
+import contextlib
 from typing import Callable
 
 import pytest
+
+from nicegui.testing import User
+
+from chamber_web.security.auth import Role, SecurityStore
 
 
 @pytest.fixture(autouse=True)
@@ -22,10 +27,6 @@ def _trusted_loopback_test_client(monkeypatch):
                                    clear_forward_history=clear_forward_history)
 
     monkeypatch.setattr(User, "open", open_with_localhost)
-
-from nicegui.testing import User
-
-from chamber_web.security.auth import Role, SecurityStore
 
 
 async def test_profiles_page_requires_login_and_persists_between_sessions(
@@ -162,4 +163,59 @@ async def test_operator_runs_saved_revision_and_stops_it(
     await user.should_see("STOP requested", retries=50)
     await user.should_see("CANCELLED", retries=50)
     await user.should_see("request STOP reconciliation in Admin", retries=50)
+    get_profile_editor_service.cache_clear()
+
+
+async def test_revoked_session_cannot_export_profile_revision(
+    create_user: Callable[[], User], monkeypatch, tmp_path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """G08/G03: exports revalidate session and permission at event dispatch."""
+    from nicegui import ui
+    from chamber_web.security import nicegui as security_ui
+    from chamber_web.pages.profiles import get_profile_editor_service
+
+    monkeypatch.setenv("CHAMBER_PROFILE_DB", str(tmp_path / "profiles.sqlite3"))
+    get_profile_editor_service.cache_clear()
+    store = SecurityStore(tmp_path / "security")
+    store.bootstrap_admin("test_admin", "StrongAdminPassword#1")
+    monkeypatch.setattr(security_ui, "_store", store)
+    editor = get_profile_editor_service()
+    draft = editor.edit_step(editor.new_draft(), 0, "dwell_s", "0")
+    saved = editor.save(editor.set_metadata(draft, "name", "Export profile"))
+    browser_sessions = []
+    login = store.login
+
+    def record_login(*args, **kwargs):
+        issued = login(*args, **kwargs)
+        browser_sessions.append(issued.session)
+        return issued
+
+    monkeypatch.setattr(store, "login", record_login)
+    user = create_user()
+    await user.open("/login")
+    user.find("Username").type("test_admin")
+    user.find("Password").type("StrongAdminPassword#1")
+    user.find("Sign in").click()
+    await user.should_see("SIMULATION", retries=50)
+    await user.open("/profiles")
+    await user.should_see("Import / Export")
+    user.find(ui.select).elements.pop().value = saved.profile_id
+    user.find("Load").click()
+    await user.should_see("Loaded latest persisted revision")
+
+    user.find("Download ZIP (lossless)").click()
+    response = await user.download.next()
+    assert response.status_code == 200
+    assert response.content.startswith(b"PK")
+
+    store.logout(browser_sessions[0])
+    with contextlib.suppress(Exception):
+        user.find("Download ZIP (lossless)").click()
+        await asyncio.sleep(0.3)
+    with pytest.raises(TimeoutError):
+        await user.download.next(timeout=0.5)
+    # The refused handler logs an expected AuthenticationError; consume it so
+    # the NiceGUI user fixture's "unexpected ERROR logs" guard stays strict.
+    caplog.clear()
     get_profile_editor_service.cache_clear()
