@@ -1,111 +1,60 @@
-# Offline administrator credential reset
+# Local factory credential recovery
 
-The administrator password and PIN can be reset **locally** using the
-existing authenticated recovery authority. No browser, internet connection,
-cloud service or chamber driver is involved.
+Use this script from a local, interactive console on the **server PC** when
+administrator credentials have been forgotten. It requires no existing
+password, PIN or recovery token. It is not accessible through the web UI.
 
-## Before proceeding
+## Procedure
 
-- Use a **trusted local interactive console** on the installed server host,
-  under the OS account/service identity that owns the security database.
-- On a live site, first bring the chamber to a verified safe state using
-  approved on-site procedures. Credential reset is **not** a hardware STOP and
-  does not terminate active hardware work.
-- Identify the correct security directory, default
-  `~/.chamber_web/security` on Windows and Linux, overridden by
-  `CHAMBER_SECURITY_DIR`. Never point it at a backup or another deployment.
-- Have **either** the current administrator **primary password** (works at
-  the local console even in Isolated LAN/PIN mode) **or** a previously issued,
-  unexpired, one-time offline recovery token.
-- Back up the security store using the established signed-backup procedure.
-  Restrict access to the database, signing keys and audits using OS ACLs.
+1. Bring the chamber to a safe state and stop the GUI server. Credential
+   recovery does not stop physical hardware.
+2. Log into the server operating system as the account that owns the existing
+   security database. Remote sessions and unattended execution are refused.
+3. Open a local terminal and run one of:
 
-## Reset commands
-
-From a source checkout with the existing Python environment:
-
-~~~powershell
-# Windows
-.venv\Scripts\python.exe -m scripts.reset_credentials
-~~~
-
-~~~bash
-# Linux
-.venv/bin/python -m scripts.reset_credentials
-~~~
-
-Alternatively, run the script directly from the complete checkout:
-
-~~~powershell
-# Windows (repository root)
-.venv\Scripts\python.exe scripts\reset_credentials.py
-~~~
-
-~~~bash
-# Linux (repository root)
-.venv/bin/python scripts/reset_credentials.py
-~~~
-
-Direct execution also works from a different working directory when the
-full path to `scripts/reset_credentials.py` is given. The script resolves
-`chamber_web` from its own checked-out repository, not the current directory
-or `PYTHONPATH`. **Do not copy only the script** to another folder: the
-complete GUI repository, installed dependencies and existing security
-database are required.
-
-The source script supports `--data-dir <existing-security-directory>`.
-
-For a frozen Windows offline distribution, no Python install is necessary:
-
-~~~powershell
+Windows packaged installation:
+```powershell
 .\server\ClimateChamberServer.exe --reset-credentials
-~~~
+```
 
-The frozen server respects `CHAMBER_SECURITY_DIR`. Run it in a real local
-terminal, **not** as a background startup command or through remote HTTP.
-Choose password proof (`p`) or recovery-token proof (`t`) at the prompt,
-then enter and confirm a new password. Secrets are read with hidden input
-and the new password must satisfy the current deployment policy.
+Windows source checkout:
+```powershell
+.venv\Scripts\python.exe -m scripts.reset_credentials
+```
 
-On success, the security database is updated atomically:
+Linux source checkout:
+```bash
+.venv/bin/python -m scripts.reset_credentials
+```
 
-1. Change the named **enabled administrator** password to a new scrypt hash.
-2. Remove that administrator's PIN and set the security profile to
-   **General**, permitting password login again.
-3. Revoke **all** sessions, including other users' existing sessions, because
-   the global login profile has changed.
-4. Consume outstanding offline recovery tokens, clear that administrator's
-   login lockout, and append a chained audit event.
+The source script also supports direct file execution and `--data-dir`.
+Both versions use `CHAMBER_SECURITY_DIR` when configured, otherwise
+`~/.chamber_web/security` for the executing OS account.
 
-Other users, roles, profile definitions, chamber configuration and test/run
-evidence are preserved. Other users' PIN hashes remain stored, but cannot
-be used in General mode. No default password is created, bootstrap cannot
-be repeated, and no hardware I/O is performed.
+4. Read the warning and type `RESET` to confirm.
+5. Restart the server and use the documented factory administrator login.
+   Immediately replace factory credentials before permitting LAN access.
 
-After reset, sign in using the new password. To use PIN-only login again,
-enroll a new administrator PIN and reselect Isolated LAN in the Admin tab.
-Issue and escrow a **fresh** recovery token on separately controlled media:
+## Recovery effects
 
-~~~bash
-python -m chamber_web.security.bootstrap --issue-recovery-token
-~~~
+The script restores the administrator username, password, and PIN to the
+values documented in [Factory Credentials](FACTORY_CREDENTIALS.md), and
+selects the **General** security profile (password login; PIN-only login
+requires Isolated LAN). It revokes all sessions and outstanding recovery
+tokens and resets login lockouts. Other users and stored chamber profiles,
+configuration, run records and evidence are preserved.
 
-Frozen Windows distribution:
+If the default username belongs to a non-administrator, or there are
+multiple ambiguous administrator accounts, reset is refused. The existing
+database and tamper-evident audit history must be intact; a successful reset
+adds a `recovery.factory.reset` event.
 
-~~~powershell
-.\server\ClimateChamberServer.exe --issue-recovery-token
-~~~
+The OS account's filesystem access is the security boundary. The command
+refuses non-TTY execution and detected SSH/RDP sessions, but software
+cannot absolutely prove physical console presence against a privileged
+local operator. Do not expose the service account or security database to
+untrusted users. The application also refuses LAN startup while factory
+credentials remain enabled.
 
-## Failure and recovery
-
-If both the current administrator password and all valid recovery tokens
-are unavailable, this command **cannot bypass authorization**. Follow the
-site's independently authorized signed-backup restore or administrative
-re-provisioning procedure. Do not delete `security.sqlite3`, invent a default
-credential, tamper with the audit chain or replace signing keys. An absent or
-corrupt security authority fails closed.
-
-The older `--recover-admin` mode is unchanged: it resets **only** the
-administrator password, leaving the security profile and PIN as they are.
-Use `--reset-credentials` when an unavailable PIN or PIN-only profile may
-otherwise prevent logging in.
+The separate `--recover-admin` mode still supports one-time recovery
+tokens and does not perform a factory reset.
