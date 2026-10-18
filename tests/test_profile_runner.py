@@ -462,6 +462,8 @@ class RunnerTests(unittest.TestCase):
         self.terminal(RunState.UNKNOWN)
 
     def test_readback_mismatch_is_unknown(self):
+        # A frozen wrong setpoint is no ramp: after consecutive unchanged
+        # fresh samples the runner fails closed instead of never converging.
         self.prepare()
         self.runner.advance()
         original = self.backend.read_status
@@ -470,6 +472,43 @@ class RunnerTests(unittest.TestCase):
             return replace(original(), setpoint_temperature_c=44.0)
         self.backend.read_status = mismatch
         self.runner.advance()
+        self.terminal(RunState.UNKNOWN)
+
+    def test_mid_ramp_setpoint_readback_converges_and_completes(self):
+        self.prepare()
+        self.runner.advance()
+        original = self.backend.read_status
+        ramp = [44.0, 40.0, 30.0, 25.6]
+
+        def ramping():
+            observed = ramp.pop(0) if ramp else 25.0
+            return replace(original(), setpoint_temperature_c=observed)
+
+        self.backend.read_status = ramping
+        self.terminal(RunState.COMPLETED)
+        samples = [event for event in self.sink.events if event.kind == "SAMPLE"]
+        self.assertTrue(samples)
+        self.assertEqual(samples[-1].setpoint_temperature_c, 25.0)
+        generation = self.runner.snapshot.controller_generation
+        self.assertTrue(all(event.setpoint_temperature_c is not None
+                            for event in samples))
+        self.assertTrue(all(event.controller_generation == generation
+                            for event in samples))
+
+    def test_setpoint_readback_moving_away_is_unknown(self):
+        self.prepare()
+        self.runner.advance()
+        original = self.backend.read_status
+        values = [40.0, 44.0]
+
+        def diverging():
+            observed = values.pop(0) if values else 44.0
+            return replace(original(), setpoint_temperature_c=observed)
+
+        self.backend.read_status = diverging
+        self.runner.advance()  # first intermediate readback is a valid ramp
+        self.assertEqual(self.runner.state, RunState.REACHING)
+        self.runner.advance()  # moving away from the target never qualifies
         self.terminal(RunState.UNKNOWN)
 
     def test_fault_and_invalid_measured_temperature(self):

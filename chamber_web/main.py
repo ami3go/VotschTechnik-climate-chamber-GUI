@@ -52,11 +52,19 @@ def profile_execution_is_simulation() -> bool:
     return _HIL is None
 
 
+async def _startup_profile_recording() -> None:
+    # Reconcile the G07 run journal before any profile run is accepted; a
+    # failed journal stays fail-closed and refuses starts before mutation.
+    from .pages.profiles import get_profile_runtime
+    get_profile_runtime()
+
+
 async def _shutdown_profile_runs() -> None:
     from .pages.profiles import shutdown_profile_execution
     await shutdown_profile_execution()
 
 
+app.on_startup(_startup_profile_recording)
 app.on_startup(_dashboard_service.start)
 # STOP a simulated profile before the dashboard disconnects its backend.
 app.on_shutdown(_shutdown_profile_runs)
