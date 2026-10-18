@@ -7,6 +7,7 @@ The server is the current PRODUCTION COMPOSITION ROOT with FakeBackend only.
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -22,8 +23,30 @@ from chamber_web.security.auth import Role, SecurityStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
-# Override when 8080 is taken on a developer machine (CI keeps the default).
-PORT = int(os.environ.get("H01_BROWSER_PORT", "8080"))
+
+
+def _select_port() -> int:
+    """Keep 8080 when free (CI), honour the override, else auto-select.
+
+    A developer machine may occupy 8080 (or a parallel run may hold a fixed
+    port); a free ephemeral port keeps the suite self-contained instead of
+    failing on port contention.
+    """
+    override = os.environ.get("H01_BROWSER_PORT")
+    if override:
+        return int(override)
+    with socket.socket() as probe:
+        try:
+            probe.bind(("127.0.0.1", 8080))
+            return 8080
+        except OSError:
+            pass
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+PORT = _select_port()
 URL = f"http://127.0.0.1:{PORT}"
 
 
@@ -125,6 +148,14 @@ def test_browser_authenticated_dashboard_profiles_and_independent_clients(live_a
 
             sign_in(viewer, "browser_viewer", "StrongViewerPassword#2")
             expect(viewer.locator("body")).to_contain_text("VIEWER")
+            viewer.goto(URL + "/profiles")
+            expect(viewer.locator("body")).to_contain_text("Persistent Profiles / Revisions")
+            viewer.goto(URL + "/history")
+            expect(viewer.locator("body")).to_contain_text("Run History")
+            expect(viewer.locator("body")).to_contain_text(
+                "Server-recorded runs only")
+            # Return to /profiles so the session-survival reload below keeps
+            # asserting the same page the original regression covered.
             viewer.goto(URL + "/profiles")
             expect(viewer.locator("body")).to_contain_text("Persistent Profiles / Revisions")
 

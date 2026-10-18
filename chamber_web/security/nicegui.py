@@ -62,9 +62,12 @@ def cookie_secret() -> str:
 
 
 # Reject ambiguous or accidental LAN exposure as soon as app initializes.
+# Registration stays idempotent so module re-execution (tests, reload) never
+# stacks duplicate middleware.
 deployment_policy = DeploymentPolicy.from_env()
-app.add_middleware(OriginMiddleware, allowed_origins=deployment_policy.allowed_origins,
-                   deployment=deployment_policy)
+if not any(entry.cls is OriginMiddleware for entry in app.user_middleware):
+    app.add_middleware(OriginMiddleware, allowed_origins=deployment_policy.allowed_origins,
+                       deployment=deployment_policy)
 
 
 def active_tokens():
