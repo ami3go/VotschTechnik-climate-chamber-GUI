@@ -1,6 +1,7 @@
 # Climate Chamber GUI — Remaining Development and Production Readiness Plan
 
 **Revision:** 1.0  
+**Latest execution/status plan:** [Current Action Plan — 2026-10-18](CURRENT_ACTION_PLAN_2026-10-18.md)  
 **Baseline date:** 2026-10-18  
 **Overall state:** Core NiceGUI software integrated; physical profile execution and production release **NO-GO**  
 **GUI repository:** https://github.com/ami3go/VotschTechnik-climate-chamber-GUI  
