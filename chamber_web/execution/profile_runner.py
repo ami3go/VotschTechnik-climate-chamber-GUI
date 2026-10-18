@@ -158,10 +158,16 @@ class SupervisedRun:
     ``revalidate`` re-verifies the signed site permit (signature, window,
     unchanged bytes) and is invoked before every dispatch tick; any failure
     stops further physical dispatch and latches UNKNOWN.
+
+    ``supervisor_alive`` reports the H02-C independent watchdog liveness; a
+    false value at any tick stops further dispatch through the same bounded
+    STOP path. The G04 controller remains the single STOP authority, so a
+    watchdog alarm that bypasses the tick loop can still stop the chamber.
     """
     permit_sha256: str
     operator: str
     revalidate: Callable[[], None]
+    supervisor_alive: Callable[[], bool] | None = None
 
 
 def step_budget(step: ProfileStep, params: RunParameters) -> float:
@@ -207,7 +213,9 @@ class ProfileRunner:
                 len(supervised.permit_sha256) != 64 or
                 not isinstance(supervised.operator, str) or
                 not supervised.operator.strip() or
-                not callable(supervised.revalidate)):
+                not callable(supervised.revalidate) or
+                (supervised.supervisor_alive is not None and
+                 not callable(supervised.supervisor_alive))):
             raise ChamberSafetyError("Invalid supervised run context")
         self._id = ids[0]
         self._manager = manager
@@ -243,6 +251,7 @@ class ProfileRunner:
         self._stable_count = 0
         self._dwell_elapsed = 0.0
         self._cancel_requested = False
+        self._watchdog_reason: str | None = None
         self._prepared = False
         self._stop_future: Future | None = None
         self._terminal_after_stop = RunState.UNKNOWN
@@ -449,6 +458,7 @@ class ProfileRunner:
                     self._event_sequence = 0
                     self._sample_index = 0
                 self._cancel_requested = False
+                self._watchdog_reason = None
                 self._prepared = False
                 self._stop_future = None
                 self._stable_from = self._last_good = None
@@ -554,6 +564,33 @@ class ProfileRunner:
         self._stable_count = 0
         self._dwell_elapsed = 0.0
         self._transition(RunState.REACHING)
+
+    def notify_supervisor_fault(self, reason: str) -> None:
+        """H02-C watchdog alarm: durable STOP intent, UNKNOWN, no replay.
+
+        Callable from the supervision host thread; ``_begin_stop`` is
+        idempotent and submits at most one G04 STOP. Device arbitration and
+        generation fencing stay with G04.
+        """
+        text = str(reason).strip() or "watchdog fault"
+        if self._watchdog_reason is None:
+            self._watchdog_reason = text
+        self._begin_stop(RunState.UNKNOWN, "Watchdog fault: " + text)
+
+    def supervision_state(self) -> dict:
+        """Bounded monotonic budgets and terminal flag for the watchdog."""
+        with self._mutex:
+            state = self._state
+            if state is None:
+                return {"terminal": True, "step_index": 0,
+                        "step_remaining_s": 0.0, "whole_remaining_s": 0.0}
+            now = self._now()
+            return {
+                "terminal": state in TERMINAL,
+                "step_index": int(self._step_index),
+                "step_remaining_s": max(0.0, self._step_deadline - now),
+                "whole_remaining_s": max(0.0, self._run_deadline - now),
+            }
 
     def _begin_stop(self, terminal: RunState, reason: str) -> None:
         with self._stop_guard:
@@ -743,6 +780,21 @@ class ProfileRunner:
                 return self._state
             if self._cancel_requested:
                 self._begin_stop(RunState.CANCELLED, "Operator cancellation")
+                return self._state
+            if self._watchdog_reason is not None and self._stop_future is None:
+                self._begin_stop(
+                    RunState.UNKNOWN, "Watchdog fault: " + self._watchdog_reason,
+                )
+                return self._state
+            if (self._supervised is not None and
+                    self._supervised.supervisor_alive is not None and
+                    self._stop_future is None and
+                    not self._supervised.supervisor_alive()):
+                if self._watchdog_reason is None:
+                    self._watchdog_reason = "Supervisor heartbeat lost"
+                self._begin_stop(
+                    RunState.UNKNOWN, "Watchdog fault: " + self._watchdog_reason,
+                )
                 return self._state
             if (self._supervised is not None and self._stop_future is None and
                     self._state is not None and self._state not in TERMINAL):

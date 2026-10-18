@@ -335,6 +335,19 @@ class SupervisedRunnerTests(unittest.TestCase):
                                                  if isinstance(c, tuple)])
 
 
+class StubSupervisionHost:
+    """Healthy H02-C stand-in so part-2 tests keep their original scope."""
+
+    def __init__(self):
+        self.arms = []
+
+    def alive(self) -> bool:
+        return True
+
+    def arm_run(self, **kwargs):
+        self.arms.append(kwargs)
+
+
 class SupervisedServiceTests(unittest.TestCase):
     """Service-level H02 admission with real signed permits (mock backend)."""
 
@@ -357,11 +370,14 @@ class SupervisedServiceTests(unittest.TestCase):
         self.fixture = SignedPermitFixture(self.store)
 
     def _runtime(self, permit, *, witness=WITNESS, supervisor_alive=lambda: True,
-                 gui_commit=GUI_COMMIT, driver_commit=DRIVER_COMMIT):
+                 gui_commit=GUI_COMMIT, driver_commit=DRIVER_COMMIT,
+                 supervision=None):
+        if supervision is None:
+            supervision = StubSupervisionHost()
         return SupervisedProfileRuntime(
             permit=permit, witness=witness, hil_acknowledged=True,
             supervisor_alive=supervisor_alive, gui_commit=gui_commit,
-            driver_commit=driver_commit,
+            driver_commit=driver_commit, supervision=supervision,
         )
 
     def _permit(self, mutate=None):

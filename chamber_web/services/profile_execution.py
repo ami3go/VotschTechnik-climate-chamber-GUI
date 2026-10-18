@@ -19,9 +19,10 @@ import asyncio
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Callable
 
-from chamber_web.domain.chamber import ChamberSafetyError
+from chamber_web.domain.chamber import ChamberSafetyError, ReadingQuality
 from chamber_web.execution.profile_runner import (
     TERMINAL, Clock, EventSink, ExecutionSnapshot, ProfileRunner, RunParameters, RunState,
     SupervisedRun, step_budget,
@@ -150,6 +151,10 @@ class ProfileExecutionService:
         """Fail-closed H02 admission against the server-owned signed permit."""
         supervised = self._supervised
         assert supervised is not None
+        if supervised.supervision is None:
+            raise AdmissionDenied(
+                "H02-C independent supervisor is not configured; "
+                "physical profile execution is disabled")
         record = self._store.get_revision(
             self._chamber_id, profile_id, revision=revision,
         )
@@ -190,7 +195,52 @@ class ProfileExecutionService:
         return SupervisedRun(
             permit_sha256=permit_sha, operator=actor.username,
             revalidate=supervised.permit.revalidate,
+            supervisor_alive=supervised.supervision.alive,
         )
+
+    def _supervision_state(self, runner: ProfileRunner) -> dict:
+        """Live heartbeat snapshot for the H02-C watchdog (server-derived)."""
+        supervised = self._supervised
+        assert supervised is not None
+        state = runner.supervision_state()
+        health = self._manager.health(self._chamber_id)
+        status = self._manager.status(self._chamber_id)
+        sampled = getattr(status, "sampled_at_utc", None)
+        age = None
+        if sampled is not None and getattr(sampled, "tzinfo", None) is not None:
+            age = (datetime.now(timezone.utc) - sampled).total_seconds()
+        measured = status.measured_temperature_c
+        envelope = supervised.permit.data
+        state.update({
+            "generation": health.generation,
+            "telemetry_age_s": age,
+            "owner_ok": bool(health.connected and not health.stop_latched),
+            "recorder_ok": not self._blocked_reason(),
+            "temp_ok": bool(
+                status.quality is ReadingQuality.GOOD and measured is not None and
+                float(envelope["temperature_min_c"]) <= measured <=
+                float(envelope["temperature_max_c"])),
+        })
+        return state
+
+    def _arm_supervision(self, runner: ProfileRunner,
+                         snapshot: ExecutionSnapshot) -> None:
+        runtime = self._supervised
+        assert runtime is not None and runtime.supervision is not None
+        runtime.supervision.arm_run(
+            run_id=snapshot.run_id, permit_sha256=runtime.permit.sha256,
+            generation=snapshot.controller_generation, manager=self._manager,
+            state_provider=lambda: self._supervision_state(runner),
+            fault_notify=runner.notify_supervisor_fault,
+        )
+
+    def _abort_unstarted(self, runner: ProfileRunner, reason: str) -> None:
+        """Bounded STOP + UNKNOWN for a runner whose supervision arm failed."""
+        runner.notify_supervisor_fault(reason)
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and runner.state not in TERMINAL:
+            runner.advance()
+            time.sleep(0.02)
 
     def start(self, session: str | None, csrf: str | None,
               profile_id: str, revision: int) -> ExecutionSnapshot:
@@ -221,6 +271,13 @@ class ProfileExecutionService:
                     self._chamber_id, profile_id, revision=revision,
                     parameters=self._parameters,
                 ))
+                if supervised is not None:
+                    try:
+                        self._arm_supervision(runner, snapshot)
+                    except Exception:
+                        self._abort_unstarted(
+                            runner, "supervision arming failed")
+                        raise
             except BaseException:
                 runner.close()
                 raise
@@ -295,7 +352,10 @@ class ProfileExecutionService:
             (time.monotonic() - started_at) if started_at is not None and snapshot else None,
             blocker if blocker and not active else (runner.reason if runner is not None else ""),
             health.stop_latched, health.state, self._simulation,
-            may_run and (self._simulation or self._supervised is not None) and
+            may_run and (self._simulation or (
+                self._supervised is not None and
+                self._supervised.supervision is not None and
+                self._supervised.supervision.alive())) and
             not blocker and not active and
             not health.stop_latched and
             health.connected and health.state == "VERIFIED_STOPPED",
