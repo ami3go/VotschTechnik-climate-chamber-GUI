@@ -27,3 +27,8 @@ Site authority must verify and sign all items **outside the GUI**:
 **Outstanding findings:** B1 transport HIL, B2 physical STOP, B3 signed envelope, B4 integration and HIL, H2 gradient baseline, H4 security integration, H7 durability/crash, H8 supply-chain/offline Windows evidence. A commit hash, CI run or simulated STOP cannot close any physical blocker.
 
 Independent review must inspect: module import isolation (Vötsch protocol only in external driver), G04 queue and admitted-call STOP limitations, G05/G08 authenticated mutation and lease-independent STOP, G07 intent-before-write/UNKNOWN recovery, G08 host/LAN threats, W02 service shutdown and physical on-site safety. Document actual reviewer identity and signoff; AI-assisted review alone does not constitute independent safety approval.
+
+
+## H02 physical profile authorization — independently scoped
+
+**NO-GO.** Any earlier H01 manual-control authorization is insufficient for H02 automated profile execution. H02 requires a separately signed site permit, independently reviewed watchdog and G04/G06/G07/G08 integration, approved STOP procedure, named in-person operator/witness, and additional permission for intrusive fault injection. Software CI/PR merge cannot authorize physical profiles. No H02 physical tests have run.

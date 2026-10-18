@@ -174,3 +174,8 @@ VT 4011 SN 58566207770010, supervised, envelope 20–30 °C.
 - `scripts/hil_soak.py`: **PASSED**, 1650 s, 312 samples, 0 non-GOOD, 12/12 commands confirmed, latency mean 15 ms / max 68 ms. Steady-state last-minute means: 24.91 °C @25, 26.15 °C @26, 24.03 °C @24, 24.18 °C @24 after restart; worst overshoot −0.5 °C cooling to 24 °C; settle to ±0.2 °C in 15–100 s. Chamber STOPPED and setpoint restored to 23.0 °C at the end.
 - Found by the dry run: STOP keeps the operator lease (soak claims only if free), and a setpoint read right after a write is mid-ramp — the original setpoint is now recorded only once the readback has settled.
 - Still open: owner/site safety signoff and signed acceptance, profile execution on hardware, gradient (ramp-rate) control.
+
+
+## H02 outstanding review and readiness — 2026-10-15
+
+Hardware blockers B1/B2/B3/B4 and H2/H4/H7/H8 must not be treated as closed by simulation results. The H02 draft adds permit validation and a software command watchdog, but physical-profile runner dispatch, supervision, G07 composition, independent review, signed site method and STOP evidence are still missing. See [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md). **GO/NO-GO: NO-GO. Hardware test result: NOT RUN.**

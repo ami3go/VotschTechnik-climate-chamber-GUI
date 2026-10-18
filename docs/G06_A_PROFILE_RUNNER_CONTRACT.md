@@ -77,3 +77,8 @@ G07 must store `ExecutionSnapshot` inside `prepare()` with PREPARED, bind events
 `tests/test_profile_runner.py` uses virtual time and isolated Fake/second-adapter instances for zero dwell, target boundary, multi-sample stabilization, gaps, excursions, logical pause/reset, absolute deadline, negative temperatures, readback mismatch, stale samples, invalid/fault telemetry, concurrent start, cancel during blocked I/O, STOP fencing, unauthorized start and explicit reconciliation. Windows CI for Python 3.10 and 3.12 also reruns G03/G04 regression suites. These are software-only tests and cannot establish real STOP latency.
 
 **Release blockers:** G08-min real authenticated policy/audit/CSRF integration; G07 durable run journal and interruption reconciliation; approved physical safety envelope and signed STOP/fault policy; G04 gradient contract/HIL for gradients; driver/backend version capture; actual chamber-in-the-loop tests; final offline W02 certification. Real physical operations remain disabled by G04.
+
+
+## H02 physical-profile admission extension (not yet authorized)
+
+The G06 simulation-only identity check is intentionally retained. H02 adds a standalone signature/identity/envelope preflight helper in chamber_web/hil/profile_admission.py, but it is NOT connected to G06 or a server profile-execution endpoint. A later safety-reviewed integration must validate its signed permit, fresh G04 status and verified STOP, G08 role/CSRF/lease, G07 reconciled durable storage, supervisor mutual liveness, and profile revision on each physical dispatch. Null gradients, physical auxiliary outputs and chamber-state controls are restricted until separate site approval. No physical execution is currently supported; STOP uncertainty remains UNKNOWN.
