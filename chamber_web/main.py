@@ -21,6 +21,7 @@ from nicegui import app, ui  # noqa: E402
 
 from .bootstrap import create_demo_control_services
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
+from .hil.supervised_profile import SupervisedProfileRuntime, supervised_runtime_from_env
 from .security.nicegui import (active_tokens, cookie_secret, current_actor, deployment_policy,
                                get_security, logout, require_authenticated_page)
 from .security.auth import AuthenticationError, AuthorizationError, Role, SecurityProfile
@@ -45,11 +46,24 @@ _dashboard_service, _manual_service = create_demo_control_services(
     _security, _HIL, simulated_slew_c_per_s=0.25,
 )
 _MODE = "Simulation" if _HIL is None else "Physical HIL"
+# Server-side supervised physical admission. A site-signed H02 permit enables
+# supervised profile runs; a partial or broken permit configuration refuses to
+# start (fail closed), and an unconfigured physical launch keeps profile
+# execution disabled. H02-C owns the independent watchdog, so the production
+# supervisor check stays fail-closed.
+_SUPERVISED = supervised_runtime_from_env(
+    os.environ, hil_present=_HIL is not None, supervisor_alive=lambda: False,
+)
 
 
 def profile_execution_is_simulation() -> bool:
     """Trusted composition flag; browser input cannot enable profile execution."""
     return _HIL is None
+
+
+def profile_execution_supervision() -> SupervisedProfileRuntime | None:
+    """Trusted composition context for H02 supervised physical runs."""
+    return _SUPERVISED
 
 
 async def _startup_profile_recording() -> None:

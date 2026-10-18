@@ -68,7 +68,9 @@ def get_profile_execution_service() -> ProfileExecutionService:
     """One server-owned runner host; simulation mode comes from launch config only."""
     global _execution_service
     if _execution_service is None:
-        from chamber_web.main import get_dashboard_service, profile_execution_is_simulation
+        from chamber_web.main import (get_dashboard_service,
+                                      profile_execution_is_simulation,
+                                      profile_execution_supervision)
         editor = get_profile_editor_service()
         runtime = get_profile_runtime()
         _execution_service = ProfileExecutionService(
@@ -76,6 +78,7 @@ def get_profile_execution_service() -> ProfileExecutionService:
             editor.chamber_id, simulation=profile_execution_is_simulation(),
             sink_factory=runtime.sink_factory,
             start_blocker=runtime.start_blocker,
+            supervised=profile_execution_supervision(),
         )
     return _execution_service
 

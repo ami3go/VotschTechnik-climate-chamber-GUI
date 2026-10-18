@@ -206,7 +206,10 @@ def _build():
         profile_select.disable() if view.active else profile_select.enable()
         reload_button.disable() if view.active else reload_button.enable()
         if not view.simulation:
-            mode_label.set_text("Physical HIL: profile execution disabled")
+            mode_label.set_text(
+                "Physical HIL: supervised runs require a signed site permit "
+                "and witness" if view.supervised
+                else "Physical HIL: profile execution disabled")
         elif view.stop_latched:
             mode_label.set_text("STOP latch active — reconcile from Operator Lease")
         else:
