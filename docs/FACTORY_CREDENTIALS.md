@@ -29,9 +29,10 @@ loopback-local setup/testing, not network operation. LAN startup is refused
 until both the default password and default PIN have been changed. Switching
 to Large Network security profile requires changing the factory password.
 Do not connect the application or physical chamber to an untrusted network
-with factory credentials. Existing installations keep their current credentials;
-there is no automatic factory reset. Offline recovery still requires the current
-administrator password or a separately escrowed recovery token.
+with factory credentials. Existing installations keep their credentials on normal restart. A separate,
+explicit host-console maintenance script can restore these factory credentials
+when the administrator password has been lost; this is never automatic or
+available through the web interface. See [local credential recovery](CREDENTIAL_RESET.md).
 
 Regression coverage: `python -m unittest discover -s tests -p
 "test_security_factory_credentials.py" -v`; GUI smoke:
