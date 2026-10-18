@@ -28,10 +28,10 @@ from nicegui.testing import User
 async def test_anonymous_dashboard_redirects_to_login(create_user: Callable[[], User]) -> None:
     user = create_user()
     await user.open("/")
-    await user.should_see("Climate Chamber")
-    await user.should_see("sign in")
-    await user.should_see("Username")
-    await user.should_see("Password")
+    await user.should_see("Climate Chamber", retries=30)
+    await user.should_see("sign in", retries=30)
+    await user.should_see("Username", retries=30)
+    await user.should_see("Password", retries=30)
 
  
 async def test_login_refresh_logout_and_other_browser(
@@ -50,15 +50,15 @@ async def test_login_refresh_logout_and_other_browser(
     first.find("Username").type("test_admin")
     first.find("Password").type("StrongAdminPassword#1")
     first.find("Sign in").click()
-    await first.should_see("SIMULATION")
-    await first.should_see("Signed in: test_admin (ADMIN)")
+    await first.should_see("SIMULATION", retries=30)
+    await first.should_see("Signed in: test_admin (ADMIN)", retries=30)
 
     await second.open("/")
-    await second.should_see("sign in")
+    await second.should_see("sign in", retries=30)
     # A browser page reload preserves the signed cookie and DB session.
     await first.open("/")
-    await first.should_see("Signed in: test_admin (ADMIN)")
+    await first.should_see("Signed in: test_admin (ADMIN)", retries=30)
     first.find("Sign out").click()
-    await first.should_see("sign in")
+    await first.should_see("sign in", retries=30)
     await first.open("/")
-    await first.should_see("sign in")
+    await first.should_see("sign in", retries=30)

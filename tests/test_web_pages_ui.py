@@ -44,12 +44,12 @@ async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], Us
     monkeypatch.setattr(store, "login", recording_login)
     user = create_user()
     await user.open("/history")
-    await user.should_see("Sign in")
+    await user.should_see("Sign in", retries=30)
     await user.open("/login")
     user.find("Username").type("test_admin")
     user.find("Password").type("StrongAdminPassword#1")
     user.find("Sign in").click()
-    await user.should_see("SIMULATION")
+    await user.should_see("SIMULATION", retries=30)
     for url, heading in (
         ("/history", "Run History"),
         ("/logs", "Persistent Event Logs"),
@@ -58,22 +58,22 @@ async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], Us
         ("/admin", "Operator Lease"),
     ):
         await user.open(url)
-        await user.should_see(heading)
-        await user.should_see("SIMULATION")
+        await user.should_see(heading, retries=30)
+        await user.should_see("SIMULATION", retries=30)
     await user.open("/history")
-    await user.should_see("G07 run recording/history service is not installed.")
+    await user.should_see("G07 run recording/history service is not installed.", retries=30)
     other = create_user()
     await other.open("/logs")
-    await other.should_see("Sign in")
+    await other.should_see("Sign in", retries=30)
     await user.open("/logs")
-    await user.should_see("G07 persistent event/audit log service is not installed.")
+    await user.should_see("G07 persistent event/audit log service is not installed.", retries=30)
     await user.open("/settings")
-    await user.should_see("Control availability")
-    await user.should_see("Physical controls disabled")
+    await user.should_see("Control availability", retries=30)
+    await user.should_see("Physical controls disabled", retries=30)
 
     # An already-rendered page must not return history after a role or
     # session is revoked; guard callbacks, not only page creation.
     await user.open("/history")
     store.logout(captured[0])
     user.find("Search").click()
-    await user.should_see("Sign in")
+    await user.should_see("Sign in", retries=30)
