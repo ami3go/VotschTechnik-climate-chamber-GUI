@@ -745,9 +745,28 @@ def admin_page() -> None:
                             "hashed in the security database, and revoke active sessions."
                         ).classes("text-sm text-orange-9")
                         weak_pw, weak_pin = get_security().factory_credentials_active()
-                        if weak_pw or weak_pin:
-                            ui.label("Factory password or PIN is still active.").classes(
-                                "text-negative font-bold")
+                        ui.label(
+                            "Administrator password: " +
+                            ("Factory default — change required" if weak_pw
+                             else "Changed — retained across server restarts")
+                        ).classes("font-bold text-negative" if weak_pw
+                                  else "text-sm")
+                        ui.label(
+                            "Administrator PIN: " +
+                            ("Factory default — change required" if weak_pin
+                             else "Changed — retained across server restarts")
+                        ).classes("font-bold text-negative" if weak_pin
+                                  else "text-sm")
+                        ui.label(
+                            "Credentials database on this server: " +
+                            str(get_security().database)
+                        ).classes("text-xs text-grey-7")
+                        ui.label(
+                            "If a different password works after a restart, check "
+                            "whether the server is running under another OS account "
+                            "or with a different CHAMBER_SECURITY_DIR. Preserve "
+                            "this database when updating or reinstalling."
+                        ).classes("text-xs text-grey-7")
                         old_password = ui.input(
                             "Current administrator password", password=True).props(
                                 "autocomplete=current-password").classes("w-full")

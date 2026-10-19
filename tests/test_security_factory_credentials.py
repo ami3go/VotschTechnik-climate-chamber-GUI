@@ -103,6 +103,32 @@ class FactoryCredentialTests(unittest.TestCase):
         with self.assertRaises(AuthenticationError):
             restarted.login("admin", "admin")
 
+    def test_password_only_change_survives_reopen_and_does_not_require_repeat(self):
+        self.store.provision_factory_admin()
+        first = self.store.login("admin", "admin")
+        self.store.change_password(
+            first.session, first.csrf, "admin", "DifferentPassword#123")
+        restarted = SecurityStore(self.path)
+        self.assertFalse(restarted.provision_factory_admin())
+        self.assertEqual(restarted.factory_credentials_active(), (False, True))
+        with self.assertRaises(AuthenticationError):
+            restarted.login("admin", "admin")
+        self.assertIsNotNone(
+            restarted.login("admin", "DifferentPassword#123").session)
+
+    def test_factory_banner_names_only_unmodified_credential(self):
+        from chamber_web.security.nicegui import factory_credential_warning
+
+        self.assertIsNone(factory_credential_warning(False, False))
+        combined = factory_credential_warning(True, True)
+        self.assertIn("password and PIN are still active", combined)
+        password_only = factory_credential_warning(True, False)
+        self.assertIn("password is still active", password_only)
+        pin_only = factory_credential_warning(False, True)
+        self.assertIn("password has been changed", pin_only)
+        self.assertIn("PIN is still active", pin_only)
+        self.assertIn("does not need to be changed again", pin_only)
+
     def test_default_password_cannot_select_large_network(self):
         self.store.provision_factory_admin()
         login = self.store.login("admin", "admin")
