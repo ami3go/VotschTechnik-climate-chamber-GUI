@@ -62,6 +62,34 @@ Rerunning the script reuses the virtual environment. Run
 requires network access for first-time downloads; use the separate
 [offline Windows bundle](README_OFFLINE_WINDOWS.md) for offline deployment.
 
+### Driver discovery says "Update external Vötsch driver" after setup
+
+The setup script now verifies **both** the driver's
+`VotschTechnikClimateChamber.discovery` API and its exact pinned Git
+revision in `.venv`. If the installed driver is stale, setup attempts one
+forced reinstall and fails explicitly if verification still fails.
+
+From the **GUI repository root**, run:
+
+```text
+python setup_environment.py --check-driver
+```
+
+This is a read-only, offline check: no chamber or network connection.
+It prints the verified driver commit, Python interpreter path, and import
+location. Always **stop the old server process** and launch with the same
+virtualenv Python displayed after `setup_environment.py`:
+
+- Windows PowerShell: `.\\.venv\\Scripts\\python.exe main.py`
+- Linux: `.venv/bin/python main.py`
+
+Running plain `python main.py` may use system Python (without the driver).
+If the server is a **Windows frozen executable**, changing `.venv` does
+not change that executable: rebuild/reinstall the offline bundle with its
+pinned driver and restart the frozen server. The frozen build's self-test
+now checks the discovery submodule, not just the package root.
+
+
 ## Supervised physical HIL (one Vötsch chamber)
 
 Physical I/O is disabled by default. Only a server started with a **complete**

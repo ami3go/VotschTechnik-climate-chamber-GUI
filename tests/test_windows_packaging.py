@@ -109,7 +109,15 @@ class RuntimeTests(unittest.TestCase):
             AssertionError("driver was instantiated")
         )
         fake_module.__version__ = "0.2.0-test"
-        with mock.patch.dict(sys.modules, {"VotschTechnikClimateChamber": fake_module}):
+        fake_module.__path__ = []
+        discovery = types.ModuleType("VotschTechnikClimateChamber.discovery")
+        discovery.discover_chambers = lambda: (_ for _ in ()).throw(
+            AssertionError("discovery was executed")
+        )
+        with mock.patch.dict(sys.modules, {
+            "VotschTechnikClimateChamber": fake_module,
+            "VotschTechnikClimateChamber.discovery": discovery,
+        }):
             self.assertEqual(votsch.verify_bundled_driver_import(), "0.2.0-test")
 
     def test_missing_driver_is_not_required_for_fake(self):

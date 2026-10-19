@@ -8,6 +8,8 @@ on:
       - 'requirements-hardware.txt'
       - 'requirements-dev.txt'
       - 'tests/test_setup_environment.py'
+      - 'tests/test_verify_driver_install.py'
+      - 'scripts/verify_driver_install.py'
       - '.github/workflows/setup-environment-ci.yml'
   push:
     branches: [main]
@@ -37,8 +39,12 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Test bootstrap error paths without a network
         run: python -m unittest discover -s tests -p 'test_setup_environment.py' -v
+      - name: Test installed driver metadata and import checks (offline)
+        run: python -m unittest discover -s tests -p 'test_verify_driver_install.py' -v
       - name: Install web app and pinned external driver in virtual environment
         run: python setup_environment.py
+      - name: Verify exact pinned discovery driver (no network)
+        run: python setup_environment.py --check-driver
       - name: Verify installed packages (Linux)
         if: runner.os == 'Linux'
         run: .venv/bin/python -m pip check
