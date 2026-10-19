@@ -141,10 +141,11 @@ class ManualControlTests(unittest.TestCase):
                 self.assertEqual(self.send(service, self.admin, "stop").state,
                                  ManualState.CONFIRMED)
                 self.assertTrue(mgr.health(service.chamber_id).stop_latched)
+                # Non-owner STOP must not *automatically* rearm; a later
+                # explicit Start by the current owner may verify and recover.
                 self.assertEqual(self.send(service, self.op, "start").state,
-                                 ManualState.REJECTED)
-                self.assertEqual(self.send(service, self.admin, "reconcile").state,
                                  ManualState.CONFIRMED)
+                self.assertFalse(mgr.health(service.chamber_id).stop_latched)
                 self.assertEqual(self.send(service, self.op, "release").state,
                                  ManualState.CONFIRMED)
                 self.assertFalse(dash.view().identity is None)
@@ -300,7 +301,9 @@ class ManualControlTests(unittest.TestCase):
         self.assertIn("explicit reconciliation", stopped.message)
         self.assertTrue(manager.health(cid).stop_latched)
         # The interfering STOP must remain fenced during the earlier STOP
-        # callback. A later deliberate START can reverify and recover.
+        # callback. A later deliberate START (without the injected competing
+        # STOP hook) can independently reverify and recover.
+        service._authorized.rearm_after_owned_verified_stop = rearm
         self.assertEqual(self.send(service, self.op, "start").state,
                          ManualState.CONFIRMED)
         self.assertFalse(manager.health(cid).stop_latched)
