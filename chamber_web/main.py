@@ -43,11 +43,19 @@ _HIL_ENV, _HIL_SOURCE = effective_hil_environment(os.environ)
 _HIL = hil_authorization_from_env(_HIL_ENV)
 check_hil_deployment(_HIL, deployment_policy, os.environ)
 _security = get_security()
-# Published factory credentials must not authorize physical chamber operation.
-if _HIL is not None and any(_security.factory_credentials_active()):
-    raise RuntimeError(
-        "Physical HIL requires changing both factory credentials in Admin "
-        "under local simulation before hardware authorization")
+# A factory credential is reported as a security warning, not a hardware
+# admission rule. Physical access still requires explicit HIL authorization,
+# identity pinning, controller safety and supervised-operation permits.
+if _HIL is not None:
+    _factory_password, _factory_pin = _security.factory_credentials_active()
+    if _factory_password or _factory_pin:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Physical HIL security warning: factory administrator %s remain "
+            "active. Change them under Admin to reduce unauthorized access.",
+            "password and PIN" if _factory_password and _factory_pin
+            else "password" if _factory_password else "PIN",
+        )
 _dashboard_service, _manual_service = create_demo_control_services(
     _security, _HIL, simulated_slew_c_per_s=0.25,
 )
@@ -741,7 +749,9 @@ def admin_page() -> None:
                         _panel_title("manage_accounts", "Administrator Credentials")
                         ui.label(
                             "Factory setup uses admin / admin and PIN 12345678. "
-                            "Change both before LAN use. Changes are permanent, "
+                            "Changing both is strongly recommended, but factory "
+                            "credential warnings do not block saving or control. "
+                            "Changes are permanent, "
                             "hashed in the security database, and revoke active sessions."
                         ).classes("text-sm text-orange-9")
                         weak_pw, weak_pin = get_security().factory_credentials_active()

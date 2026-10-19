@@ -386,10 +386,9 @@ class SecurityStore(AccountOperations):
                                  (admin.user_id,)).fetchone()
             if current is None or current[0] != confirmed_hash:
                 raise AuthorizationError("Administrator credentials changed")
-            if profile is SecurityProfile.LARGE_NETWORK and _verify_password(
-                    "admin", current[0]):
-                raise AuthorizationError(
-                    "Change factory administrator password before Large Network mode")
+            # Password and PIN defaults are advisory; do not deny a profile
+            # switch solely because the operator has not rotated them.
+            # Authorization, session revocation and audit remain mandatory.
             if profile is SecurityProfile.ISOLATED_LAN:
                 # Never lock out every administrator when PIN-only login is enabled.
                 enrolled = db.execute(

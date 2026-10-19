@@ -28,11 +28,19 @@ def get_security() -> SecurityStore:
         if _store is None:
             store = SecurityStore.from_environment(security_directory())
             store.provision_factory_admin()
-            # A known factory password or PIN must never be offered over LAN.
-            if deployment_policy.is_lan and any(store.factory_credentials_active()):
-                raise RuntimeError(
-                    "Factory administrator password/PIN active; change both via "
-                    "localhost Admin panel before enabling LAN access")
+            # Factory credentials are advisory for startup. Authentication,
+            # TLS, strict origins, client ACL and permissions remain enforced.
+            # A publicly known factory credential is unsafe on shared LANs:
+            # report it clearly, but never prevent server initialization.
+            weak_password, weak_pin = store.factory_credentials_active()
+            if deployment_policy.is_lan and (weak_password or weak_pin):
+                import logging
+                logging.getLogger(__name__).warning(
+                    "LAN security warning: factory administrator %s remain active. "
+                    "Replace them under Admin > Security Profiles / Credentials.",
+                    "password and PIN" if weak_password and weak_pin
+                    else "password" if weak_password else "PIN",
+                )
             _store = store
         return _store
 
@@ -107,20 +115,21 @@ def factory_credential_warning(weak_password: bool, weak_pin: bool) -> str | Non
     if weak_password and weak_pin:
         return (
             "Factory administrator password and PIN are still active. "
-            "Change the password in Admin > Administrator Credentials and "
-            "the PIN in Admin > Security Profiles before LAN use."
+            "Strongly recommended: change the password in Admin > Administrator "
+            "Credentials and the PIN in Admin > Security Profiles. "
+            "Configuration and operations are not blocked by this warning."
         )
     if weak_password:
         return (
             "Factory administrator password is still active; the factory PIN "
             "has been replaced. Change the password in Admin > "
-            "Administrator Credentials before LAN use."
+            "Administrator Credentials for safer operation."
         )
     if weak_pin:
         return (
             "Administrator password has been changed. Only the factory PIN "
             "is still active. Change the PIN in Admin > Security Profiles "
-            "(Enroll account PIN) before LAN use; the password does not "
+            "(Enroll account PIN) for safer operation; the password does not "
             "need to be changed again."
         )
     return None
