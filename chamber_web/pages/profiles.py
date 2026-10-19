@@ -69,16 +69,25 @@ def get_profile_execution_service() -> ProfileExecutionService:
     global _execution_service
     if _execution_service is None:
         from chamber_web.main import (get_dashboard_service,
+                                      get_profile_manual_guard,
                                       profile_execution_is_simulation,
                                       profile_execution_supervision)
         editor = get_profile_editor_service()
         runtime = get_profile_runtime()
+        security = get_security()
+        manual_guard = get_profile_manual_guard()
+        # Isolated GUI tests may swap the login SecurityStore without
+        # rebuilding the process-level manual composition. Do not bind a
+        # guard using mismatched credentials; production always shares one.
+        if manual_guard._security is not security:
+            manual_guard = None
         _execution_service = ProfileExecutionService(
-            get_dashboard_service().manager, editor.store, get_security(),
+            get_dashboard_service().manager, editor.store, security,
             editor.chamber_id, simulation=profile_execution_is_simulation(),
             sink_factory=runtime.sink_factory,
             start_blocker=runtime.start_blocker,
             supervised=profile_execution_supervision(),
+            manual_guard=manual_guard,
         )
     return _execution_service
 
@@ -418,9 +427,16 @@ def profiles_page() -> None:
 
     def render_run(view: RunView) -> None:
         if not view.simulation:
-            run_mode_label.set_text("Profile execution is disabled in Physical HIL mode")
+            run_mode_label.set_text(
+                "Physical HIL: signed site permit and live supervision required"
+                if view.supervised else
+                "Profile execution disabled without supervised H02 site permit")
+        elif view.stop_latched and view.controller_state == "VERIFIED_STOPPED":
+            run_mode_label.set_text(
+                "Verified STOP · next Run Profile rechecks and rearms safely")
         elif view.stop_latched:
-            run_mode_label.set_text("STOP latch active · request STOP reconciliation in Admin → Operator Lease")
+            run_mode_label.set_text(
+                "Unverified STOP / fault · Admin reconciliation required")
         else:
             run_mode_label.set_text(f"Simulation · controller {view.controller_state}")
         if view.state is None:
@@ -479,8 +495,14 @@ def profiles_page() -> None:
                       color="warning")
             return
         profile_id, revision = draft.profile_id, draft.viewed_revision
+        from chamber_web.main import profile_execution_is_simulation
+        success_message = (
+            f"Started revision {revision} in simulation"
+            if profile_execution_is_simulation() else
+            f"Started revision {revision} under supervised H02 permit"
+        )
         await run_action(
-            f"Started revision {revision} in simulation",
+            success_message,
             lambda session, csrf: execution.start_async(session, csrf, profile_id, revision),
         )
 

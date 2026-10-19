@@ -140,6 +140,11 @@ app.on_shutdown(_shutdown_supervision)
 app.on_shutdown(_dashboard_service.close)
 
 
+def get_profile_manual_guard():
+    """Composition-owned G05 guard for safe operator-to-profile lease handoff."""
+    return _manual_service._authorized
+
+
 def get_dashboard_service():
     return _dashboard_service
 

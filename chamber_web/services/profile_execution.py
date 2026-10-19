@@ -78,7 +78,8 @@ class ProfileExecutionService:
                  parameters: RunParameters | None = None,
                  clock: Clock | None = None,
                  start_blocker: Callable[[], str] | None = None,
-                 supervised: SupervisedProfileRuntime | None = None):
+                 supervised: SupervisedProfileRuntime | None = None,
+                 manual_guard: AuthorizedChamber | None = None):
         if chamber_id not in manager.configured_ids():
             raise ChamberSafetyError("Profile execution chamber is not configured")
         if type(simulation) is not bool:
@@ -92,6 +93,9 @@ class ProfileExecutionService:
         self._chamber_id = chamber_id
         self._simulation = simulation
         self._guard = AuthorizedChamber(manager, security)
+        # Share G05's *server-owned* lease registry for an explicit Run Profile
+        # handoff; never pass browser-supplied owner tokens to this service.
+        self._manual_guard = manual_guard
         self._sink_factory = sink_factory
         self._parameters = parameters or RunParameters()
         self._clock = clock
@@ -242,6 +246,46 @@ class ProfileExecutionService:
             runner.advance()
             time.sleep(0.02)
 
+    def _prepare_operator_profile_start(
+        self, session: str | None, csrf: str | None, actor,
+    ) -> None:
+        """Recover only verified STOP and surrender only the caller's idle lease.
+
+        This is called on explicit Run Profile after PROFILE_RUN authorization
+        and journal preflight, not by UI refresh or passive background polling.
+        An unverified/FAULT stop is never cleared; all admission checks in
+        G06 and the optional H02 signed preflight still apply separately.
+        """
+        guard = self._manual_guard
+        if guard is not None:
+            owner, mine = guard.ownership_view(session, self._chamber_id)
+            if owner is not None and not mine:
+                raise ChamberSafetyError(
+                    "Chamber control is held by another operator")
+        health = self._manager.health(self._chamber_id)
+        if (not health.connected or health.state != "VERIFIED_STOPPED"):
+            raise ChamberSafetyError(
+                "Stop the chamber and verify STOPPED status before running a profile")
+        if health.stop_latched:
+            self._security.audit(
+                actor, "profile.stop_rearm", "INTENT", self._chamber_id)
+            try:
+                # G04 performs independent GOOD/STOPPED readback, durable
+                # lease generation checks and restart-uncertainty validation.
+                self._manager.reconcile_stop(self._chamber_id)
+            except BaseException as exc:
+                self._security.audit(
+                    actor, "profile.stop_rearm", "FAILED",
+                    self._chamber_id, type(exc).__name__)
+                raise
+            self._security.audit(
+                actor, "profile.stop_rearm", "SUCCESS", self._chamber_id)
+        if guard is not None:
+            health = self._manager.health(self._chamber_id)
+            guard.release_stopped_manual_lease_for_profile(
+                session, csrf, self._chamber_id,
+                expected_generation=health.generation)
+
     def start(self, session: str | None, csrf: str | None,
               profile_id: str, revision: int) -> ExecutionSnapshot:
         """Authorize and prepare an exact saved revision; call off the event loop."""
@@ -253,14 +297,20 @@ class ProfileExecutionService:
             raise ChamberSafetyError(blocker)
         if type(revision) is not int or revision < 1:
             raise ValueError("Choose a saved revision")
-        supervised = None
-        if not self._simulation:
-            supervised = self._admit_supervised(actor, profile_id, revision)
         with self._lock:
             previous = self._runner
             if (previous is not None and previous.state is not None and
                     previous.state not in TERMINAL):
                 raise ChamberSafetyError("A profile run is already active")
+            # A missing or invalid saved revision must not release a manual
+            # owner or clear any safety fence as a side effect.
+            self._store.get_revision(
+                self._chamber_id, profile_id, revision=revision)
+            self._prepare_operator_profile_start(session, csrf, actor)
+            # Physical admission still enforces signed, revision-bound H02
+            # permit, live independent watchdog, witness and site envelopes.
+            supervised = (None if self._simulation else
+                          self._admit_supervised(actor, profile_id, revision))
             runner = ProfileRunner(
                 self._manager, self._store, authorize=self._authorize,
                 sink=self._sink_factory() if self._sink_factory else None,
@@ -324,6 +374,11 @@ class ProfileExecutionService:
         with self._lock:
             runner, started_at = self._runner, self._started_at
         may_run = actor.role in (Role.ADMIN, Role.OPERATOR)
+        manual_available = True
+        if self._manual_guard is not None:
+            manual_owner, mine = self._manual_guard.ownership_view(
+                session, self._chamber_id)
+            manual_available = manual_owner is None or mine
         state = runner.state if runner is not None else None
         active = state is not None and state not in TERMINAL
         snapshot = runner.snapshot if runner is not None else None
@@ -352,12 +407,11 @@ class ProfileExecutionService:
             (time.monotonic() - started_at) if started_at is not None and snapshot else None,
             blocker if blocker and not active else (runner.reason if runner is not None else ""),
             health.stop_latched, health.state, self._simulation,
-            may_run and (self._simulation or (
+            may_run and manual_available and (self._simulation or (
                 self._supervised is not None and
                 self._supervised.supervision is not None and
                 self._supervised.supervision.alive())) and
             not blocker and not active and
-            not health.stop_latched and
             health.connected and health.state == "VERIFIED_STOPPED",
             may_run and active and state is not RunState.STOP_REQUESTED,
             may_run and mine and state in (
