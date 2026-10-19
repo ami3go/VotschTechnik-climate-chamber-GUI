@@ -10,14 +10,16 @@ import asyncio
 
 from nicegui import ui
 
+from chamber_web.adapters.votsch import discover_votsch_chambers
 from chamber_web.domain.chamber import ChamberSafetyError
 from chamber_web.hil.chamber_settings import (
     CHAMBER_TYPES, ChamberSettings, load_settings, save_settings, settings_path,
 )
 from chamber_web.hil.physical import HARD_MAX_C, HARD_MIN_C, MAX_ENVELOPE_SPAN_C
 from chamber_web.security.auth import AuthenticationError, AuthorizationError, Role
+from chamber_web.security.guards import Permission
 from chamber_web.security.nicegui import (active_tokens, current_actor, get_security,
-                                          require_authenticated_page)
+                                          require_authenticated_page, require_browser_permission)
 
 
 def _describe(settings: ChamberSettings | None) -> str:
@@ -75,6 +77,77 @@ def render_chamber_config_panel() -> None:
         ui.notify("Chamber settings saved. Restart the server to apply them.",
                   color="positive")
 
+    scanning = False
+
+    def select_discovered(device) -> None:
+        # Re-check G08 permission on every WebSocket click, not only page load.
+        try:
+            require_browser_permission(Permission.SETTINGS)
+        except (AuthenticationError, AuthorizationError):
+            ui.notify("Administrator session expired or access denied", color="negative")
+            return
+        type_select.value = "votsch"
+        update_visibility()
+        address.value = device.address
+        serial.value = device.serial_number
+        # Chamber ID, site-approved temperature envelope and acknowledgement are
+        # deliberately NOT manufactured from network-discovered data.
+        ui.notify("Address and serial filled. Review safety limits, acknowledge "
+                  "supervision and save using the administrator password. "
+                  "Restart required.", color="info", multi_line=True)
+
+    async def scan_network() -> None:
+        nonlocal scanning
+        if scanning:
+            return
+        try:
+            actor = require_browser_permission(Permission.SETTINGS)
+        except (AuthenticationError, AuthorizationError):
+            ui.notify("Administrator session expired or access denied", color="negative")
+            return
+        scanning = True
+        scan_button.disable()
+        results.clear()
+        scan_status.set_text("Scanning server-side private IPv4 networks; "
+                             "read-only identity probes, maximum 12 seconds…")
+        subnet = (discovery_subnet.value or "").strip()
+        try:
+            devices = await asyncio.wait_for(
+                asyncio.to_thread(discover_votsch_chambers, subnet or None),
+                timeout=15.0)
+            # Revoked sessions cannot receive results or select a chamber.
+            require_browser_permission(Permission.SETTINGS)
+            get_security().audit(actor, "chamber.discovery", "SUCCESS",
+                                 detail=f"Found {len(devices)} chambers")
+        except (AuthenticationError, AuthorizationError):
+            results.clear()
+            scan_status.set_text("Administrator authorization expired; results discarded.")
+            return
+        except (ValueError, RuntimeError, asyncio.TimeoutError) as exc:
+            scan_status.set_text(f"Scan unavailable: {exc}")
+            ui.notify("Chamber discovery failed", color="negative")
+            return
+        except Exception:
+            scan_status.set_text("Discovery failed unexpectedly; check server logs.")
+            ui.notify("Chamber discovery failed", color="negative")
+            return
+        finally:
+            scanning = False
+            scan_button.enable()
+        scan_status.set_text(
+            f"Found {len(devices)} compatible chamber(s). "
+            "Discovery does not certify hardware safety or connect a controller."
+            if devices else "No compatible Vötsch/Weiss chambers responded on TCP 2049. "
+            "Check the server subnet, network connection and chamber IP settings.")
+        with results:
+            for device in devices:
+                with ui.row().classes("items-center w-full gap-3 flex-wrap"):
+                    ui.label(
+                        f"{device.address} · {device.model} · S/N {device.serial_number}"
+                    ).classes("flex-grow")
+                    ui.button("Select", icon="add", on_click=lambda d=device: (
+                        select_discovered(d))).props("outline no-caps")
+
     with ui.column().classes("panel gap-2"):
         ui.label("Chamber Connection").classes("panel-heading")
         if hil is None:
@@ -111,6 +184,25 @@ def render_chamber_config_panel() -> None:
         type_select = ui.select(CHAMBER_TYPES, value=initial.chamber_type,
                                 label="Chamber type",
                                 on_change=lambda _: update_visibility()).classes("w-full")
+        with ui.column().classes("w-full gap-2"):
+            ui.label("Auto-detect Vötsch / Weiss chambers").classes("text-subtitle2")
+            ui.label(
+                "Scans from this server, not the browser. By default scans the "
+                "server's detected private local /24 subnets. Optional CIDR "
+                "restricts the search. A scan sends only driver-supported GET "
+                "CHAMBER INFO queries; no chamber configuration changes."
+            ).classes("text-xs text-grey-7")
+            with ui.row().classes("w-full items-center gap-2 flex-wrap"):
+                discovery_subnet = ui.input(
+                    "Optional private subnet (e.g. 192.168.1.0/24)"
+                ).props("outlined dense").classes("min-w-64 flex-grow")
+                scan_button = ui.button(
+                    "Auto-detect chambers", icon="travel_explore",
+                    on_click=scan_network
+                ).props("outline no-caps")
+            scan_status = ui.label("Discovery is manual and read-only.").classes(
+                "text-xs text-grey-7")
+            results = ui.column().classes("w-full gap-2")
         with ui.column().classes("w-full gap-2") as physical_fields:
             chamber_id = ui.input("Chamber ID", value=initial.chamber_id).classes("w-full")
             address = ui.input("IP address (private IPv4)",
