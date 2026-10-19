@@ -62,3 +62,30 @@ async def test_login_refresh_logout_and_other_browser(
     await first.should_see("sign in", retries=30)
     await first.open("/")
     await first.should_see("sign in", retries=30)
+
+
+async def test_dashboard_chamber_card_has_explicit_name_ip_serial(
+    create_user: Callable[[], User], monkeypatch, tmp_path,
+) -> None:
+    """A simulator must be identified clearly and never claim a device IP."""
+    from chamber_web import main as application
+    from chamber_web.security import nicegui as security_ui
+    from chamber_web.security.auth import SecurityStore
+
+    store = SecurityStore(tmp_path / "security")
+    store.bootstrap_admin("test_admin", "StrongAdminPassword#1")
+    monkeypatch.setattr(security_ui, "_store", store)
+    monkeypatch.setattr(application._manual_service, "_security", store)
+    monkeypatch.setattr(application._manual_service._authorized, "_security", store)
+    browser = create_user()
+    await browser.open("/login")
+    browser.find("Username").type("test_admin")
+    browser.find("Password").type("StrongAdminPassword#1")
+    browser.find("Sign in").click()
+    await browser.should_see("Chamber Control", retries=30)
+    await browser.should_see("IP address", retries=30)
+    await browser.should_see("Serial number", retries=30)
+    await browser.should_see("Simulator · demo-chamber", retries=30)
+    await browser.should_see("Not applicable (simulation)", retries=30)
+    await browser.should_see(
+        "Simulation — no physical chamber connected", retries=30)
