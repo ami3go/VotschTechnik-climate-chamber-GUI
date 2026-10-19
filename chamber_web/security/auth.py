@@ -329,6 +329,15 @@ class SecurityStore(AccountOperations):
             raise AuthorizationError("Current administrator password required")
         return row[0]
 
+    def reauthenticate_admin(self, admin_session: str | None, csrf: str | None,
+                             admin_password: str) -> Actor:
+        """Current administrator session plus fresh password for sensitive changes."""
+        admin = self.authenticate(admin_session, csrf=csrf, mutation=True)
+        if admin.role is not Role.ADMIN:
+            raise AuthorizationError("Administrator required")
+        self._confirm_admin_password(admin, admin_password)
+        return admin
+
     def configure_user_pin(self, admin_session: str, csrf: str,
                            admin_password: str, username: str, pin: str) -> None:
         """Explicit administrator-only enrollment of one account's hashed PIN."""

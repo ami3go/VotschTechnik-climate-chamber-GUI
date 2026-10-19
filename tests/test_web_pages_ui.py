@@ -77,3 +77,46 @@ async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], Us
     store.logout(captured[0])
     user.find("Search").click()
     await user.should_see("Sign in", retries=30)
+
+
+async def test_settings_tab_saves_chamber_connection_for_admin(
+    create_user: Callable[[], User], monkeypatch, tmp_path,
+) -> None:
+    from nicegui import ui
+
+    from chamber_web import main as application
+    from chamber_web.hil import chamber_settings
+    from chamber_web.security import nicegui as security_ui
+    from chamber_web.security.auth import SecurityStore
+
+    store = SecurityStore(tmp_path / "security")
+    store.bootstrap_admin("test_admin", "StrongAdminPassword#1")
+    monkeypatch.setattr(security_ui, "_store", store)
+    monkeypatch.setattr(application._manual_service, "_security", store)
+    monkeypatch.setattr(application._manual_service._authorized, "_security", store)
+    settings_file = tmp_path / "chamber_settings.json"
+    monkeypatch.setattr(chamber_settings, "settings_path", lambda: settings_file)
+
+    user = create_user()
+    await user.open("/login")
+    user.find("Username").type("test_admin")
+    user.find("Password").type("StrongAdminPassword#1")
+    user.find("Sign in").click()
+    await user.should_see("SIMULATION", retries=30)
+    await user.open("/settings")
+    await user.should_see("Chamber Connection", retries=30)
+    await user.should_see("Running: Simulator (no hardware)", retries=30)
+    user.find(ui.select).elements.pop().set_value("votsch")
+    user.find(kind=ui.input, content="Chamber ID").clear().type("lab-1")
+    user.find("IP address (private IPv4)").clear().type("192.168.10.20")
+    user.find("Expected serial number").clear().type("ABC123")
+    user.find(ui.checkbox).elements.pop().set_value(True)
+    user.find("Current administrator password (required to save)").type(
+        "StrongAdminPassword#1")
+    user.find("Save chamber settings").click()
+    await user.should_see("Restart the server to apply them", retries=30)
+    saved = chamber_settings.load_settings(settings_file)
+    assert (saved.chamber_type, saved.address, saved.expected_serial) == (
+        "votsch", "192.168.10.20", "ABC123")
+    # The running process is unchanged until restart.
+    assert application.active_chamber_authorization()[0] is None
