@@ -61,6 +61,43 @@ If an adapter's synchronous I/O was already admitted, G04 cannot preempt it. STO
 
 G07 must store `ExecutionSnapshot` inside `prepare()` with PREPARED, bind events to the run UUID and `chamber_id`, keep sequence idempotent, and mark recovered partially executed runs INTERRUPTED/UNKNOWN pending site-authorized verification. EventSink errors are never silently treated as success; the runner requests STOP and reports UNKNOWN if durable event recording fails.
 
+
+## Dashboard Run Profile readiness and handoff (2026-10-19)
+
+An authenticated ADMIN/OPERATOR may select a saved immutable revision on
+**Dashboard → Chamber Control → Saved profile** and click **Run Profile**.
+The runner is server-owned, shared with the Profiles page and G07 recorder.
+
+- **Manual-control handoff:** when the current operator has a G05 manual
+  lease and the chamber is freshly verified STOPPED, the profile request
+  safely releases that operator's manual lease using the existing G08 audit
+  and permission guard, allowing G06 to claim its own lease. Another
+  operator's lease, RUNNING manual operation or a G06 owner is never stolen.
+  No browser receives a lease token or bypasses the G04 controller.
+- **Repeat runs:** after a G06 STOP/CANCEL that is genuinely
+  `VERIFIED_STOPPED`, a new explicit **Run Profile** rechecks STOPPED
+  through the existing G04 authoritative readback and durable generation
+  reconciliation, before any new profile execution starts. Merely loading a
+  page, selecting a profile, or refreshing the Dashboard never clears a
+  STOP fence or starts a chamber.
+- **Faults and restart:** UNKNOWN/FAULT, stale or mismatched status,
+  missing permissions, an active runner, disconnected chamber, unavailable
+  G07 journal and uncertain restart remain fail-closed. G04 still fences
+  concurrent STOPs and G06 separately revalidates the selected saved
+  revision, capabilities, start/stop readback and temperature bounds.
+- **Physical HIL:** the H02 server-side signed site permit, matching
+  revision/serial/operator and independent live watchdog are still required.
+  This fix **does not** make an unapproved physical profile runnable; no
+  physical hardware has been tested or approved by these changes.
+
+Regression evidence:
+`tests/test_profile_execution_service.py` exercises verified STOP
+recovery, owner-only handoff, active RUNNING refusal, invalid revision
+before handoff, and physical missing-permit denial.
+`tests/test_dashboard_profile_ui.py` exercises repeated profile runs.
+Dedicated Windows/Linux CI uses a 20-minute watchdog and also runs H02
+permit safety tests.
+
 ## Browser execution (simulation only)
 
 `chamber_web.services.profile_execution.ProfileExecutionService` hosts one `ProfileRunner` per server and exposes it on `/profiles` ("Profile Run" panel). Behaviour:
