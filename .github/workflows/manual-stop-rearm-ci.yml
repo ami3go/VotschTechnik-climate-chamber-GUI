@@ -1,0 +1,48 @@
+name: Verified manual STOP rearm (offline)
+on:
+  pull_request:
+    paths:
+      - 'chamber_web/security/guards.py'
+      - 'chamber_web/services/manual_control.py'
+      - 'tests/test_manual_control.py'
+      - 'tests/test_manual_ui.py'
+      - '.github/workflows/manual-stop-rearm-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'chamber_web/security/guards.py'
+      - 'chamber_web/services/manual_control.py'
+      - 'tests/test_manual_control.py'
+      - 'tests/test_manual_ui.py'
+      - '.github/workflows/manual-stop-rearm-ci.yml'
+permissions:
+  contents: read
+jobs:
+  verified-stop:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.12'
+          - os: windows-latest
+            python: '3.10'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements-web.txt
+          python -m pip install pytest==9.1.1 pytest-asyncio==1.4.0
+      - name: Test G04 STOP priority, generations and latch semantics
+        run: python -m unittest discover -s tests -p 'test_chamber_controller.py' -v
+      - name: Test authenticated G05 normal STOP and failure fences
+        run: python -m unittest discover -s tests -p 'test_manual_control.py' -v
+      - name: Test G08 role/STOP/reconcile permission separation
+        run: python -m unittest discover -s tests -p 'test_security_core.py' -v
+      - name: Test repeated Dashboard Start Stop in simulated NiceGUI
+        run: python -m pytest -q tests/test_manual_ui.py

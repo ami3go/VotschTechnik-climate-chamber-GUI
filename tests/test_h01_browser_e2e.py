@@ -206,10 +206,22 @@ def test_browser_g05_actual_manual_start_stop_and_viewer_denial(live_app):
             expect(viewer.get_by_role("button", name="Start", exact=True)).to_be_disabled()
             expect(viewer.get_by_role("button", name="Stop", exact=True)).to_be_disabled()
             admin.get_by_role("button", name="Stop", exact=True).click()
-            expect(admin.locator("body")).to_contain_text("CONFIRMED · stop", timeout=15000)
-            admin.goto(URL + "/admin")
             expect(admin.locator("body")).to_contain_text(
-                "STOP/reconciliation required", timeout=15000)
+                "STOP verified; controls ready", timeout=15000)
+            # Normal owner STOP automatically rearms only after independent
+            # verified STOPPED readback; ownership remains unchanged.
+            expect(admin.get_by_role("button", name="Start", exact=True)).to_be_enabled(
+                timeout=15000)
+            admin.get_by_role("button", name="Start", exact=True).click()
+            expect(admin.locator("body")).to_contain_text(
+                "CONFIRMED · start", timeout=15000)
+            admin.get_by_role("button", name="Stop", exact=True).click()
+            expect(admin.locator("body")).to_contain_text(
+                "STOP verified; controls ready", timeout=15000)
+            admin.goto(URL + "/admin")
+            expect(admin.locator("body")).to_contain_text("fence clear", timeout=15000)
+            expect(admin.locator("body")).to_contain_text(
+                "Lease state: CLAIMED", timeout=15000)
             admin.get_by_role("button", name="Release", exact=True).click()
             expect(admin.locator("body")).to_contain_text(
                 "Lease state: RELEASED", timeout=15000)

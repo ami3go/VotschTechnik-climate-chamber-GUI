@@ -66,6 +66,9 @@ class AuthorizedChamber:
         self._token_lock = threading.RLock()
         self._token_owner: dict[str, int] = {}
         self._token_names: dict[str, str] = {}
+        # Internal revision prevents rearming after lease release/handover/reclaim.
+        # It is not an ownership token and is never sent to the browser.
+        self._token_revision = 0
 
     def authorize(self, session: str | None, csrf: str | None,
                   permission: Permission, *, chamber_id: str | None = None) -> Actor:
@@ -115,16 +118,76 @@ class AuthorizedChamber:
             with self._token_lock:
                 self._token_owner[result] = actor.user_id
                 self._token_names[result] = actor.username
+                self._token_revision += 1
         elif command == "release_operator":
             with self._token_lock:
                 self._token_owner.pop(token, None)
                 self._token_names.pop(token, None)
+                self._token_revision += 1
         self._security.audit(actor, "chamber." + command, "SUCCESS", chamber_id)
         return result
 
     def stop(self, session: str | None, csrf: str | None, chamber_id: str) -> None:
         # Intentionally NO operator_token. STOP is role-checked but lease-independent.
         self.execute(session, csrf, chamber_id, "stop")
+
+    def owned_lease_revision_now(self, user_id: int) -> int | None:
+        """Best-effort, nonblocking lease-owner snapshot for priority STOP.
+
+        Never wait for an admin handover or a token-registry lock before
+        dispatching STOP. Contention disables automatic rearm, not STOP.
+        """
+        if not self._token_lock.acquire(blocking=False):
+            return None
+        try:
+            return (self._token_revision
+                    if user_id in self._token_owner.values() else None)
+        finally:
+            self._token_lock.release()
+
+    def rearm_after_owned_verified_stop(
+        self, session: str | None, csrf: str | None, chamber_id: str,
+        *, expected_generation: int, expected_lease_revision: int,
+    ) -> bool:
+        """Only the initiating manual lease owner can rearm a verified STOP.
+
+        This is a narrowly scoped internal G05 workflow, NOT the public/admin
+        reconcile_stop mutation. It never issues START or clears UNKNOWN/FAULT
+        and never accepts an operator token from the browser.
+
+        STOP remains independently available to *any* authorized operator.
+        A non-owner STOP, a competing STOP, or a lost/changed lease retains
+        the durable latch for explicit administrator reconciliation.
+        """
+        actor = self.authorize(session, csrf, Permission.CHAMBER_CONTROL,
+                               chamber_id=chamber_id)
+        self._manager.get(chamber_id)
+        with self._token_lock:
+            if (self._token_revision != expected_lease_revision or
+                    not any(owner_id == actor.user_id
+                            for owner_id in self._token_owner.values())):
+                return False
+            health = self._manager.health(chamber_id)
+            if (not health.connected or not health.stop_latched or
+                    health.state != "VERIFIED_STOPPED" or
+                    health.generation != expected_generation):
+                return False
+            # Durable audit INTENT before changing the controller latch.
+            self._security.audit(
+                actor, "chamber.stop.auto_rearm", "INTENT", chamber_id)
+            try:
+                # G04 independently rechecks fresh, matching, GOOD STOPPED
+                # readback and the same generation before clearing the
+                # durable uncertainty fence. A newer STOP cannot be bypassed.
+                self._manager.reconcile_stop(chamber_id)
+            except BaseException as exc:
+                self._security.audit(
+                    actor, "chamber.stop.auto_rearm", "FAILED",
+                    chamber_id, type(exc).__name__)
+                raise
+            self._security.audit(
+                actor, "chamber.stop.auto_rearm", "SUCCESS", chamber_id)
+            return True
 
     def ownership_view(self, session: str | None, chamber_id: str) -> tuple[str | None, bool]:
         """Read-only, no owner tokens leave this server-owned facade."""
@@ -193,6 +256,7 @@ class AuthorizedChamber:
                 replacement = self._manager.claim_operator(chamber_id, actor.username)
                 self._token_owner[replacement] = actor.user_id
                 self._token_names[replacement] = actor.username
+                self._token_revision += 1
         except BaseException as exc:
             self._security.audit(actor, "chamber.handover", "FAILED",
                                  chamber_id, type(exc).__name__)

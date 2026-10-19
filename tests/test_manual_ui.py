@@ -61,11 +61,19 @@ async def test_manual_dashboard_two_browsers_and_authorized_stop(
     await first.should_see("Web STOP is a best-effort control command", retries=30)
 
     # A fresh browser page must dispatch as the currently authenticated
-    # operator; a STOP does not require passing the operator's G04 token.
+    # operator. The lease owner can STOP and then START again without admin
+    # reconciliation; STOP itself never requires passing the G04 token.
+    first.find("Start").click()
+    await first.should_see("CONFIRMED · start", retries=60)
     first.find("Stop").click()
-    await first.should_see("CONFIRMED", retries=40)
+    await first.should_see("STOP verified; controls ready", retries=60)
+    first.find("Start").click()
+    await first.should_see("CONFIRMED · start", retries=60)
+    first.find("Stop").click()
+    await first.should_see("STOP verified; controls ready", retries=60)
     await first.open("/admin")
-    await first.should_see("STOP/reconciliation required", retries=40)
+    await first.should_see("fence clear", retries=40)
+    await first.should_see("Lease state: CLAIMED", retries=40)
     first.find("Release").click()
     await first.should_see("Lease state: RELEASED", retries=40)
 

@@ -152,6 +152,132 @@ class ManualControlTests(unittest.TestCase):
                 mgr.disconnect(service.chamber_id)
                 self.managers.remove(mgr)
 
+    def test_owned_verified_manual_stop_rearms_and_retains_lease(self):
+        """One operator can START, STOP, START without Admin reconciliation."""
+        service, manager, dashboard = self.make_service()
+        chamber_id = service.chamber_id
+        self.assertEqual(self.send(service, self.op, "claim").state, ManualState.CONFIRMED)
+        for index in range(2):
+            with self.subTest(cycle=index):
+                self.assertEqual(self.send(service, self.op, "start").state,
+                                 ManualState.CONFIRMED)
+                stopped = self.send(service, self.op, "stop")
+                self.assertEqual(stopped.state, ManualState.CONFIRMED)
+                self.assertIn("controls ready", stopped.message)
+                health = manager.health(chamber_id)
+                self.assertEqual(health.state, "VERIFIED_STOPPED")
+                self.assertFalse(health.stop_latched)
+                asyncio.run(dashboard.poll_once())
+                view = service.view(self.op.session, chamber_id)
+                self.assertTrue(view.owned_by_actor)
+                self.assertTrue(view.can_start)
+                self.assertTrue(view.can_set_target)
+        self.assertEqual(self.send(service, self.op, "release").state,
+                         ManualState.CONFIRMED)
+
+    def test_nonowner_stop_remains_latched_and_cannot_rearm(self):
+        service, manager, dashboard = self.make_service()
+        cid = service.chamber_id
+        self.assertEqual(self.send(service, self.op, "claim").state, ManualState.CONFIRMED)
+        self.assertEqual(self.send(service, self.op, "start").state, ManualState.CONFIRMED)
+        stopped = self.send(service, self.op2, "stop")
+        self.assertEqual(stopped.state, ManualState.CONFIRMED)
+        self.assertIn("explicit reconciliation", stopped.message)
+        health = manager.health(cid)
+        self.assertTrue(health.stop_latched)
+        self.assertEqual(health.state, "VERIFIED_STOPPED")
+        self.assertFalse(service._authorized.rearm_after_owned_verified_stop(
+            self.op2.session, self.op2.csrf, cid,
+            expected_generation=health.generation,
+            expected_lease_revision=-1))
+        asyncio.run(dashboard.poll_once())
+        self.assertFalse(service.view(self.op.session, cid).can_start)
+        self.assertEqual(self.send(service, self.op, "start").state,
+                         ManualState.REJECTED)
+        self.assertEqual(self.send(service, self.admin, "reconcile").state,
+                         ManualState.CONFIRMED)
+        self.assertTrue(service.view(self.op.session, cid).owned_by_actor)
+
+    def test_rearm_requires_exact_stop_generation(self):
+        service, manager, _ = self.make_service()
+        cid = service.chamber_id
+        self.assertEqual(self.send(service, self.op, "claim").state, ManualState.CONFIRMED)
+        # A STOP from another operator always latches; an owner is not
+        # authorized to reinterpret that earlier STOP as their normal STOP.
+        before = manager.health(cid).generation
+        self.assertEqual(self.send(service, self.op2, "stop").state, ManualState.CONFIRMED)
+        generation = manager.health(cid).generation
+        self.assertEqual(generation, before + 1)
+        self.assertFalse(service._authorized.rearm_after_owned_verified_stop(
+            self.op.session, self.op.csrf, cid,
+            expected_generation=before,
+            expected_lease_revision=service._authorized.owned_lease_revision_now(
+                self.security.authenticate(self.op.session).user_id)))
+        self.assertTrue(manager.health(cid).stop_latched)
+        self.assertEqual(self.send(service, self.admin, "reconcile").state,
+                         ManualState.CONFIRMED)
+
+    def test_rearm_is_not_exposed_to_viewer_or_revoked_session(self):
+        service, manager, _ = self.make_service()
+        cid = service.chamber_id
+        self.assertEqual(self.send(service, self.op, "claim").state, ManualState.CONFIRMED)
+        self.assertEqual(self.send(service, self.op2, "stop").state, ManualState.CONFIRMED)
+        generation = manager.health(cid).generation
+        with self.assertRaises(AuthorizationError):
+            service._authorized.rearm_after_owned_verified_stop(
+                self.viewer.session, self.viewer.csrf, cid,
+                expected_generation=generation,
+                expected_lease_revision=-1)
+        self.security.logout(self.op.session)
+        with self.assertRaises(AuthenticationError):
+            service._authorized.rearm_after_owned_verified_stop(
+                self.op.session, self.op.csrf, cid,
+                expected_generation=generation,
+                expected_lease_revision=-1)
+        self.assertTrue(manager.health(cid).stop_latched)
+
+    def test_competing_stop_between_verification_and_rearm_stays_latched(self):
+        service, manager, _ = self.make_service()
+        cid = service.chamber_id
+        self.assertEqual(self.send(service, self.op, "claim").state, ManualState.CONFIRMED)
+        self.assertEqual(self.send(service, self.op, "start").state, ManualState.CONFIRMED)
+        rearm = service._authorized.rearm_after_owned_verified_stop
+
+        def inject_competing_stop(session, csrf, chamber_id, *,
+                                  expected_generation, expected_lease_revision):
+            service._authorized.stop(self.op2.session, self.op2.csrf, chamber_id)
+            return rearm(session, csrf, chamber_id,
+                         expected_generation=expected_generation,
+                         expected_lease_revision=expected_lease_revision)
+
+        service._authorized.rearm_after_owned_verified_stop = inject_competing_stop
+        stopped = self.send(service, self.op, "stop")
+        self.assertEqual(stopped.state, ManualState.CONFIRMED)
+        self.assertIn("explicit reconciliation", stopped.message)
+        self.assertTrue(manager.health(cid).stop_latched)
+        self.assertEqual(self.send(service, self.op, "start").state,
+                         ManualState.REJECTED)
+
+    def test_ambiguous_owned_stop_must_not_auto_rearm(self):
+        class FailingStop(FakeBackend):
+            def stop(self):
+                raise TimeoutError("Injected STOP uncertainty")
+
+        service, manager, _ = self.make_service(
+            lambda cfg, allow_test_backend=False: FailingStop(cfg.chamber_id))
+        cid = service.chamber_id
+        self.assertEqual(self.send(service, self.op, "claim").state, ManualState.CONFIRMED)
+        self.assertEqual(self.send(service, self.op, "start").state, ManualState.CONFIRMED)
+        result = self.send(service, self.op, "stop")
+        self.assertIn(result.state, (ManualState.UNKNOWN, ManualState.FAULT))
+        self.assertTrue(manager.health(cid).stop_latched)
+        self.assertIn(manager.health(cid).state, ("UNKNOWN", "FAULT"))
+        # A command denied under uncertain hardware state must not be
+        # mislabeled as an ordinary safe refusal.
+        self.assertIn(self.send(service, self.op, "start").state,
+                      (ManualState.UNKNOWN, ManualState.FAULT, ManualState.REJECTED))
+        self.assertTrue(manager.health(cid).stop_latched)
+
     def test_concurrent_operator_claim_and_admin_handover(self):
         service, _, _ = self.make_service()
         barrier = threading.Barrier(3)
