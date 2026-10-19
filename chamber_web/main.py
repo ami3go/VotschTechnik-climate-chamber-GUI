@@ -159,7 +159,7 @@ def _server_navigation_context() -> NavigationContext:
 install_navigation_resolver(_server_navigation_context)
 
 # G07 readers are injected when the recording service is implemented.
-register_pages(get_dashboard_service, discovery_provider=discover_votsch_chambers)
+register_pages(get_dashboard_service, discovery_provider=lambda network: discover_votsch_chambers(network))
 
 
 CSS = (Path(__file__).parent / "assets" / "style.css").read_text(encoding="utf-8")
