@@ -224,11 +224,48 @@ class ManualControlTests(unittest.TestCase):
                 self.viewer.session, self.viewer.csrf, cid,
                 expected_generation=generation)
         self.security.logout(self.op.session)
-        with self.assertRaises(Exception):
+        with self.assertRaises(AuthenticationError):
             service._authorized.rearm_after_owned_verified_stop(
                 self.op.session, self.op.csrf, cid,
                 expected_generation=generation)
         self.assertTrue(manager.health(cid).stop_latched)
+
+    def test_competing_stop_between_verification_and_rearm_stays_latched(self):
+        service, manager, _ = self.make_service()
+        cid = service.chamber_id
+        self.assertEqual(self.send(service, self.op, "claim").state, ManualState.CONFIRMED)
+        self.assertEqual(self.send(service, self.op, "start").state, ManualState.CONFIRMED)
+        rearm = service._authorized.rearm_after_owned_verified_stop
+
+        def inject_competing_stop(session, csrf, chamber_id, *, expected_generation):
+            service._authorized.stop(self.op2.session, self.op2.csrf, chamber_id)
+            return rearm(session, csrf, chamber_id,
+                         expected_generation=expected_generation)
+
+        service._authorized.rearm_after_owned_verified_stop = inject_competing_stop
+        stopped = self.send(service, self.op, "stop")
+        self.assertEqual(stopped.state, ManualState.CONFIRMED)
+        self.assertIn("explicit reconciliation", stopped.message)
+        self.assertTrue(manager.health(cid).stop_latched)
+        self.assertEqual(self.send(service, self.op, "start").state,
+                         ManualState.REJECTED)
+
+    def test_ambiguous_owned_stop_must_not_auto_rearm(self):
+        class FailingStop(FakeBackend):
+            def stop(self):
+                raise TimeoutError("Injected STOP uncertainty")
+
+        service, manager, _ = self.make_service(
+            lambda cfg, allow_test_backend=False: FailingStop(cfg.chamber_id))
+        cid = service.chamber_id
+        self.assertEqual(self.send(service, self.op, "claim").state, ManualState.CONFIRMED)
+        self.assertEqual(self.send(service, self.op, "start").state, ManualState.CONFIRMED)
+        result = self.send(service, self.op, "stop")
+        self.assertIn(result.state, (ManualState.UNKNOWN, ManualState.FAULT))
+        self.assertTrue(manager.health(cid).stop_latched)
+        self.assertIn(manager.health(cid).state, ("UNKNOWN", "FAULT"))
+        self.assertEqual(self.send(service, self.op, "start").state,
+                         ManualState.REJECTED)
 
     def test_concurrent_operator_claim_and_admin_handover(self):
         service, _, _ = self.make_service()
