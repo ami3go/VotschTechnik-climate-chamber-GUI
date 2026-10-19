@@ -26,8 +26,10 @@ class SetupEnvironmentTests(unittest.TestCase):
         python = self.fake_venv("Windows")
         with (mock.patch.object(setup.platform, "system", return_value="Windows"),
               mock.patch.object(setup.shutil, "which", return_value="git.exe"),
-              mock.patch.object(setup, "run_command") as run):
+              mock.patch.object(setup, "run_command") as run,
+              mock.patch.object(setup, "verify_discovery_install") as verify):
             result = setup.install_environment(root=self.root, with_tests=True, with_browser=True)
+        verify.assert_called_once_with(python, root=self.root.resolve())
         self.assertEqual(result, python)
         calls = [call.args[0] for call in run.call_args_list]
         self.assertEqual(len(calls), 5)
@@ -117,6 +119,55 @@ class SetupEnvironmentTests(unittest.TestCase):
         with mock.patch.object(setup.platform, "system", return_value="Darwin"):
             with self.assertRaisesRegex(RuntimeError, "Unsupported OS"):
                 setup.install_environment(root=self.root, include_driver=False)
+
+    def test_stale_driver_forces_one_reinstall_and_reverification(self):
+        python = self.fake_venv()
+        observations = []
+        def verify(*args, **kwargs):
+            observations.append(args[0])
+            if len(observations) == 1:
+                raise RuntimeError("Installed driver revision mismatch")
+        with (mock.patch.object(setup.platform, "system", return_value="Linux"),
+              mock.patch.object(setup.shutil, "which", return_value="git"),
+              mock.patch.object(setup, "run_command") as run,
+              mock.patch.object(setup, "verify_discovery_install", side_effect=verify)):
+            self.assertEqual(setup.install_environment(root=self.root), python)
+        self.assertEqual(observations, [python, python])
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertEqual(len(commands), 4)
+        self.assertIn("--force-reinstall", commands[2])
+        self.assertEqual(commands[2][-1], str(self.root / "requirements-hardware.txt"))
+
+    def test_missing_driver_after_repair_is_a_setup_failure(self):
+        self.fake_venv()
+        with (mock.patch.object(setup.platform, "system", return_value="Linux"),
+              mock.patch.object(setup.shutil, "which", return_value="git"),
+              mock.patch.object(setup, "run_command") as run,
+              mock.patch.object(setup, "verify_discovery_install",
+                                side_effect=RuntimeError("discovery missing")) as verify):
+            with self.assertRaisesRegex(RuntimeError, "discovery missing"):
+                setup.install_environment(root=self.root)
+        self.assertEqual(verify.call_count, 2)
+        self.assertIn("--force-reinstall", run.call_args_list[-1].args[0])
+
+    def test_check_driver_does_not_install_or_connect(self):
+        python = setup.python_in_venv(setup.ROOT / ".venv", setup.platform.system())
+        with (mock.patch.object(setup, "verify_discovery_install") as verify,
+              mock.patch.object(setup, "install_environment") as install,
+              mock.patch.object(setup.Path, "is_file", return_value=True)):
+            self.assertEqual(setup.main(["--check-driver"]), 0)
+            verify.assert_called_once()
+            install.assert_not_called()
+
+    def test_verify_driver_watchdog_reports_timeout(self):
+        python = self.fake_venv()
+        script = self.root / "scripts" / "verify_driver_install.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text("# fixture", encoding="utf-8")
+        with mock.patch.object(setup.subprocess, "run",
+                               side_effect=subprocess.TimeoutExpired("check", 15)):
+            with self.assertRaisesRegex(RuntimeError, "watchdog timed out"):
+                setup.verify_discovery_install(python, root=self.root)
 
     def test_pip_error_propagates(self):
         self.fake_venv()
