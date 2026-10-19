@@ -171,6 +171,35 @@ lease persistence, outsider STOP, concurrent STOP generation, revoked
 session and failed STOP. `tests/test_manual_ui.py` exercises two consecutive
 cycles through authenticated NiceGUI controls. All run simulation-only.
 
+## Dashboard-only operator control: no Admin claim/reconcile for normal stops
+
+The operator's explicit **Start** or **Set Target** action automatically claims
+an available G04 manual lease through the same G08 permission and audit guard.
+The operator does not need to navigate to Admin or manually claim the chamber.
+A lease held by another manual operator or G06 profile runner is **never stolen**.
+
+After an ordinary STOP that was confirmed with authoritative fresh GOOD STOPPED
+readback, an explicit Start/Set Target request by the existing lease owner (or
+a new claimant if the lease was free) performs a **separate verified STOPPED
+reconciliation** before executing any mutation. The server checks the exact
+controller generation, retained ownership revision and permissions, persists
+the audit intent, and lets G04 read the chamber independently again before
+clearing the STOP fence. START itself still requires normal fresh telemetry,
+identity, setpoint, capability and generation checks. No automatic start
+command occurs after Stop; the operator must click Start.
+
+This also handles Stop pressed **before** any manual lease is claimed and
+STOP by an authorized non-owner: the original owner must explicitly request
+Start to recover, and the non-owner cannot take over their lease. Persistent
+UNKNOWN/FAULT states (including after an uncertain restart), lost chamber
+communication, unverified STOP readback, revoked credentials, stale generation
+or an active G06 lease continue to block control. Admin recovery remains for
+those exceptional cases.
+
+Regression coverage: `tests/test_manual_control.py`,
+`tests/test_manual_ui.py`, `tests/test_h01_browser_e2e.py`.
+All tests run with simulated chambers; physical approval is separate.
+
 ### Live Chromium UI button state correction — 2026-10-14
 
 A real Playwright/Chromium test exposed a G05 presentation defect that an in-process NiceGUI click test did not detect: initializing buttons using raw Quasar `props(... disable)` does not update NiceGUI's tracked `enabled` state. Subsequent `button.enable()` could leave the raw `disable` prop in place. G05 now constructs every conditionally enabled manual command button using `.disable()` and relies on `.enable()` / `.disable()` only after an authenticated service view. STOP initially renders disabled to avoid displaying an unauthorized transient control; G08 authorization remains mandatory on every STOP callback even if UI state is manipulated. The permanently unsupported Hold action remains disabled. This requires exact-commit H01 real browser validation before accepting the change. No testing-only bypass or physical I/O enablement was added.
