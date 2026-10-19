@@ -160,11 +160,13 @@ audited **automatic rearm** of that latch:
 
 An authorized non-owner STOP, ambiguous STOP outcome, STOP/readback timeout,
 UNKNOWN/FAULT, overlapping STOP, lease handover/reclaim, changed generation,
-expired/revoked session or audit failure **must never be treated as a normal
-rearmed STOP**. The latch remains, or automatic rearm is unconfirmed; Admin
-STOP reconciliation remains available. STOP priority and STOP access by any
+expired/revoked session or audit failure **must never be silently rearmed
+during that STOP callback**. A verified non-owner STOP stays latched until a
+later explicit Start/Set Target by the current lease owner independently
+checks STOPPED again (see below). UNKNOWN/FAULT and ambiguous STOP remain
+blocked until exceptional recovery. STOP priority and STOP access by any
 authorized operator remain unchanged. G06 cancellation and H02 watchdog STOP
-paths do **not** use this G05 auto-rearm mechanism.
+paths do **not** use the G05 STOP-callback auto-rearm mechanism.
 
 Tests: `tests/test_manual_control.py` covers repeated Start–Stop–Start,
 lease persistence, outsider STOP, concurrent STOP generation, revoked
