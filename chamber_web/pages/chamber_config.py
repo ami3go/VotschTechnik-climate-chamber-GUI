@@ -14,7 +14,8 @@ from nicegui import ui
 
 from chamber_web.domain.chamber import ChamberSafetyError
 from chamber_web.hil.chamber_settings import (
-    CHAMBER_TYPES, ChamberSettings, load_settings, save_settings, settings_path,
+    CHAMBER_TYPES, ChamberSettings, factory_credentials_save_blocker,
+    load_settings, save_settings, settings_path,
 )
 from chamber_web.hil.physical import HARD_MAX_C, HARD_MIN_C, MAX_ENVELOPE_SPAN_C
 from chamber_web.security.auth import AuthenticationError, AuthorizationError, Role
@@ -267,6 +268,18 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 "A trained person will be present at the chamber whenever the server "
                 "runs with this configuration",
                 value=initial.person_present_acknowledged)
+            # Physical configuration is deliberately gated on BOTH factory
+            # credentials. Render precise remediation before the operator saves.
+            factory_blocker = factory_credentials_save_blocker(
+                *get_security().factory_credentials_active())
+            if factory_blocker:
+                ui.label("Physical chamber setup blocked: " + factory_blocker).classes(
+                    "text-sm text-negative")
+            else:
+                ui.label(
+                    "Factory password and PIN have both been replaced. Physical "
+                    "configuration remains subject to HIL safety checks."
+                ).classes("text-sm text-grey-7")
         password = ui.input("Current administrator password (required to save)",
                             password=True).props(
                                 "autocomplete=current-password").classes("w-full")
