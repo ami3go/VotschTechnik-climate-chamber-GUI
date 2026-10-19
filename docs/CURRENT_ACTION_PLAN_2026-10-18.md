@@ -1,7 +1,9 @@
 # Chamber GUI — Current Status and Detailed Execution Action Plan
 
-**Revision:** 1.0  
+**Revision:** 1.0 (historical snapshot; superseded for day-to-day execution by Stage 2)  
 **Snapshot:** 2026-10-18, 16:04 Europe/Sofia (repository rechecked during preparation)  
+**Superseded as active work queue:** [Stage 2 — pilot/release readiness](STAGE_2_PILOT_READINESS_PLAN.md) as of 2026-10-19. This older snapshot retains the original H02-B/C PR state and should not be used to infer that merged work is still open.  
+
 **State:** Core software merged; physical profiles and production deployment **NO-GO**  
 **Primary plan:** [REMAINING_DEVELOPMENT_TASKS.md](REMAINING_DEVELOPMENT_TASKS.md)  
 **Canonical release blockers:** [READINESS_FINDINGS.md](READINESS_FINDINGS.md)  
