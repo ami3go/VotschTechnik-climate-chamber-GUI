@@ -124,6 +124,36 @@ def _write_settings(settings: ChamberSettings, path: Path) -> None:
     os.replace(temporary, path)
 
 
+def factory_credentials_save_blocker(weak_password: bool, weak_pin: bool) -> str | None:
+    """Return an actionable physical-configuration blocker, without leaking secrets.
+
+    Password and PIN have independent factory states. A changed password must
+    never be reported as still factory-default merely because the PIN was not
+    enrolled. Both safeguards remain mandatory for physical configuration.
+    """
+    if weak_password and weak_pin:
+        return (
+            "Factory administrator password and PIN are still active. "
+            "Change the password under Admin > Administrator Credentials and "
+            "enroll a new PIN under Admin > Security Profiles before saving a "
+            "physical chamber configuration."
+        )
+    if weak_password:
+        return (
+            "Factory administrator password is still active. Change the "
+            "password under Admin > Administrator Credentials before saving "
+            "a physical chamber configuration. The PIN has already been changed."
+        )
+    if weak_pin:
+        return (
+            "The administrator password has already been changed, but the "
+            "factory PIN 12345678 is still active. Enroll a new PIN under "
+            "Admin > Security Profiles > Enroll account PIN, then save the "
+            "chamber settings again using your current administrator password."
+        )
+    return None
+
+
 def save_settings(security, session: str | None, csrf: str | None,
                   admin_password: str, settings: ChamberSettings, *,
                   path: Path | None = None) -> ChamberSettings:
@@ -131,11 +161,11 @@ def save_settings(security, session: str | None, csrf: str | None,
     admin = security.reauthenticate_admin(session, csrf, admin_password)
     try:
         settings.validate()
-        if settings.chamber_type != "simulator" and any(
-                security.factory_credentials_active()):
-            raise ChamberSafetyError(
-                "Change the factory administrator password and PIN before "
-                "configuring a physical chamber")
+        if settings.chamber_type != "simulator":
+            reason = factory_credentials_save_blocker(
+                *security.factory_credentials_active())
+            if reason is not None:
+                raise ChamberSafetyError(reason)
     except ChamberSafetyError as exc:
         security.audit(admin, "chamber.settings.save", "DENIED", detail=str(exc))
         raise
