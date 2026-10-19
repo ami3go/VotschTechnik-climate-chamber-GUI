@@ -88,6 +88,47 @@ async def test_manual_dashboard_two_browsers_and_authorized_stop(
     await viewer.should_see("Chamber Control", retries=30)
 
 
+async def test_dashboard_stop_without_claim_then_start_recovers_as_operator(
+    create_user: Callable[[], User], monkeypatch, tmp_path,
+) -> None:
+    """No Admin tab, no manual claim, no automatic physical START after STOP."""
+    from chamber_web import main as application
+    from chamber_web.security import nicegui as security_ui
+    from chamber_web.security.auth import Role, SecurityStore
+
+    security = SecurityStore(tmp_path / "security")
+    security.bootstrap_admin("operator_admin", "StrongAdminPassword#1")
+    admin = security.login("operator_admin", "StrongAdminPassword#1")
+    security.create_user(admin.session, admin.csrf, "operator_1",
+                         "StrongOperatorPassword#2", Role.OPERATOR)
+    monkeypatch.setattr(security_ui, "_store", security)
+    monkeypatch.setattr(application._manual_service, "_security", security)
+    monkeypatch.setattr(application._manual_service._authorized, "_security", security)
+    browser = create_user()
+    await browser.open("/login")
+    browser.find("Username").type("operator_1")
+    browser.find("Password").type("StrongOperatorPassword#2")
+    browser.find("Sign in").click()
+    await browser.should_see("Chamber Control", retries=40)
+    assert application._manual_service.view(
+        security.login("operator_1", "StrongOperatorPassword#2").session,
+        application._manual_service.chamber_id).owner is None
+
+    # STOP does not require a lease. The next START must independently recheck
+    # fresh STOPPED readback and claim the free lease before issuing START.
+    browser.find("Stop").click()
+    await browser.should_see("CONFIRMED · stop", retries=60)
+    browser.find("Start").click()
+    await browser.should_see("CONFIRMED · start", retries=60)
+    browser.find("Stop").click()
+    await browser.should_see("STOP verified; controls ready", retries=60)
+    browser.find("Start").click()
+    await browser.should_see("CONFIRMED · start", retries=60)
+    assert application._manual_service.view(
+        security.login("operator_1", "StrongOperatorPassword#2").session,
+        application._manual_service.chamber_id).owned_by_actor
+
+
 async def test_admin_security_profiles_panel_is_role_restricted(
     create_user: Callable[[], User], monkeypatch, tmp_path,
 ) -> None:
