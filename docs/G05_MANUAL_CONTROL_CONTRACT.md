@@ -131,6 +131,46 @@ must explicitly apply any target. No signed site-approved limits exist.
 The actual H01 headless Chromium workflow now runs on G05 source changes, with claim/setpoint/START/STOP and VIEWER-denial checks in the real server browser. G05 also tests that manual ownership and G06 runner ownership are mutually exclusive using a shared G04 controller while separately authorized STOP remains available. A UI fallback now reauthenticates role before enabling STOP when passive status cannot be read; VIEWER/revoked controls stay disabled. These checks require fresh GitHub Actions verification and do not certify physical hardware, emergency STOP or G07 combined wiring. G07-A integration and independent human approval remain explicit merge gates.
 
 
+## Verified normal STOP — retain operator control (2026-10-19)
+
+A **Dashboard → Chamber Control → Stop** action must not permanently disable
+Start after a routine STOP that the chamber confirms. G04 **always** fences
+STOP synchronously, prioritizes it ahead of writes, and records a durable
+STOP latch. This core STOP invariant is unchanged.
+
+The G05/G08 server-owned manual workflow adds a strictly conditional,
+audited **automatic rearm** of that latch:
+
+1. An authenticated ADMIN/OPERATOR initiates STOP (STOP itself does **not**
+   require a lease). Capture the G04 generation and, nonblocking, whether
+   this same user already holds the G04 manual operator lease.
+2. Dispatch STOP through the existing independent G08 STOP guard; require
+   authoritative, matching-identity, GOOD, fresh STOPPED readback and
+   controller `VERIFIED_STOPPED`.
+3. If the originating user already held the lease, the owner/lease revision
+   is unchanged, and the new STOP generation is **exactly** the expected
+   increment, perform a separate server-side G08-audited automatic rearm.
+   G04 `reconcile_stop` independently reads the chamber again and checks
+   `STOPPED`, freshness, the same generation and durability before clearing
+   the latch. Retain the operator lease throughout.
+4. With successful rearm, Start and Set Target become available again when
+   dashboard telemetry is GOOD; the next Start still performs all fresh
+   command admission and device readback checks. The GUI never starts the
+   chamber automatically.
+
+An authorized non-owner STOP, ambiguous STOP outcome, STOP/readback timeout,
+UNKNOWN/FAULT, overlapping STOP, lease handover/reclaim, changed generation,
+expired/revoked session or audit failure **must never be treated as a normal
+rearmed STOP**. The latch remains, or automatic rearm is unconfirmed; Admin
+STOP reconciliation remains available. STOP priority and STOP access by any
+authorized operator remain unchanged. G06 cancellation and H02 watchdog STOP
+paths do **not** use this G05 auto-rearm mechanism.
+
+Tests: `tests/test_manual_control.py` covers repeated Start–Stop–Start,
+lease persistence, outsider STOP, concurrent STOP generation, revoked
+session and failed STOP. `tests/test_manual_ui.py` exercises two consecutive
+cycles through authenticated NiceGUI controls. All run simulation-only.
+
 ### Live Chromium UI button state correction — 2026-10-14
 
 A real Playwright/Chromium test exposed a G05 presentation defect that an in-process NiceGUI click test did not detect: initializing buttons using raw Quasar `props(... disable)` does not update NiceGUI's tracked `enabled` state. Subsequent `button.enable()` could leave the raw `disable` prop in place. G05 now constructs every conditionally enabled manual command button using `.disable()` and relies on `.enable()` / `.disable()` only after an authenticated service view. STOP initially renders disabled to avoid displaying an unauthorized transient control; G08 authorization remains mandatory on every STOP callback even if UI state is manipulated. The permanently unsupported Hold action remains disabled. This requires exact-commit H01 real browser validation before accepting the change. No testing-only bypass or physical I/O enablement was added.
