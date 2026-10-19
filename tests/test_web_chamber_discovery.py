@@ -1,6 +1,8 @@
 """NiceGUI chamber scan smoke: discovery does not connect or save hardware."""
 from __future__ import annotations
 
+import asyncio
+
 from dataclasses import dataclass
 from typing import Callable
 
@@ -162,6 +164,10 @@ async def test_scan_local_networks_ignores_configured_ip(
     await user.should_see("Signed in: admin (ADMIN)", retries=30)
     await user.open("/settings")
     user.find("Scan local networks").click()
-    # The injected provider is the authoritative signal that the handler ran.
-    await user.should_see("Scanning server-side private IPv4 networks", retries=30)
+    # Give NiceGUI's async click handler a deterministic scheduling opportunity.
+    for _ in range(30):
+        if scopes:
+            break
+        await asyncio.sleep(0.05)
     assert scopes == [None]
+    await user.should_see("No compatible Vötsch/Weiss chambers", retries=30)
