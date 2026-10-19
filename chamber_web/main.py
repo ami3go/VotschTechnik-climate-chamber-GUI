@@ -21,6 +21,7 @@ configure_nicegui_storage()
 from nicegui import app, ui  # noqa: E402
 
 from .bootstrap import create_demo_control_services
+from .adapters.votsch import discover_votsch_chambers
 from .hil.chamber_settings import effective_hil_environment
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
 from .hil.supervised_profile import SupervisedProfileRuntime, supervised_runtime_from_env
@@ -158,7 +159,7 @@ def _server_navigation_context() -> NavigationContext:
 install_navigation_resolver(_server_navigation_context)
 
 # G07 readers are injected when the recording service is implemented.
-register_pages(get_dashboard_service)
+register_pages(get_dashboard_service, discovery_provider=discover_votsch_chambers)
 
 
 CSS = (Path(__file__).parent / "assets" / "style.css").read_text(encoding="utf-8")
