@@ -495,8 +495,14 @@ def profiles_page() -> None:
                       color="warning")
             return
         profile_id, revision = draft.profile_id, draft.viewed_revision
+        from chamber_web.main import profile_execution_is_simulation
+        success_message = (
+            f"Started revision {revision} in simulation"
+            if profile_execution_is_simulation() else
+            f"Started revision {revision} under supervised H02 permit"
+        )
         await run_action(
-            f"Start requested for saved revision {revision}",
+            success_message,
             lambda session, csrf: execution.start_async(session, csrf, profile_id, revision),
         )
 
