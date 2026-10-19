@@ -188,7 +188,8 @@ class ManualControlTests(unittest.TestCase):
         self.assertEqual(health.state, "VERIFIED_STOPPED")
         self.assertFalse(service._authorized.rearm_after_owned_verified_stop(
             self.op2.session, self.op2.csrf, cid,
-            expected_generation=health.generation))
+            expected_generation=health.generation,
+            expected_lease_revision=-1))
         asyncio.run(dashboard.poll_once())
         self.assertFalse(service.view(self.op.session, cid).can_start)
         self.assertEqual(self.send(service, self.op, "start").state,
@@ -208,7 +209,10 @@ class ManualControlTests(unittest.TestCase):
         generation = manager.health(cid).generation
         self.assertEqual(generation, before + 1)
         self.assertFalse(service._authorized.rearm_after_owned_verified_stop(
-            self.op.session, self.op.csrf, cid, expected_generation=before))
+            self.op.session, self.op.csrf, cid,
+            expected_generation=before,
+            expected_lease_revision=service._authorized.owned_lease_revision_now(
+                self.security.authenticate(self.op.session).user_id)))
         self.assertTrue(manager.health(cid).stop_latched)
         self.assertEqual(self.send(service, self.admin, "reconcile").state,
                          ManualState.CONFIRMED)
@@ -222,12 +226,14 @@ class ManualControlTests(unittest.TestCase):
         with self.assertRaises(AuthorizationError):
             service._authorized.rearm_after_owned_verified_stop(
                 self.viewer.session, self.viewer.csrf, cid,
-                expected_generation=generation)
+                expected_generation=generation,
+                expected_lease_revision=-1)
         self.security.logout(self.op.session)
         with self.assertRaises(AuthenticationError):
             service._authorized.rearm_after_owned_verified_stop(
                 self.op.session, self.op.csrf, cid,
-                expected_generation=generation)
+                expected_generation=generation,
+                expected_lease_revision=-1)
         self.assertTrue(manager.health(cid).stop_latched)
 
     def test_competing_stop_between_verification_and_rearm_stays_latched(self):
@@ -237,10 +243,12 @@ class ManualControlTests(unittest.TestCase):
         self.assertEqual(self.send(service, self.op, "start").state, ManualState.CONFIRMED)
         rearm = service._authorized.rearm_after_owned_verified_stop
 
-        def inject_competing_stop(session, csrf, chamber_id, *, expected_generation):
+        def inject_competing_stop(session, csrf, chamber_id, *,
+                                  expected_generation, expected_lease_revision):
             service._authorized.stop(self.op2.session, self.op2.csrf, chamber_id)
             return rearm(session, csrf, chamber_id,
-                         expected_generation=expected_generation)
+                         expected_generation=expected_generation,
+                         expected_lease_revision=expected_lease_revision)
 
         service._authorized.rearm_after_owned_verified_stop = inject_competing_stop
         stopped = self.send(service, self.op, "stop")
