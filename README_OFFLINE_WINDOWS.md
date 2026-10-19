@@ -98,7 +98,7 @@ certify offline network independence, physical controls or released software.
 
 ## First-run credentials
 
-The first NiceGUI launch provisions `admin` / `admin` and default PIN `12345678` only if no administrator exists. General profile uses the password; PIN sign-in requires switching to Isolated LAN. Change the username/password through Admin > Administrator Credentials and the PIN through Admin > Security Profiles. Existing credentials are never reset on startup; LAN use is blocked while factory credentials are present. See [Factory Credentials](docs/FACTORY_CREDENTIALS.md).
+The first NiceGUI launch provisions `admin` / `admin` and default PIN `12345678` only if no administrator exists. General profile uses the password; PIN sign-in requires switching to Isolated LAN. Change the username/password through Admin > Administrator Credentials and the PIN through Admin > Security Profiles. Existing credentials are never reset on startup; LAN use is warned about while factory credentials are present. See [Factory Credentials](docs/FACTORY_CREDENTIALS.md).
 
 ## Administrator password / PIN reset
 
