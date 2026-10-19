@@ -136,7 +136,8 @@ class SetupEnvironmentTests(unittest.TestCase):
         commands = [call.args[0] for call in run.call_args_list]
         self.assertEqual(len(commands), 4)
         self.assertIn("--force-reinstall", commands[2])
-        self.assertEqual(commands[2][-1], str(self.root / "requirements-hardware.txt"))
+        self.assertEqual(Path(commands[2][-1]).resolve(),
+                         (self.root / "requirements-hardware.txt").resolve())
 
     def test_missing_driver_after_repair_is_a_setup_failure(self):
         self.fake_venv()
