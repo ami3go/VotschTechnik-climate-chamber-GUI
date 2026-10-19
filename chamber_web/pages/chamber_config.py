@@ -240,7 +240,7 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 ).props("outline no-caps")
                 ui.button("Scan local networks", icon="lan",
                           on_click=scan_local_networks).props(
-                              "flat no-caps")
+                              "outline no-caps")
             scan_status = ui.label("Discovery is manual and read-only.").classes(
                 "text-xs text-grey-7")
             results = ui.column().classes("w-full gap-2")
