@@ -92,15 +92,28 @@ class ChamberSettingsTests(unittest.TestCase):
             self.save(password="OperatorPassword#1", tokens=operator)
         self.assertFalse(self.path.exists())
 
-    def test_factory_credentials_block_physical_configuration(self):
+    def test_factory_credentials_warn_only_and_physical_settings_can_be_saved(self):
         store = SecurityStore(self.root / "factory")
         store.provision_factory_admin()
         admin = store.login("admin", "admin")
-        with self.assertRaises(ChamberSafetyError):
-            save_settings(store, admin.session, admin.csrf, "admin", PHYSICAL,
-                          path=self.path)
-        save_settings(store, admin.session, admin.csrf, "admin", ChamberSettings(),
-                      path=self.path)
+        saved = save_settings(store, admin.session, admin.csrf, "admin",
+                              PHYSICAL, path=self.path)
+        self.assertEqual(load_settings(self.path), saved)
+        self.assertEqual(store.factory_credentials_active(), (True, True))
+        self.assertIsNotNone(hil_authorization_from_env(
+            effective_hil_environment({}, self.path)[0]))
+        self.assertTrue(any("chamber.settings.save" in row
+                            for row in store.audit_records()))
+        with self.assertRaises(AuthorizationError):
+            save_settings(store, admin.session, admin.csrf,
+                          "wrong-password", PHYSICAL, path=self.path)
+        store.change_password(admin.session, admin.csrf, "admin", "NewPassword#123")
+        restarted = SecurityStore(self.root / "factory")
+        self.assertEqual(restarted.factory_credentials_active(), (False, True))
+        renewed = restarted.login("admin", "NewPassword#123")
+        saved = save_settings(restarted, renewed.session, renewed.csrf,
+                              "NewPassword#123", PHYSICAL, path=self.path)
+        self.assertEqual(load_settings(self.path), saved)
 
     def test_corrupt_or_tampered_file_fails_closed(self):
         self.path.write_text("{not json", encoding="utf-8")
