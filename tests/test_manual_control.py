@@ -152,6 +152,45 @@ class ManualControlTests(unittest.TestCase):
                 mgr.disconnect(service.chamber_id)
                 self.managers.remove(mgr)
 
+    def test_stop_without_claim_then_start_requires_no_admin_or_claim(self):
+        """Stopping before any lease claim must not strand the operator."""
+        service, manager, dashboard = self.make_service()
+        chamber_id = service.chamber_id
+        # These buttons are available without an operator lease.
+        self.assertTrue(service.view(self.op.session, chamber_id).can_start)
+        self.assertTrue(service.view(self.op.session, chamber_id).can_stop)
+        result = self.send(service, self.op, "stop")
+        self.assertEqual(result.state, ManualState.CONFIRMED)
+        self.assertTrue(manager.health(chamber_id).stop_latched)
+        asyncio.run(dashboard.poll_once())
+        self.assertTrue(service.view(self.op.session, chamber_id).can_start)
+        # Explicit operator intent claims the free lease and independently
+        # verifies STOPPED through G04 before issuing any new START.
+        result = self.send(service, self.op, "start")
+        self.assertEqual(result.state, ManualState.CONFIRMED, result.message)
+        self.assertFalse(manager.health(chamber_id).stop_latched)
+        self.assertTrue(service.view(self.op.session, chamber_id).owned_by_actor)
+        stopped = self.send(service, self.op, "stop")
+        self.assertEqual(stopped.state, ManualState.CONFIRMED)
+        self.assertFalse(manager.health(chamber_id).stop_latched)
+        self.assertEqual(self.send(service, self.op, "start").state,
+                         ManualState.CONFIRMED)
+
+    def test_operator_start_auto_claims_without_admin(self):
+        service, manager, dashboard = self.make_service()
+        chamber_id = service.chamber_id
+        self.assertIsNone(service.view(self.op.session, chamber_id).owner)
+        self.assertTrue(service.view(self.op.session, chamber_id).can_start)
+        self.assertEqual(self.send(service, self.op, "start").state,
+                         ManualState.CONFIRMED)
+        asyncio.run(dashboard.poll_once())
+        state = service.view(self.op.session, chamber_id)
+        self.assertTrue(state.owned_by_actor)
+        self.assertTrue(state.can_stop)
+        self.assertFalse(service.view(self.op2.session, chamber_id).can_start)
+        self.assertEqual(self.send(service, self.op2, "start").state,
+                         ManualState.REJECTED)
+
     def test_owned_verified_manual_stop_rearms_and_retains_lease(self):
         """One operator can START, STOP, START without Admin reconciliation."""
         service, manager, dashboard = self.make_service()
@@ -175,7 +214,7 @@ class ManualControlTests(unittest.TestCase):
         self.assertEqual(self.send(service, self.op, "release").state,
                          ManualState.CONFIRMED)
 
-    def test_nonowner_stop_remains_latched_and_cannot_rearm(self):
+    def test_nonowner_stop_requires_explicit_start_to_reverify_and_rearm(self):
         service, manager, dashboard = self.make_service()
         cid = service.chamber_id
         self.assertEqual(self.send(service, self.op, "claim").state, ManualState.CONFIRMED)
@@ -191,11 +230,16 @@ class ManualControlTests(unittest.TestCase):
             expected_generation=health.generation,
             expected_lease_revision=-1))
         asyncio.run(dashboard.poll_once())
-        self.assertFalse(service.view(self.op.session, cid).can_start)
-        self.assertEqual(self.send(service, self.op, "start").state,
+        self.assertTrue(service.view(self.op.session, cid).can_start)
+        # Another user cannot recover or start on the existing owner's lease.
+        self.assertFalse(service.view(self.op2.session, cid).can_start)
+        self.assertEqual(self.send(service, self.op2, "start").state,
                          ManualState.REJECTED)
-        self.assertEqual(self.send(service, self.admin, "reconcile").state,
+        # The original lease owner makes a separate, explicit START request.
+        # This performs fresh G04 STOPPED reconciliation before any start I/O.
+        self.assertEqual(self.send(service, self.op, "start").state,
                          ManualState.CONFIRMED)
+        self.assertFalse(manager.health(cid).stop_latched)
         self.assertTrue(service.view(self.op.session, cid).owned_by_actor)
 
     def test_rearm_requires_exact_stop_generation(self):
@@ -255,8 +299,11 @@ class ManualControlTests(unittest.TestCase):
         self.assertEqual(stopped.state, ManualState.CONFIRMED)
         self.assertIn("explicit reconciliation", stopped.message)
         self.assertTrue(manager.health(cid).stop_latched)
+        # The interfering STOP must remain fenced during the earlier STOP
+        # callback. A later deliberate START can reverify and recover.
         self.assertEqual(self.send(service, self.op, "start").state,
-                         ManualState.REJECTED)
+                         ManualState.CONFIRMED)
+        self.assertFalse(manager.health(cid).stop_latched)
 
     def test_ambiguous_owned_stop_must_not_auto_rearm(self):
         class FailingStop(FakeBackend):
