@@ -222,7 +222,7 @@ class ManualControlTests(unittest.TestCase):
         self.assertEqual(self.send(service, self.op, "start").state, ManualState.CONFIRMED)
         stopped = self.send(service, self.op2, "stop")
         self.assertEqual(stopped.state, ManualState.CONFIRMED)
-        self.assertIn("explicit reconciliation", stopped.message)
+        self.assertIn("press Start to recheck", stopped.message)
         health = manager.health(cid)
         self.assertTrue(health.stop_latched)
         self.assertEqual(health.state, "VERIFIED_STOPPED")
@@ -298,7 +298,7 @@ class ManualControlTests(unittest.TestCase):
         service._authorized.rearm_after_owned_verified_stop = inject_competing_stop
         stopped = self.send(service, self.op, "stop")
         self.assertEqual(stopped.state, ManualState.CONFIRMED)
-        self.assertIn("explicit reconciliation", stopped.message)
+        self.assertIn("press Start to recheck", stopped.message)
         self.assertTrue(manager.health(cid).stop_latched)
         # The interfering STOP must remain fenced during the earlier STOP
         # callback. A later deliberate START (without the injected competing
