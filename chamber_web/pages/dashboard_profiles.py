@@ -181,7 +181,7 @@ def _build():
         refresh_run()
 
     def refresh_run() -> None:
-        nonlocal shown, shown_key, rendered_progress, current_view
+        nonlocal selected, shown, shown_key, rendered_progress, current_view
         if not require_authenticated_page(touch=False):
             return
         try:
@@ -199,6 +199,19 @@ def _build():
             stop_button.disable()
             return
         current_view = view
+        # A page navigation destroys this page's selection closure. Restore
+        # only the precise immutable revision from the last server-owned run
+        # when the operator hasn't made a new choice. This is read-only:
+        # never start a profile from selection or passive refresh.
+        if selected is None and view.profile_id and view.revision:
+            try:
+                previous = editor.store.get_revision(
+                    editor.chamber_id, view.profile_id, revision=view.revision)
+                selected = previous
+                if profile_select.value != view.profile_id:
+                    profile_select.value = view.profile_id
+            except (ValueError, ProfileNotFoundError, ProfileSchemaError, OSError):
+                pass
         for button, enabled_flag in (
             (run_button, view.can_start and selected is not None),
             (pause_button, view.can_pause),
