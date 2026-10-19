@@ -8,7 +8,7 @@ No hardware I/O release is authorized by this document. References:
 
 ## Local setup / secure first administrator
 
-**Factory setup update (2026-10-16):** New NiceGUI deployments provision `admin` / `admin` and default PIN `12345678` on first startup if no administrator exists. These deliberately weak values are for localhost commissioning only; change the password and PIN via Admin before LAN operation. Existing accounts are preserved, and the strong-password policy still applies to subsequent changes. See [Factory Credentials](FACTORY_CREDENTIALS.md). The CLI procedure below remains an optional way to provision a strong administrator before starting the GUI.
+**Factory setup update (2026-10-16):** New NiceGUI deployments provision `admin` / `admin` and default PIN `12345678` on first startup if no administrator exists. These deliberately weak values are for localhost commissioning only; change the password and PIN via Admin before LAN operation. As of 2026-10-19, incomplete credential rotation yields a warning rather than denying chamber settings saves, server startup or profile selection; the normal identity, TLS, ACL, and hardware-safety checks still apply. Existing accounts are preserved, and the strong-password policy still applies to subsequent changes. See [Factory Credentials](FACTORY_CREDENTIALS.md). The CLI procedure below remains an optional way to provision a strong administrator before starting the GUI.
 
 
 Run the GUI only as a single local process, bound to `127.0.0.1`, with a
