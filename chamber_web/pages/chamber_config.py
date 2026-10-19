@@ -114,9 +114,13 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
         results.clear()
         # An IP in the existing configuration field must not be ignored.
         # Explicit scope wins. Scan-local bypasses both input fields.
-        scope = (None if local_only else (address.value or "").strip()
-                 if ip_only else (discovery_subnet.value or "").strip()
-                 or (address.value or "").strip()) or None
+        if local_only:
+            scope = None
+        elif ip_only:
+            scope = (address.value or "").strip() or None
+        else:
+            scope = ((discovery_subnet.value or "").strip()
+                     or (address.value or "").strip() or None)
         if ip_only and not scope:
             scan_status.set_text("Enter a private IPv4 address before verification.")
             ui.notify("Enter the chamber IP address first", color="negative")
