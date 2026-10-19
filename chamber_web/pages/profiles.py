@@ -427,9 +427,16 @@ def profiles_page() -> None:
 
     def render_run(view: RunView) -> None:
         if not view.simulation:
-            run_mode_label.set_text("Profile execution is disabled in Physical HIL mode")
+            run_mode_label.set_text(
+                "Physical HIL: signed site permit and live supervision required"
+                if view.supervised else
+                "Profile execution disabled without supervised H02 site permit")
+        elif view.stop_latched and view.controller_state == "VERIFIED_STOPPED":
+            run_mode_label.set_text(
+                "Verified STOP · next Run Profile rechecks and rearms safely")
         elif view.stop_latched:
-            run_mode_label.set_text("STOP latch active · request STOP reconciliation in Admin → Operator Lease")
+            run_mode_label.set_text(
+                "Unverified STOP / fault · Admin reconciliation required")
         else:
             run_mode_label.set_text(f"Simulation · controller {view.controller_state}")
         if view.state is None:
@@ -489,7 +496,7 @@ def profiles_page() -> None:
             return
         profile_id, revision = draft.profile_id, draft.viewed_revision
         await run_action(
-            f"Started revision {revision} in simulation",
+            f"Start requested for saved revision {revision}",
             lambda session, csrf: execution.start_async(session, csrf, profile_id, revision),
         )
 
