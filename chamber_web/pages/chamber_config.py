@@ -227,7 +227,7 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 "server's detected private local /24 subnets. Enter a "
                 "single private chamber IP or a /24-or-narrower subnet; "
                 "if left blank, the IP in the configuration form is checked "
-                "first. Use 'Scan local networks' to ignore saved addresses. "
+                "first. The separate local-network button ignores saved addresses. "
                 "Read-only GET CHAMBER INFO only; no control commands."
             ).classes("text-xs text-grey-7")
             with ui.row().classes("w-full items-center gap-2 flex-wrap"):
