@@ -103,9 +103,16 @@ async def test_dashboard_starts_saved_revision_shares_state_and_stops(
     assert view.can_start
     await user.should_see("Verified STOP", retries=50)
     user.find("Run Profile").click()
-    await user.should_see("Started saved revision 1 in simulation", retries=50)
-    replacement = execution.runner
-    assert replacement is not runner
+    # NiceGUI may retain the toast from the *first* start. Await a distinct
+    # server-owned runner and run ID instead of treating an old toast as proof.
+    replacement = None
+    for _ in range(160):
+        if execution.runner is not None and execution.runner is not runner:
+            replacement = execution.runner
+            break
+        await asyncio.sleep(0.05)
+    assert replacement is not None, "Second Run Profile never prepared a new runner"
+    assert replacement.snapshot.run_id != runner.snapshot.run_id
     assert replacement.snapshot.profile_id == saved.profile_id
     assert not execution.view(
         security.login("test_admin", "StrongAdminPassword#1").session).stop_latched
