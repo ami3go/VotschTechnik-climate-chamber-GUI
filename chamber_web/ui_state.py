@@ -60,6 +60,61 @@ def project_telemetry(view: DashboardView) -> TelemetryDisplay:
 
 
 @dataclass(frozen=True)
+class ChamberIdentityDisplay:
+    """Dashboard card: explicit active device, endpoint and identity provenance."""
+    chamber: str
+    ip_address: str
+    serial_number: str
+    identity_status: str
+
+
+def project_chamber_identity(
+    view: DashboardView, *, configured_address: str | None = None,
+    expected_serial: str | None = None,
+) -> ChamberIdentityDisplay:
+    """Display server-owned configuration without inventing verified hardware.
+
+    The authoritative physical IP and serial pin come from launch-time HIL
+    configuration, never untrusted UI fields or a browser discovery result.
+    Readback supplies model and verified identity only when current/GOOD and
+    matching the configured chamber and serial. Failure or stale telemetry
+    retains clearly labeled *configured* details, not a connected claim.
+    """
+    if configured_address is None:
+        return ChamberIdentityDisplay(
+            chamber=f"Simulator · {view.chamber_id}",
+            ip_address="Not applicable (simulation)",
+            serial_number="Not applicable (simulation)",
+            identity_status="Simulation — no physical chamber connected",
+        )
+
+    identity = view.identity
+    matching = (
+        identity is not None
+        and not identity.is_simulation
+        and identity.chamber_id == view.chamber_id
+        and bool(expected_serial)
+        and identity.serial_number == expected_serial
+    )
+    verified = matching and view.quality is ReadingQuality.GOOD
+    if matching:
+        chamber = f"{identity.manufacturer} {identity.model} · {view.chamber_id}"
+    else:
+        chamber = f"Vötsch chamber · {view.chamber_id}"
+    status = (
+        "Live identity verified" if verified
+        else "Identity last seen — live status unverified"
+        if matching else "Configured identity — not yet verified"
+    )
+    return ChamberIdentityDisplay(
+        chamber=chamber,
+        ip_address=configured_address,
+        serial_number=expected_serial or "Not configured",
+        identity_status=status,
+    )
+
+
+@dataclass(frozen=True)
 class CapabilityDisplay:
     temperature_range: str
     start_stop: str
