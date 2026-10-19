@@ -100,7 +100,7 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                   "supervision and save using the administrator password. "
                   "Restart required.", color="info", multi_line=True)
 
-    async def scan_network(*, local_only: bool = False) -> None:
+    async def scan_network(*, local_only: bool = False, ip_only: bool = False) -> None:
         nonlocal scanning
         if scanning:
             return
@@ -114,8 +114,13 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
         results.clear()
         # An IP in the existing configuration field must not be ignored.
         # Explicit scope wins. Scan-local bypasses both input fields.
-        scope = ("" if local_only else (discovery_subnet.value or "").strip()
+        scope = (None if local_only else (address.value or "").strip()
+                 if ip_only else (discovery_subnet.value or "").strip()
                  or (address.value or "").strip()) or None
+        if ip_only and not scope:
+            scan_status.set_text("Enter a private IPv4 address before verification.")
+            ui.notify("Enter the chamber IP address first", color="negative")
+            return
         scan_status.set_text(
             f"Checking {scope} on TCP 2049 using read-only identity queries…"
             if scope else "Scanning server-side private IPv4 networks using "
@@ -232,7 +237,7 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 address = ui.input("IP address (private IPv4)",
                                    value=initial.address).classes("flex-grow min-w-64")
                 ui.button("Verify this IP", icon="wifi_find",
-                          on_click=lambda: scan_network()).props("outline no-caps")
+                          on_click=lambda: scan_network(ip_only=True)).props("outline no-caps")
             serial = ui.input("Expected serial number",
                               value=initial.expected_serial).classes("w-full")
             with ui.row().classes("w-full gap-3"):
