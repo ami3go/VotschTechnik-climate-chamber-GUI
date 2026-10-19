@@ -153,6 +153,7 @@ def register_pages(
     get_dashboard_service: Callable,
     *, history_reader: HistoryReader | None = None,
     event_reader: EventReader | None = None,
+    discovery_provider: Callable | None = None,
 ) -> None:
     """Composition root may inject G07 readers later, without vendor logic."""
     history = history_reader or UnavailableHistoryReader()
@@ -303,4 +304,4 @@ def register_pages(
                 ui.timer(2.0, update_details)
             # Editable chamber connection (Admin only); applies at next server start.
             from chamber_web.pages.chamber_config import render_chamber_config_panel
-            render_chamber_config_panel()
+            render_chamber_config_panel(discovery_provider)
