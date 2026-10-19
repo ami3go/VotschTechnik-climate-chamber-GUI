@@ -31,7 +31,8 @@ from .security.nicegui import (active_tokens, cookie_secret, current_actor, depl
 from .security.auth import AuthenticationError, AuthorizationError, Role, SecurityProfile
 from .ui_pages import (NavigationContext, install_navigation_resolver,
                        register_pages, render_navigation)
-from .ui_state import project_capabilities, project_telemetry, safe_view
+from .ui_state import (project_capabilities, project_chamber_identity,
+                       project_telemetry, safe_view)
 
 from .model import MAX_TEMP, MIN_TEMP
 
@@ -327,6 +328,32 @@ def dashboard() -> None:
                                     on_click=lambda: execute_manual("stop")).props(
                                         "color=deep-orange no-caps").disable().classes("toolbar-button")
                         ui.separator()
+                        # The top of the chamber card always identifies the
+                        # configured device; a separate line distinguishes
+                        # configured identity from live verified readback.
+                        with ui.element("div").classes("chamber-identity-grid"):
+                            with ui.column().classes("chamber-identity-field gap-1"):
+                                ui.label("Chamber").classes("chamber-identity-caption")
+                                chamber_name_label = ui.label(
+                                    f"Simulator · {service.chamber_id}" if _HIL is None
+                                    else f"Vötsch chamber · {service.chamber_id}"
+                                ).classes("chamber-identity-value")
+                            with ui.column().classes("chamber-identity-field gap-1"):
+                                ui.label("IP address").classes("chamber-identity-caption")
+                                chamber_ip_label = ui.label(
+                                    "Not applicable (simulation)" if _HIL is None
+                                    else _HIL.address
+                                ).classes("chamber-identity-value")
+                            with ui.column().classes("chamber-identity-field gap-1"):
+                                ui.label("Serial number").classes("chamber-identity-caption")
+                                chamber_serial_label = ui.label(
+                                    "Not applicable (simulation)" if _HIL is None
+                                    else _HIL.expected_serial
+                                ).classes("chamber-identity-value")
+                        chamber_identity_status_label = ui.label(
+                            "Simulation — no physical chamber connected" if _HIL is None
+                            else "Configured identity — not yet verified"
+                        ).classes("chamber-identity-status")
                         with ui.element("div").classes("metric-row"):
                             with ui.column().classes("metric gap-1"):
                                 ui.label("Measured").classes("metric-caption")
@@ -471,6 +498,14 @@ def dashboard() -> None:
         display = project_telemetry(view)
         capability = project_capabilities(view)
         identity = view.identity
+        chamber_details = project_chamber_identity(
+            view, configured_address=_HIL.address if _HIL is not None else None,
+            expected_serial=_HIL.expected_serial if _HIL is not None else None,
+        )
+        chamber_name_label.set_text(chamber_details.chamber)
+        chamber_ip_label.set_text(chamber_details.ip_address)
+        chamber_serial_label.set_text(chamber_details.serial_number)
+        chamber_identity_status_label.set_text(chamber_details.identity_status)
         backend_label.set_text(f"● {display.mode} · {display.quality} · {display.operation}")
         backend_id_label.set_text(
             f"Backend: {identity.backend_id} · {view.chamber_id}" if identity
