@@ -94,6 +94,29 @@ async def test_dashboard_starts_saved_revision_shares_state_and_stops(
     assert runner.state.value == "CANCELLED"
     await user.should_see("CANCELLED", retries=50)
     assert execution.view(security.login("test_admin", "StrongAdminPassword#1").session).stop_latched
+    # A successfully CANCELLED profile leaves a verified STOP latch. The
+    # operator may explicitly run the same saved revision again; this must
+    # not require Admin reconciliation or reloading the server.
+    view = execution.view(
+        security.login("test_admin", "StrongAdminPassword#1").session)
+    assert view.controller_state == "VERIFIED_STOPPED"
+    assert view.can_start
+    await user.should_see("Verified STOP", retries=50)
+    user.find("Run Profile").click()
+    await user.should_see("Started saved revision 1 in simulation", retries=50)
+    replacement = execution.runner
+    assert replacement is not runner
+    assert replacement.snapshot.profile_id == saved.profile_id
+    assert not execution.view(
+        security.login("test_admin", "StrongAdminPassword#1").session).stop_latched
+    user.find("Stop Run").click()
+    await user.should_see("STOP requested", retries=50)
+    for _ in range(200):
+        if replacement.state is not None and replacement.state.value in (
+            "CANCELLED", "FAULT", "UNKNOWN"):
+            break
+        await asyncio.sleep(0.05)
+    assert replacement.state.value == "CANCELLED"
 
 
 async def test_dashboard_viewer_cannot_start_or_stop(
