@@ -1,6 +1,7 @@
 # Climate Chamber GUI — Remaining Development and Production Readiness Plan
 
-**Revision:** 1.0  
+**Revision:** 1.0 (historical implementation backlog; see Stage 2 plan for the current prioritized queue)  
+**Current stage:** [Stage 2 — Pre-production hardening and controlled pilot readiness](STAGE_2_PILOT_READINESS_PLAN.md) (2026-10-19; authoritative current priorities and gates).  
 **Latest execution/status plan:** [Current Action Plan — 2026-10-18](CURRENT_ACTION_PLAN_2026-10-18.md)  
 **Baseline date:** 2026-10-18  
 **Overall state:** Core NiceGUI software integrated; physical profile execution and production release **NO-GO**  
@@ -8,6 +9,8 @@
 **External driver:** https://github.com/ami3go/VotschTechnik-climate-chamber-Python  
 **Inspected GUI main:** d38506a27fb2bd39f81b8e6d1823638b8b1e81fa  
 **Inspected driver main:** 9323e3701f3befedcc23b45170a851fd327f0bcc
+
+> **Historical 2026-10-18 backlog:** H02-B and H02-C software subsequently merged (#55/#56/#58); H01 hardware tests passed 8/8 again on 2026-10-19 (#60); operator controls/profile handoff PRs #68–#70 merged. Use [Stage 2 plan](STAGE_2_PILOT_READINESS_PLAN.md) for the current queue. The below original scope and prerequisites are preserved for traceability. Signed site acceptance and release are still open.
 
 > This is an engineering work plan, not site authorization or a production certification. The statuses below describe remaining acceptance gates as of the stated baseline; check fresh GitHub state before changing code. Historical audits remain historical rather than authorization to operate equipment.
 
