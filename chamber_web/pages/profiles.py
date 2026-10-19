@@ -69,16 +69,25 @@ def get_profile_execution_service() -> ProfileExecutionService:
     global _execution_service
     if _execution_service is None:
         from chamber_web.main import (get_dashboard_service,
+                                      get_profile_manual_guard,
                                       profile_execution_is_simulation,
                                       profile_execution_supervision)
         editor = get_profile_editor_service()
         runtime = get_profile_runtime()
+        security = get_security()
+        manual_guard = get_profile_manual_guard()
+        # Isolated GUI tests may swap the login SecurityStore without
+        # rebuilding the process-level manual composition. Do not bind a
+        # guard using mismatched credentials; production always shares one.
+        if manual_guard._security is not security:
+            manual_guard = None
         _execution_service = ProfileExecutionService(
-            get_dashboard_service().manager, editor.store, get_security(),
+            get_dashboard_service().manager, editor.store, security,
             editor.chamber_id, simulation=profile_execution_is_simulation(),
             sink_factory=runtime.sink_factory,
             start_blocker=runtime.start_blocker,
             supervised=profile_execution_supervision(),
+            manual_guard=manual_guard,
         )
     return _execution_service
 
