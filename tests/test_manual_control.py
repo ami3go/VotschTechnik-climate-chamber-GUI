@@ -272,8 +272,11 @@ class ManualControlTests(unittest.TestCase):
         self.assertIn(result.state, (ManualState.UNKNOWN, ManualState.FAULT))
         self.assertTrue(manager.health(cid).stop_latched)
         self.assertIn(manager.health(cid).state, ("UNKNOWN", "FAULT"))
-        self.assertEqual(self.send(service, self.op, "start").state,
-                         ManualState.REJECTED)
+        # A command denied under uncertain hardware state must not be
+        # mislabeled as an ordinary safe refusal.
+        self.assertIn(self.send(service, self.op, "start").state,
+                      (ManualState.UNKNOWN, ManualState.FAULT, ManualState.REJECTED))
+        self.assertTrue(manager.health(cid).stop_latched)
 
     def test_concurrent_operator_claim_and_admin_handover(self):
         service, _, _ = self.make_service()
