@@ -92,11 +92,17 @@ def project_chamber_identity(
     matching = (
         identity is not None
         and not identity.is_simulation
+        and identity.backend_id == "votsch"
         and identity.chamber_id == view.chamber_id
         and bool(expected_serial)
         and identity.serial_number == expected_serial
     )
-    verified = matching and view.quality is ReadingQuality.GOOD
+    verified = (
+        matching
+        and view.quality is ReadingQuality.GOOD
+        and view.sampled_at_utc is not None
+        and view.sampled_at_utc.tzinfo is not None
+    )
     if matching:
         chamber = f"{identity.manufacturer} {identity.model} · {view.chamber_id}"
     else:
