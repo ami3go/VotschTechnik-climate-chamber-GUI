@@ -328,7 +328,8 @@ class ManualControlService:
                         not (-1 <= age <= self._max_age) or
                         not health.connected or health.state != "VERIFIED_STOPPED"):
                     raise ChamberSafetyError("STOP not confirmed by fresh readback")
-                stop_message = "STOP verified; explicit reconciliation is required"
+                stop_message = ("STOP verified; press Start to recheck the chamber and resume "
+                                "control — no Admin reconciliation needed")
                 # Only a lease owner who initiated this normal manual STOP may
                 # automatically clear the fence. G04 performs a second
                 # independent fresh STOPPED read and generation recheck; an
