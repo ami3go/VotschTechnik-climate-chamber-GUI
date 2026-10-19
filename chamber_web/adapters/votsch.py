@@ -7,6 +7,7 @@ protocol mapping without opening chamber connections.
 from __future__ import annotations
 
 import math
+import threading
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -166,7 +167,7 @@ def verify_bundled_driver_import() -> str:
 
 # Discovery remains in the external driver. This adapter is the sole permitted
 # GUI-to-driver import boundary, including for read-only identification probes.
-_DISCOVERY_LOCK = None
+_DISCOVERY_LOCK = threading.Lock()
 
 
 def discover_votsch_chambers(network: str | None = None):
@@ -175,11 +176,6 @@ def discover_votsch_chambers(network: str | None = None):
     An in-process lock prevents simultaneous scans by multiple browser clients.
     The driver enforces CIDR boundaries, per-socket timeouts and a total watchdog.
     """
-    import threading
-
-    global _DISCOVERY_LOCK
-    if _DISCOVERY_LOCK is None:
-        _DISCOVERY_LOCK = threading.Lock()
     if not _DISCOVERY_LOCK.acquire(blocking=False):
         raise RuntimeError("Another chamber discovery scan is already running")
     try:
