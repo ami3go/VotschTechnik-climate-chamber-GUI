@@ -41,9 +41,13 @@ qualification or physical-use authorization**. References:
   generation and prioritizes STOP. A blocked synchronous backend **cannot**
   be preempted; an expired STOP is UNKNOWN, never assumed safe. STOP is **not**
   a local emergency-stop system.
-- After STOP, a latched controller denies START/target writes. Only explicit
-  ADMIN `reconcile` can clear the latch, requiring fresh authoritative STOPPED
-  status. On process restart, G04's persistent lease may require reconciliation.
+- After STOP, a latched G04 controller denies ordinary writes. An explicit
+  Dashboard Start/Set Target from the authenticated lease owner can perform
+  a separate fresh, audited STOPPED readback and clear a *verified* STOP latch
+  without an Admin visit; an available lease is claimed automatically. UNKNOWN,
+  FAULT, lost communication or uncertain restart still require exceptional
+  recovery. On process restart, G04's persistent lease may require Admin
+  reconciliation.
   G05 does not reconnect, auto-clear STOP, or execute profiles.
 
 ## Readbacks, operations and UI
