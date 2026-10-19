@@ -27,7 +27,7 @@ class Candidate:
 async def test_admin_can_scan_and_select_without_saving(
         create_user: Callable[[], User], monkeypatch, tmp_path):
     from chamber_web import main as application
-    from chamber_web.pages import chamber_config
+    from chamber_web import main as app_main
     from chamber_web.security import nicegui as security_ui
     from chamber_web.security.auth import SecurityStore
 
@@ -40,7 +40,7 @@ async def test_admin_can_scan_and_select_without_saving(
     def fake_discovery(network):
         scopes.append(network)
         return [Candidate("192.168.10.20", "LabEvent T", "ABC123")]
-    monkeypatch.setattr(chamber_config, "discover_votsch_chambers", fake_discovery)
+    monkeypatch.setattr(app_main, "discover_votsch_chambers", fake_discovery)
     monkeypatch.setenv("CHAMBER_SECURITY_DIR", str(tmp_path / "storage"))
 
     user = create_user()
