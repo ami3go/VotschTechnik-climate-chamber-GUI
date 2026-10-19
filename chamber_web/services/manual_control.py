@@ -307,6 +307,8 @@ class ManualControlService:
                 # lock. Capture the prior generation solely to detect whether
                 # another STOP/FAULT occurred before an optional safe rearm.
                 before_stop_generation = self._manager.health(chamber_id).generation
+                owned_lease_revision = self._authorized.owned_lease_revision_now(
+                    actor.user_id)
                 command_may_have_dispatched = True
                 self._authorized.stop(session, csrf, chamber_id)
                 sample = self._manager.status(chamber_id)
@@ -326,11 +328,13 @@ class ManualControlService:
                 # automatically clear the fence. G04 performs a second
                 # independent fresh STOPPED read and generation recheck; an
                 # ambiguous/competing STOP remains latched.
-                if health.stop_latched and health.generation == before_stop_generation + 1:
+                if (owned_lease_revision is not None and health.stop_latched and
+                        health.generation == before_stop_generation + 1):
                     try:
                         rearmed = self._authorized.rearm_after_owned_verified_stop(
                             session, csrf, chamber_id,
-                            expected_generation=health.generation)
+                            expected_generation=health.generation,
+                            expected_lease_revision=owned_lease_revision)
                     except Exception:
                         rearmed = False
                     if rearmed:
