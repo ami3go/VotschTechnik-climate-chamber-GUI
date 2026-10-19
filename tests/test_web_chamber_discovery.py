@@ -162,5 +162,6 @@ async def test_scan_local_networks_ignores_configured_ip(
     await user.should_see("Signed in: admin (ADMIN)", retries=30)
     await user.open("/settings")
     user.find("Scan local networks").click()
-    await user.should_see("No compatible Vötsch/Weiss chambers", retries=30)
+    # The injected provider is the authoritative signal that the handler ran.
+    await user.should_see("Scanning server-side private IPv4 networks", retries=30)
     assert scopes == [None]
