@@ -63,9 +63,14 @@ async def test_admin_can_scan_and_select_without_saving(
 async def test_verify_configured_ip_and_scan_local_override(
         create_user: Callable[[], User], monkeypatch, tmp_path):
     from chamber_web import main as application
+    from chamber_web.pages import chamber_config
+    from chamber_web.hil.chamber_settings import ChamberSettings
     from chamber_web.security import nicegui as security_ui
     from chamber_web.security.auth import SecurityStore
 
+    # Show the physical connection form in this simulation-only UI test.
+    monkeypatch.setattr(chamber_config, "load_settings",
+                        lambda: ChamberSettings(chamber_type="votsch"))
     store = SecurityStore(tmp_path / "security")
     store.provision_factory_admin()
     monkeypatch.setattr(security_ui, "_store", store)
