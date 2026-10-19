@@ -131,11 +131,6 @@ def save_settings(security, session: str | None, csrf: str | None,
     admin = security.reauthenticate_admin(session, csrf, admin_password)
     try:
         settings.validate()
-        if settings.chamber_type != "simulator" and any(
-                security.factory_credentials_active()):
-            raise ChamberSafetyError(
-                "Change the factory administrator password and PIN before "
-                "configuring a physical chamber")
     except ChamberSafetyError as exc:
         security.audit(admin, "chamber.settings.save", "DENIED", detail=str(exc))
         raise
