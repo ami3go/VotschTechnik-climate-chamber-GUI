@@ -1,3 +1,3 @@
-# Tested hardened external driver, pinned to its reviewed merge commit.
+# Reviewed hardened external driver pinned to merged read-only discovery commit.
 # This does NOT approve real-device I/O; G04/G08-min/P00/H01 gates still apply.
-VotschTechnikClimateChamber @ git+https://github.com/ami3go/VotschTechnik-climate-chamber-Python.git@9323e3701f3befedcc23b45170a851fd327f0bcc
+VotschTechnikClimateChamber @ git+https://github.com/ami3go/VotschTechnik-climate-chamber-Python.git@b79e85f68501b49200c34345161fda916b2a935d

@@ -7,6 +7,7 @@ protocol mapping without opening chamber connections.
 from __future__ import annotations
 
 import math
+import threading
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -162,3 +163,28 @@ def verify_bundled_driver_import() -> str:
     if not callable(ClimateChamber):
         raise RuntimeError("Frozen Vötsch driver entry point is not callable")
     return str(driver_version)
+
+
+# Discovery remains in the external driver. This adapter is the sole permitted
+# GUI-to-driver import boundary, including for read-only identification probes.
+_DISCOVERY_LOCK = threading.Lock()
+
+
+def discover_votsch_chambers(network: str | None = None):
+    """Manual, administrator-authorized discovery; never connects a controller.
+
+    An in-process lock prevents simultaneous scans by multiple browser clients.
+    The driver enforces CIDR boundaries, per-socket timeouts and a total watchdog.
+    """
+    if not _DISCOVERY_LOCK.acquire(blocking=False):
+        raise RuntimeError("Another chamber discovery scan is already running")
+    try:
+        try:
+            from VotschTechnikClimateChamber.discovery import discover_chambers
+        except ImportError as exc:
+            raise RuntimeError(
+                "Vötsch driver discovery is unavailable. Update the external "
+                "VotschTechnikClimateChamber driver package on the server.") from exc
+        return discover_chambers(network=network)
+    finally:
+        _DISCOVERY_LOCK.release()
