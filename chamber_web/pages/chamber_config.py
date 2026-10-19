@@ -109,9 +109,6 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
         except (AuthenticationError, AuthorizationError):
             ui.notify("Administrator session expired or access denied", color="negative")
             return
-        scanning = True
-        scan_button.disable()
-        results.clear()
         # An IP in the existing configuration field must not be ignored.
         # Explicit scope wins. Scan-local bypasses both input fields.
         if local_only:
@@ -125,6 +122,9 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
             scan_status.set_text("Enter a private IPv4 address before verification.")
             ui.notify("Enter the chamber IP address first", color="negative")
             return
+        scanning = True
+        scan_button.disable()
+        results.clear()
         scan_status.set_text(
             f"Checking {scope} on TCP 2049 using read-only identity queries…"
             if scope else "Scanning server-side private IPv4 networks using "
@@ -174,6 +174,15 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                     ).classes("flex-grow")
                     ui.button("Select", icon="add", on_click=lambda d=device: (
                         select_discovered(d))).props("outline no-caps")
+
+    async def scan_selected_scope() -> None:
+        await scan_network()
+
+    async def scan_local_networks() -> None:
+        await scan_network(local_only=True)
+
+    async def verify_configured_ip() -> None:
+        await scan_network(ip_only=True)
 
     with ui.column().classes("panel gap-2"):
         ui.label("Chamber Connection").classes("panel-heading")
@@ -227,10 +236,10 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 ).props("outlined dense").classes("min-w-64 flex-grow")
                 scan_button = ui.button(
                     "Auto-detect chambers", icon="travel_explore",
-                    on_click=lambda: scan_network()
+                    on_click=scan_selected_scope
                 ).props("outline no-caps")
                 ui.button("Scan local networks", icon="lan",
-                          on_click=lambda: scan_network(local_only=True)).props(
+                          on_click=scan_local_networks).props(
                               "flat no-caps")
             scan_status = ui.label("Discovery is manual and read-only.").classes(
                 "text-xs text-grey-7")
@@ -241,7 +250,7 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 address = ui.input("IP address (private IPv4)",
                                    value=initial.address).classes("flex-grow min-w-64")
                 ui.button("Verify this IP", icon="wifi_find",
-                          on_click=lambda: scan_network(ip_only=True)).props("outline no-caps")
+                          on_click=verify_configured_ip).props("outline no-caps")
             serial = ui.input("Expected serial number",
                               value=initial.expected_serial).classes("w-full")
             with ui.row().classes("w-full gap-3"):
