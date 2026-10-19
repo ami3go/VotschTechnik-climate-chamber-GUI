@@ -140,15 +140,20 @@ class ManualControlService:
                    if bounded and simulator else ())
         with self._lock:
             last = self._last
+        # Normal STOP already has a fresh, authoritative VERIFIED_STOPPED
+        # controller state. A deliberate Start/Set Target click may recheck
+        # and clear the stop fence; claiming a free lease is automatic. Never
+        # offer recovery for UNKNOWN/FAULT, stale data or another owner.
+        ready = (
+            allowed and good and (mine or owner is None)
+            and health.state in ("VERIFIED_STOPPED", "RUNNING")
+            and (not health.stop_latched or health.state == "VERIFIED_STOPPED")
+        )
         return ManualView(
             dashboard, health.state, health.connected, health.generation, health.stop_latched,
             owner, mine,
-            allowed and good and mine and not health.stop_latched and
-            health.state in ("VERIFIED_STOPPED", "RUNNING") and
-            has_temperature,
-            allowed and good and mine and not health.stop_latched and
-            health.state in ("VERIFIED_STOPPED", "RUNNING") and
-            has_temperature and has_operation and has_valid_target,
+            ready and has_temperature,
+            ready and has_temperature and has_operation and has_valid_target,
             allowed,  # STOP is always offered to an authorized user, even on stale data
             actor.role is Role.ADMIN and owner is not None and not mine,
             actor.role is Role.ADMIN and health.stop_latched,
@@ -354,7 +359,32 @@ class ManualControlService:
                 command_may_have_dispatched = True
                 self._authorized.execute(session, csrf, chamber_id, "reconcile_stop")
             else:
+                # An operator's explicit Start/Set Target request also performs
+                # a safe recovery from a *verified* STOP (e.g. Stop was clicked
+                # before anyone claimed the lease, or a different operator
+                # issued the STOP). Do not touch UNKNOWN/FAULT/restart fences.
+                health = self._manager.health(chamber_id)
+                if health.stop_latched and health.state == "VERIFIED_STOPPED":
+                    # The G04 lease is acquired before reconciliation. This
+                    # refuses a competing manual operator or active G06 runner.
+                    self._authorized.ensure_manual_operator_lease(
+                        session, csrf, chamber_id)
+                    owner_revision = self._authorized.owned_lease_revision_now(
+                        actor.user_id)
+                    if owner_revision is None or not (
+                            self._authorized.rearm_after_owned_verified_stop(
+                                session, csrf, chamber_id,
+                                expected_generation=health.generation,
+                                expected_lease_revision=owner_revision)):
+                        raise ChamberSafetyError(
+                            "STOP recovery not verified; control remains locked")
+                # Every actual START/write must still pass independent fresh
+                # G04 status/identity/capability checks, regardless of UI state.
                 sample, caps = self._fresh(chamber_id)
+                # Normal operation also claims an unowned manual lease, so
+                # operators no longer need to visit Admin before first START.
+                self._authorized.ensure_manual_operator_lease(
+                    session, csrf, chamber_id)
                 admitted_generation = self._manager.health(chamber_id).generation
                 if action == "start":
                     if not (caps.supports_start_stop and caps.supports_running_readback and
