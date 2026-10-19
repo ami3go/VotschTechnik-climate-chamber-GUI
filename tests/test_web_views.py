@@ -13,7 +13,8 @@ from chamber_web.services.dashboard import DashboardService
 from chamber_web.services.web_read_models import (
     RecordPage, UnavailableEventReader, UnavailableHistoryReader, bounded_search,
 )
-from chamber_web.ui_state import project_capabilities, project_telemetry, safe_view
+from chamber_web.ui_state import (project_capabilities, project_chamber_identity,
+                                  project_telemetry, safe_view)
 
 
 class MockVotsch:
@@ -103,6 +104,68 @@ class WebViewsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(project_telemetry(missing_readback).operation, "UNKNOWN")
         self.assertEqual(project_telemetry(missing_readback).setpoint, "— (unverified)")
         self.assertEqual(project_telemetry(missing_readback).measured, "— (unverified)")
+
+    def test_dashboard_identity_in_simulation_has_no_fictional_ip_or_serial(self):
+        from chamber_web.services.dashboard import DashboardView
+        from chamber_web.domain.chamber import ChamberIdentity
+        view = DashboardView("demo-chamber", identity=ChamberIdentity(
+            "demo-chamber", "fake", "SIMULATION", "Fake", None, True))
+        shown = project_chamber_identity(view)
+        self.assertEqual(shown.chamber, "Simulator · demo-chamber")
+        self.assertIn("simulation", shown.ip_address)
+        self.assertIn("simulation", shown.serial_number)
+        self.assertIn("no physical chamber", shown.identity_status)
+
+    def test_dashboard_identity_physical_uses_configured_endpoint_and_serial(self):
+        from chamber_web.services.dashboard import DashboardView
+        from chamber_web.domain.chamber import ChamberIdentity
+        identity = ChamberIdentity(
+            "lab-1", "votsch", "Vötsch", "VT4011", "ABC123", False)
+        view = DashboardView("lab-1", identity=identity, quality=ReadingQuality.GOOD)
+        shown = project_chamber_identity(
+            view, configured_address="192.168.10.20", expected_serial="ABC123")
+        self.assertEqual(shown.chamber, "Vötsch VT4011 · lab-1")
+        self.assertEqual(shown.ip_address, "192.168.10.20")
+        self.assertEqual(shown.serial_number, "ABC123")
+        self.assertEqual(shown.identity_status, "Live identity verified")
+
+    def test_dashboard_identity_unavailable_does_not_claim_live_identity(self):
+        from chamber_web.services.dashboard import DashboardView
+        from chamber_web.domain.chamber import ChamberIdentity
+        identity = ChamberIdentity(
+            "lab-1", "votsch", "Vötsch", "VT4011", "ABC123", False)
+        missing = DashboardView("lab-1")
+        initial = project_chamber_identity(
+            missing, configured_address="192.168.10.20", expected_serial="ABC123")
+        self.assertEqual(initial.chamber, "Vötsch chamber · lab-1")
+        self.assertEqual(initial.ip_address, "192.168.10.20")
+        self.assertEqual(initial.serial_number, "ABC123")
+        self.assertIn("not yet verified", initial.identity_status)
+        for quality in (ReadingQuality.ERROR, ReadingQuality.STALE):
+            with self.subTest(quality=quality):
+                stale = project_chamber_identity(
+                    replace(missing, identity=identity, quality=quality),
+                    configured_address="192.168.10.20", expected_serial="ABC123")
+                self.assertIn("last seen", stale.identity_status)
+                self.assertNotIn("Live identity verified", stale.identity_status)
+
+    def test_dashboard_identity_mismatch_or_simulation_never_verifies_physical(self):
+        from chamber_web.services.dashboard import DashboardView
+        from chamber_web.domain.chamber import ChamberIdentity
+        for serial, is_sim, chamber_id in (
+            ("WRONG", False, "lab-1"),
+            ("ABC123", True, "lab-1"),
+            ("ABC123", False, "other-chamber"),
+        ):
+            with self.subTest(serial=serial, sim=is_sim, chamber=chamber_id):
+                identity = ChamberIdentity(
+                    chamber_id, "votsch", "Vötsch", "VT4011", serial, is_sim)
+                shown = project_chamber_identity(
+                    DashboardView("lab-1", identity=identity, quality=ReadingQuality.GOOD),
+                    configured_address="192.168.10.20", expected_serial="ABC123")
+                self.assertEqual(shown.chamber, "Vötsch chamber · lab-1")
+                self.assertIn("not yet verified", shown.identity_status)
+                self.assertEqual(shown.serial_number, "ABC123")
 
     def test_navigation_role_provider_can_fail_closed(self):
         from chamber_web.ui_pages import NavigationContext, visible_navigation_routes
