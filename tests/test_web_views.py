@@ -121,7 +121,10 @@ class WebViewsTests(unittest.IsolatedAsyncioTestCase):
         from chamber_web.domain.chamber import ChamberIdentity
         identity = ChamberIdentity(
             "lab-1", "votsch", "Vötsch", "VT4011", "ABC123", False)
-        view = DashboardView("lab-1", identity=identity, quality=ReadingQuality.GOOD)
+        view = DashboardView(
+            "lab-1", identity=identity, quality=ReadingQuality.GOOD,
+            sampled_at_utc=datetime.now(timezone.utc),
+        )
         shown = project_chamber_identity(
             view, configured_address="192.168.10.20", expected_serial="ABC123")
         self.assertEqual(shown.chamber, "Vötsch VT4011 · lab-1")
@@ -141,6 +144,12 @@ class WebViewsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(initial.ip_address, "192.168.10.20")
         self.assertEqual(initial.serial_number, "ABC123")
         self.assertIn("not yet verified", initial.identity_status)
+        # GOOD without a valid fresh sample timestamp cannot imply
+        # a verified live connection.
+        missing_stamp = project_chamber_identity(
+            replace(missing, identity=identity, quality=ReadingQuality.GOOD),
+            configured_address="192.168.10.20", expected_serial="ABC123")
+        self.assertNotEqual(missing_stamp.identity_status, "Live identity verified")
         for quality in (ReadingQuality.ERROR, ReadingQuality.STALE):
             with self.subTest(quality=quality):
                 stale = project_chamber_identity(
