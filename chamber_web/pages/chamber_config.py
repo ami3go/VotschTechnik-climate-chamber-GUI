@@ -19,7 +19,8 @@ from chamber_web.hil.chamber_settings import (
 from chamber_web.hil.physical import HARD_MAX_C, HARD_MIN_C, MAX_ENVELOPE_SPAN_C
 from chamber_web.security.auth import AuthenticationError, AuthorizationError, Role
 from chamber_web.security.guards import Permission
-from chamber_web.security.nicegui import (active_tokens, current_actor, get_security,
+from chamber_web.security.nicegui import (active_tokens, current_actor,
+                                          factory_credential_warning, get_security,
                                           require_authenticated_page, require_browser_permission)
 
 
@@ -80,6 +81,12 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
         saved_label.set_text("Saved (applies after restart): " + _describe(stored))
         ui.notify("Chamber settings saved. Restart the server to apply them.",
                   color="positive")
+        # Credential hygiene is advice, never a substitute for authentication
+        # or hardware authorization, and never blocks saving a configuration.
+        warning = factory_credential_warning(
+            *get_security().factory_credentials_active())
+        if warning and settings.chamber_type != "simulator":
+            ui.notify(warning, color="warning", multi_line=True)
 
     scanning = False
 
@@ -217,6 +224,13 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
             "stop remain the primary safety layer. Physical profile runs additionally "
             "require the signed H02 site permit."
         ).classes("demo-banner w-full")
+        security_warning = factory_credential_warning(
+            *get_security().factory_credentials_active())
+        if security_warning:
+            ui.label(
+                "Security advisory only — chamber settings can be saved: " +
+                security_warning
+            ).classes("text-sm text-orange-9")
         type_select = ui.select(CHAMBER_TYPES, value=initial.chamber_type,
                                 label="Chamber type",
                                 on_change=lambda _: update_visibility()).classes("w-full")
