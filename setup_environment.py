@@ -25,6 +25,28 @@ def run_command(command: list[str], *, cwd: Path) -> None:
     subprocess.run(command, check=True, cwd=cwd)
 
 
+def verify_discovery_install(python: Path, *, root: Path = ROOT) -> None:
+    """Verify installed driver API and pinned commit in the server interpreter.
+
+    No network or physical chamber access. 15-second import watchdog.
+    """
+    script = root / "scripts" / "verify_driver_install.py"
+    if not script.is_file():
+        raise RuntimeError(f"Driver verification helper is missing: {script}")
+    command = [str(python), str(script), "--requirements",
+               str(root / "requirements-hardware.txt")]
+    try:
+        result = subprocess.run(command, cwd=root, capture_output=True,
+                                text=True, check=True, timeout=15)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Driver import verification watchdog timed out") from exc
+    except subprocess.CalledProcessError as exc:
+        reason = (exc.stderr or exc.stdout or "unknown verification error").strip()
+        raise RuntimeError(
+            f"Driver validation failed in {python}: {reason[:1200]}") from exc
+    print(result.stdout.strip(), flush=True)
+
+
 def install_environment(
     *,
     root: Path = ROOT,
@@ -85,6 +107,18 @@ def install_environment(
             [str(python), "-m", "pip", "install", "--disable-pip-version-check", "-r", str(requirement)],
             cwd=root,
         )
+    if include_driver:
+        try:
+            verify_discovery_install(python, root=root)
+        except RuntimeError as first_failure:
+            # A same-version VCS distribution can still have the wrong commit.
+            print(f"Driver verification failed: {first_failure}", flush=True)
+            print("Repairing pinned external driver in the SAME virtualenv...", flush=True)
+            run_command(
+                [str(python), "-m", "pip", "install", "--disable-pip-version-check",
+                 "--upgrade", "--force-reinstall", "-r",
+                 str(root / "requirements-hardware.txt")], cwd=root)
+            verify_discovery_install(python, root=root)
     run_command([str(python), "-m", "pip", "check"], cwd=root)
     if with_browser:
         # Does not install OS packages or request administrator rights.
@@ -102,10 +136,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--with-tests", action="store_true", help="Install pinned test and lint libraries")
     parser.add_argument("--browser", action="store_true", help="Download Playwright Chromium (requires --with-tests)")
     parser.add_argument("--run", action="store_true", help="Start the simulated local NiceGUI app after setup")
+    parser.add_argument("--check-driver", action="store_true",
+                        help="Offline check installed driver import and pinned Git commit (no install)")
     parser.add_argument("--recreate", action="store_true",
                         help="Delete and rebuild the virtual environment (only if it is one)")
     args = parser.parse_args(argv)
     try:
+        if args.check_driver:
+            system = platform.system()
+            if system not in {"Windows", "Linux"}:
+                raise RuntimeError(f"Unsupported OS: {system}")
+            target_venv = (args.venv or (ROOT / ".venv")).resolve()
+            python = python_in_venv(target_venv, system)
+            if not python.is_file():
+                raise RuntimeError(f"Server virtualenv Python not found: {python}")
+            verify_discovery_install(python, root=ROOT)
+            return 0
         python = install_environment(
             venv=args.venv,
             include_driver=not args.no_driver,
