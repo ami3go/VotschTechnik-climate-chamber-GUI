@@ -131,6 +131,29 @@ class AuthorizedChamber:
         # Intentionally NO operator_token. STOP is role-checked but lease-independent.
         self.execute(session, csrf, chamber_id, "stop")
 
+    def ensure_manual_operator_lease(
+        self, session: str | None, csrf: str | None, chamber_id: str,
+    ) -> None:
+        """Acquire a free manual lease on an explicit operator action.
+
+        Never transfer an existing lease, including a G06 profile runner lease.
+        This operation cannot issue any device write or bypass G04 fencing.
+        The registry lock serializes competing browser claims; G04 remains the
+        final authority, including when a profile owns the controller.
+        """
+        actor = self.authorize(
+            session, csrf, Permission.CHAMBER_CONTROL, chamber_id=chamber_id)
+        self._manager.get(chamber_id)
+        with self._token_lock:
+            if actor.user_id in self._token_owner.values():
+                return
+            if self._token_owner:
+                raise AuthorizationError("Another operator owns chamber control")
+            # execute() audits INTENT/SUCCESS and registers the opaque token.
+            # The reentrant lock makes the check/claim/update atomic for manual
+            # browser requests while G04 blocks a parallel G06 owner.
+            self.execute(session, csrf, chamber_id, "claim_operator")
+
     def owned_lease_revision_now(self, user_id: int) -> int | None:
         """Best-effort, nonblocking lease-owner snapshot for priority STOP.
 
@@ -149,15 +172,14 @@ class AuthorizedChamber:
         self, session: str | None, csrf: str | None, chamber_id: str,
         *, expected_generation: int, expected_lease_revision: int,
     ) -> bool:
-        """Only the initiating manual lease owner can rearm a verified STOP.
+        """Rearm a *verified* STOP for the authenticated current lease owner.
 
-        This is a narrowly scoped internal G05 workflow, NOT the public/admin
-        reconcile_stop mutation. It never issues START or clears UNKNOWN/FAULT
-        and never accepts an operator token from the browser.
-
-        STOP remains independently available to *any* authorized operator.
-        A non-owner STOP, a competing STOP, or a lost/changed lease retains
-        the durable latch for explicit administrator reconciliation.
+        Called after STOP by its original owner, or on an explicit subsequent
+        Start/Set Target request. Never clears UNKNOWN/FAULT, never issues
+        START itself, and never accepts a browser-provided bearer token.
+        G04 independently checks fresh STOPPED readback and exact generation.
+        A concurrent STOP, changed lease, revoked session or G06-owned
+        controller cannot be recovered through this path.
         """
         actor = self.authorize(session, csrf, Permission.CHAMBER_CONTROL,
                                chamber_id=chamber_id)

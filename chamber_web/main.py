@@ -616,7 +616,7 @@ def admin_page() -> None:
             f"Controller: {data.controller_state} · "
             f"{'connected' if data.connected else 'disconnected'} · "
             f"generation {data.controller_generation} · "
-            f"{'STOP/reconciliation required' if data.stop_latched else 'fence clear'}")
+            f"{'verified STOP — Start can recheck and rearm' if data.stop_latched and data.controller_state == 'VERIFIED_STOPPED' else 'STOP/reconciliation required' if data.stop_latched else 'fence clear'}")
         claim_ready = (
             data.can_stop and data.owner is None and data.connected and
             not data.stop_latched and
@@ -721,8 +721,11 @@ def admin_page() -> None:
 
             with ui.column().classes("dashboard gap-3"):
                 ui.label(
-                    "The chamber starts with its operator lease released. "
-                    "Acquire it here before issuing Start or Set Target commands."
+                    "Dashboard Start and Set Target automatically claim an available "
+                    "operator lease. A verified normal STOP can be followed by "
+                    "another Start without Admin reconciliation. "
+                    "This page is for lease handover and recovery from uncertain "
+                    "or faulted chamber states."
                 ).classes("demo-banner w-full")
                 with ui.column().classes("panel gap-3"):
                     _panel_title("admin_panel_settings", "Operator Lease")

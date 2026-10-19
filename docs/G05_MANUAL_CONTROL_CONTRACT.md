@@ -41,9 +41,13 @@ qualification or physical-use authorization**. References:
   generation and prioritizes STOP. A blocked synchronous backend **cannot**
   be preempted; an expired STOP is UNKNOWN, never assumed safe. STOP is **not**
   a local emergency-stop system.
-- After STOP, a latched controller denies START/target writes. Only explicit
-  ADMIN `reconcile` can clear the latch, requiring fresh authoritative STOPPED
-  status. On process restart, G04's persistent lease may require reconciliation.
+- After STOP, a latched G04 controller denies ordinary writes. An explicit
+  Dashboard Start/Set Target from the authenticated lease owner can perform
+  a separate fresh, audited STOPPED readback and clear a *verified* STOP latch
+  without an Admin visit; an available lease is claimed automatically. UNKNOWN,
+  FAULT, lost communication or uncertain restart still require exceptional
+  recovery. On process restart, G04's persistent lease may require Admin
+  reconciliation.
   G05 does not reconnect, auto-clear STOP, or execute profiles.
 
 ## Readbacks, operations and UI
@@ -160,16 +164,47 @@ audited **automatic rearm** of that latch:
 
 An authorized non-owner STOP, ambiguous STOP outcome, STOP/readback timeout,
 UNKNOWN/FAULT, overlapping STOP, lease handover/reclaim, changed generation,
-expired/revoked session or audit failure **must never be treated as a normal
-rearmed STOP**. The latch remains, or automatic rearm is unconfirmed; Admin
-STOP reconciliation remains available. STOP priority and STOP access by any
+expired/revoked session or audit failure **must never be silently rearmed
+during that STOP callback**. A verified non-owner STOP stays latched until a
+later explicit Start/Set Target by the current lease owner independently
+checks STOPPED again (see below). UNKNOWN/FAULT and ambiguous STOP remain
+blocked until exceptional recovery. STOP priority and STOP access by any
 authorized operator remain unchanged. G06 cancellation and H02 watchdog STOP
-paths do **not** use this G05 auto-rearm mechanism.
+paths do **not** use the G05 STOP-callback auto-rearm mechanism.
 
 Tests: `tests/test_manual_control.py` covers repeated Start–Stop–Start,
 lease persistence, outsider STOP, concurrent STOP generation, revoked
 session and failed STOP. `tests/test_manual_ui.py` exercises two consecutive
 cycles through authenticated NiceGUI controls. All run simulation-only.
+
+## Dashboard-only operator control: no Admin claim/reconcile for normal stops
+
+The operator's explicit **Start** or **Set Target** action automatically claims
+an available G04 manual lease through the same G08 permission and audit guard.
+The operator does not need to navigate to Admin or manually claim the chamber.
+A lease held by another manual operator or G06 profile runner is **never stolen**.
+
+After an ordinary STOP that was confirmed with authoritative fresh GOOD STOPPED
+readback, an explicit Start/Set Target request by the existing lease owner (or
+a new claimant if the lease was free) performs a **separate verified STOPPED
+reconciliation** before executing any mutation. The server checks the exact
+controller generation, retained ownership revision and permissions, persists
+the audit intent, and lets G04 read the chamber independently again before
+clearing the STOP fence. START itself still requires normal fresh telemetry,
+identity, setpoint, capability and generation checks. No automatic start
+command occurs after Stop; the operator must click Start.
+
+This also handles Stop pressed **before** any manual lease is claimed and
+STOP by an authorized non-owner: the original owner must explicitly request
+Start to recover, and the non-owner cannot take over their lease. Persistent
+UNKNOWN/FAULT states (including after an uncertain restart), lost chamber
+communication, unverified STOP readback, revoked credentials, stale generation
+or an active G06 lease continue to block control. Admin recovery remains for
+those exceptional cases.
+
+Regression coverage: `tests/test_manual_control.py`,
+`tests/test_manual_ui.py`, `tests/test_h01_browser_e2e.py`.
+All tests run with simulated chambers; physical approval is separate.
 
 ### Live Chromium UI button state correction — 2026-10-14
 
