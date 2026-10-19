@@ -154,6 +154,64 @@ class AuthorizedChamber:
             # browser requests while G04 blocks a parallel G06 owner.
             self.execute(session, csrf, chamber_id, "claim_operator")
 
+    def release_stopped_manual_lease_for_profile(
+        self, session: str | None, csrf: str | None, chamber_id: str,
+        *, expected_generation: int,
+    ) -> bool:
+        """Hand an idle manual lease to G06 only on its owner's explicit Run.
+
+        No other user's lease can be transferred; a live chamber RUNNING,
+        UNKNOWN, or under a new STOP generation is never released. G04's
+        subsequent profile claim is independent and must pass full admission.
+        STOP remains lease-independent and never waits for this registry.
+        """
+        actor = self.authorize(
+            session, csrf, Permission.PROFILE_RUN, chamber_id=chamber_id)
+        self._manager.get(chamber_id)
+        with self._token_lock:
+            if not self._token_owner:
+                return False
+            if (len(self._token_owner) != 1 or
+                    actor.user_id not in self._token_owner.values()):
+                raise AuthorizationError(
+                    "Chamber manual control belongs to another operator")
+            health = self._manager.health(chamber_id)
+            if (not health.connected or health.stop_latched or
+                    health.state != "VERIFIED_STOPPED" or
+                    health.generation != expected_generation):
+                raise ChamberSafetyError(
+                    "Stop and verify the chamber before running a profile")
+            # A second authoritative status check is required before handing
+            # over the lease. The profile runner independently rechecks.
+            from chamber_web.domain.chamber import OperationState, ReadingQuality
+            from datetime import datetime, timezone
+            sample = self._manager.status(chamber_id)
+            sampled = sample.sampled_at_utc
+            if (sample.quality is not ReadingQuality.GOOD or
+                    sample.operation_state is not OperationState.STOPPED or
+                    sampled is None or sampled.tzinfo is None or
+                    not -1 <= (datetime.now(timezone.utc) -
+                               sampled.astimezone(timezone.utc)).total_seconds() <= 5):
+                raise ChamberSafetyError(
+                    "Fresh STOPPED chamber status required for profile handoff")
+            latest = self._manager.health(chamber_id)
+            if (latest.stop_latched or latest.state != "VERIFIED_STOPPED" or
+                    latest.generation != expected_generation):
+                raise ChamberSafetyError("Chamber state changed during profile handoff")
+            token = next(iter(self._token_owner))
+            self._security.audit(
+                actor, "chamber.manual_to_profile", "INTENT", chamber_id)
+            try:
+                self.execute(session, csrf, chamber_id, "release_operator", token)
+            except BaseException as exc:
+                self._security.audit(
+                    actor, "chamber.manual_to_profile", "FAILED",
+                    chamber_id, type(exc).__name__)
+                raise
+            self._security.audit(
+                actor, "chamber.manual_to_profile", "SUCCESS", chamber_id)
+            return True
+
     def owned_lease_revision_now(self, user_id: int) -> int | None:
         """Best-effort, nonblocking lease-owner snapshot for priority STOP.
 
