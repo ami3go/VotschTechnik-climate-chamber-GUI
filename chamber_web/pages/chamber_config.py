@@ -7,10 +7,10 @@ running process never switches between simulation and hardware.
 from __future__ import annotations
 
 import asyncio
+from typing import Callable
 
 from nicegui import ui
 
-from chamber_web.adapters.votsch import discover_votsch_chambers
 from chamber_web.domain.chamber import ChamberSafetyError
 from chamber_web.hil.chamber_settings import (
     CHAMBER_TYPES, ChamberSettings, load_settings, save_settings, settings_path,
@@ -30,7 +30,7 @@ def _describe(settings: ChamberSettings | None) -> str:
             f"{settings.temperature_min_c:g}…{settings.temperature_max_c:g} °C")
 
 
-def render_chamber_config_panel() -> None:
+def render_chamber_config_panel(discover_chambers: Callable | None = None) -> None:
     """Settings-tab panel; the form is shown to administrators only."""
     actor = current_actor()
     from chamber_web.main import active_chamber_authorization
@@ -112,8 +112,10 @@ def render_chamber_config_panel() -> None:
                              "read-only identity probes, maximum 12 seconds…")
         subnet = (discovery_subnet.value or "").strip()
         try:
+            if discover_chambers is None:
+                raise RuntimeError("Discovery service unavailable in this server")
             devices = await asyncio.wait_for(
-                asyncio.to_thread(discover_votsch_chambers, subnet or None),
+                asyncio.to_thread(discover_chambers, subnet or None),
                 timeout=15.0)
             # Revoked sessions cannot receive results or select a chamber.
             require_browser_permission(Permission.SETTINGS)
