@@ -2,7 +2,7 @@
 
 No NiceGUI, vendor adapter or external device driver imports. Every mutation
 uses the G08-min AuthorizedChamber guard, audited intent and G04 fencing.
-Physical operation is unconditionally excluded, including test configuration.
+Physical operation is permitted only with the explicit supervised HIL authorization.
 """
 from __future__ import annotations
 
@@ -300,9 +300,13 @@ class ManualControlService:
         self._check_id(chamber_id)
         serial = self._begin(action)
         command_may_have_dispatched = False
+        stop_message = None
         try:
             if action == "stop":
-                # No pre-read, no ownership checks, no service-level lock.
+                # STOP itself never needs a lease, fresh pre-read, or service
+                # lock. Capture the prior generation solely to detect whether
+                # another STOP/FAULT occurred before an optional safe rearm.
+                before_stop_generation = self._manager.health(chamber_id).generation
                 command_may_have_dispatched = True
                 self._authorized.stop(session, csrf, chamber_id)
                 sample = self._manager.status(chamber_id)
@@ -317,6 +321,22 @@ class ManualControlService:
                         not (-1 <= age <= self._max_age) or
                         not health.connected or health.state != "VERIFIED_STOPPED"):
                     raise ChamberSafetyError("STOP not confirmed by fresh readback")
+                stop_message = "STOP verified; explicit reconciliation is required"
+                # Only a lease owner who initiated this normal manual STOP may
+                # automatically clear the fence. G04 performs a second
+                # independent fresh STOPPED read and generation recheck; an
+                # ambiguous/competing STOP remains latched.
+                if health.stop_latched and health.generation == before_stop_generation + 1:
+                    try:
+                        rearmed = self._authorized.rearm_after_owned_verified_stop(
+                            session, csrf, chamber_id,
+                            expected_generation=health.generation)
+                    except Exception:
+                        rearmed = False
+                    if rearmed:
+                        stop_message = (
+                            "STOP verified; controls ready for the lease owner. "
+                            "Operator lease retained")
             elif action == "claim":
                 sample, _ = self._fresh(chamber_id)
                 self._authorized.execute(session, csrf, chamber_id, "claim_operator")
@@ -372,6 +392,7 @@ class ManualControlService:
                     raise ChamberSafetyError(
                         "Command superseded by a newer STOP/FAULT generation")
             return self._finish(serial, action, ManualState.CONFIRMED,
+                                stop_message if action == "stop" else
                                 ("Confirmed by authoritative physical device readback"
                                  if self._hil is not None else
                                  "Confirmed by simulated authoritative device readback")
