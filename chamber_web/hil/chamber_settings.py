@@ -5,8 +5,9 @@ envelope in a private server-side file instead of requiring ``CHAMBER_HIL_*``
 environment variables. The saved values are translated into the same
 ``CHAMBER_HIL_*`` mapping and validated by ``hil_authorization_from_env``, so
 every launch-time rule (private IPv4, serial pin, bounded envelope, explicit
-person-present acknowledgement, loopback/LAN policy, factory credentials) still
-applies. A running server never switches between simulation and hardware.
+person-present acknowledgement and loopback/LAN policy) still applies.
+Factory-credential warnings are advisory. A running server never switches
+between simulation and hardware.
 
 Precedence: any ``CHAMBER_HIL_*`` variable in the process environment wins over
 the saved file, so scripts and hardware tests keep their explicit behaviour.
