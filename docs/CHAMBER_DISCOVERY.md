@@ -13,16 +13,23 @@ generic NiceGUI page; the GUI contains no independent protocol socket code.
 ## Workflow
 
 1. Sign in as an administrator; select **Auto-detect chambers**.
-2. Leave the CIDR blank to inspect the server's detected RFC1918 /24
-   interface networks (up to 512 hosts total), or restrict the scan explicitly
-   to a private /24 or narrower CIDR such as `192.168.10.0/24`.
-3. Review IP, driver-reported model and serial. A silent device or model that
+2. Type a specific private IPv4 chamber address (e.g. `192.168.10.20`) into
+   the discovery scope field, or restrict to a private /24-or-narrower CIDR
+   (e.g. `192.168.10.0/24`). A single IP uses a longer bounded timeout and
+   returns a specific explanation when identification fails. When the discovery
+   scope is empty, **Auto-detect** checks the chamber IP already entered in the
+   configuration form before trying automatic local subnets.
+3. **Verify this IP** checks just the configured chamber address, ignoring the
+   discovery scope field. **Scan local networks** explicitly scans the server's
+   detected private /24 interface networks (up to 512 hosts), even when a
+   chamber address is already populated.
+4. Review IP, driver-reported model and serial. A silent device or model that
    does not support the expected protocol is not listed.
-4. Press **Select** to put the IP address, expected serial and chamber type
+5. Press **Select** to put the IP address, expected serial and chamber type
    into the existing *unsaved* configuration form. The existing chamber ID,
    temperature safety envelope and operator-presence acknowledgement are
    deliberately unchanged.
-5. Review the chamber identity and site-approved temperature range, provide
+6. Review the chamber identity and site-approved temperature range, provide
    physical supervision acknowledgement, enter the administrator password and
    save. Restart the server to apply the configuration. The single-active-
    physical-chamber limit remains unchanged.
@@ -36,8 +43,10 @@ Saved `CHAMBER_HIL_*` settings do not override explicit environment variables.
 - Driver-owned read-only `GET CHAMBER INFO` model and serial queries only,
   using TCP port 2049. No START/STOP, setpoint writes, relays or gradients.
 - Opt-in only, from an authenticated ADMIN session; other roles cannot scan.
-- 16 concurrent probes; up to 512 private IPv4 hosts, 350ms socket timeout and
-  12s driver watchdog. GUI also enforces a 15s response deadline.
+- CIDR scans use 16 concurrent probes, up to 512 private IPv4 hosts,
+  350 ms per-socket timeout and a 12s driver watchdog. An explicit /32 IPv4
+  target uses a 2s timeout for each identification request. GUI enforces a
+  15s response deadline. These are software bounds, not timing guarantees.
 - One discovery operation at a time per server; each worker closes sockets.
 - No automatic acceptance of an advertised serial: the persisted serial pin
   and current HIL safety protections remain mandatory.
@@ -58,10 +67,12 @@ are included; the simulation-only bundle does not include the driver.
 
 ## Test coverage
 
-- Driver: rejected public CIDRs, bounded host enumeration, mock protocol
+- Driver: rejected public CIDRs, bounded host enumeration, direct-IP longer
+  timeout, actionable refusal/timeout/malformed-identity diagnostics, mock
   identity, socket release and offline unit tests on Python 3.8/3.10/3.12.
 - GUI: adapter-only driver delegation, concurrent scan rejection, browser
-  administrator selection without saving or connecting and existing
+  administrator selection without saving or connecting, configured-IP fallback,
+  exact-IP verification, local-network override, visible diagnostics and
   architecture-import-boundary checks.
 - Physical HIL tests are **not** performed by this PR and require separate
   signed site authorization.
