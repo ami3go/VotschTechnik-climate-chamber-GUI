@@ -64,13 +64,13 @@ async def test_manual_dashboard_two_browsers_and_authorized_stop(
     # operator. The lease owner can STOP and then START again without admin
     # reconciliation; STOP itself never requires passing the G04 token.
     first.find("Start").click()
-    await first.should_see("CONFIRMED", retries=40)
+    await first.should_see("CONFIRMED · start", retries=60)
     first.find("Stop").click()
-    await first.should_see("controls ready", retries=40)
+    await first.should_see("STOP verified; controls ready", retries=60)
     first.find("Start").click()
-    await first.should_see("CONFIRMED", retries=40)
+    await first.should_see("CONFIRMED · start", retries=60)
     first.find("Stop").click()
-    await first.should_see("controls ready", retries=40)
+    await first.should_see("STOP verified; controls ready", retries=60)
     await first.open("/admin")
     await first.should_see("fence clear", retries=40)
     await first.should_see("Lease state: CLAIMED", retries=40)
