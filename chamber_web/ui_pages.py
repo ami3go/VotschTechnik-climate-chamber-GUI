@@ -269,9 +269,9 @@ def register_pages(
         with page_frame("/settings", service, title="Settings"):
             with ui.column().classes("panel gap-3"):
                 ui.label("Server Configuration (read-only)").classes("panel-heading")
-                ui.label("G08-min must authorize changes. G05 and site approval must certify "
-                         "physical limits; no settings mutation is exposed.").classes(
-                             "text-orange-9")
+                ui.label("Live readback of the running chamber. Administrators change the "
+                         "chamber connection below; site approval must still certify "
+                         "physical limits.").classes("text-orange-9")
                 with ui.column().classes("gap-2") as details:
                     pass
 
@@ -301,3 +301,6 @@ def register_pages(
                                 ui.label(value).classes("settings-value")
                 update_details()
                 ui.timer(2.0, update_details)
+            # Editable chamber connection (Admin only); applies at next server start.
+            from chamber_web.pages.chamber_config import render_chamber_config_panel
+            render_chamber_config_panel()

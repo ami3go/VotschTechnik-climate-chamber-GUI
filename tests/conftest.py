@@ -103,6 +103,7 @@ _COMPOSITION_MODULES = (
     "chamber_web.ui_pages",
     "chamber_web.security.nicegui",
     "chamber_web.pages.profiles",
+    "chamber_web.pages.chamber_config",
 )
 
 

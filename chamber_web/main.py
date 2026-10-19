@@ -21,6 +21,7 @@ configure_nicegui_storage()
 from nicegui import app, ui  # noqa: E402
 
 from .bootstrap import create_demo_control_services
+from .hil.chamber_settings import effective_hil_environment
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
 from .hil.supervised_profile import SupervisedProfileRuntime, supervised_runtime_from_env
 from .hil.supervision import SupervisionHost
@@ -35,8 +36,10 @@ from .model import MAX_TEMP, MIN_TEMP
 
 
 # One process-level device service, independent of any client/browser lifecycle.
-# Physical I/O only via an explicit, complete launch-time HIL authorization.
-_HIL = hil_authorization_from_env(os.environ)
+# Physical I/O only via an explicit, complete launch-time HIL authorization,
+# from CHAMBER_HIL_* variables or the administrator-saved Chambers settings.
+_HIL_ENV, _HIL_SOURCE = effective_hil_environment(os.environ)
+_HIL = hil_authorization_from_env(_HIL_ENV)
 check_hil_deployment(_HIL, deployment_policy, os.environ)
 _security = get_security()
 # Published factory credentials must not authorize physical chamber operation.
@@ -129,6 +132,11 @@ app.on_shutdown(_dashboard_service.close)
 
 def get_dashboard_service():
     return _dashboard_service
+
+
+def active_chamber_authorization():
+    """Launch-time HIL authorization of this process and where it came from."""
+    return _HIL, _HIL_SOURCE
 
 
 # Role-driven navigation is presentation only; all service mutations are guarded.
