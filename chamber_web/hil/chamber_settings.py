@@ -25,6 +25,7 @@ from chamber_web.domain.chamber import ChamberSafetyError, validate_chamber_id
 from chamber_web.hil.physical import (
     ACKNOWLEDGEMENT, HilAuthorization, hil_authorization_from_env,
 )
+from chamber_web.hil.commits import detect_driver_commit, detect_gui_commit
 from chamber_web.security.paths import security_directory
 
 CHAMBER_TYPES = {
@@ -47,8 +48,28 @@ class ChamberSettings:
     temperature_min_c: float = 15.0
     temperature_max_c: float = 35.0
     person_present_acknowledged: bool = False
+    # Optional H02 supervised-profile configuration. The permit itself is signed
+    # by the site and only referenced here; empty keeps profile runs disabled.
+    h02_permit_file: str = ""
+    h02_trusted_key: str = ""
+    h02_witness: str = ""
+    gui_commit: str = ""
+    driver_commit: str = ""
     saved_by: str = ""
     saved_at_utc: str = ""
+
+    def h02_environment(self) -> dict[str, str]:
+        """``CHAMBER_H02_*`` mapping; empty when no permit is configured."""
+        if self.chamber_type == "simulator" or not (
+                self.h02_permit_file or self.h02_trusted_key):
+            return {}
+        return {
+            "CHAMBER_H02_PERMIT_FILE": self.h02_permit_file,
+            "CHAMBER_H02_TRUSTED_KEY": self.h02_trusted_key,
+            "CHAMBER_H02_WITNESS": self.h02_witness,
+            "CHAMBER_GUI_COMMIT": self.gui_commit or detect_gui_commit(),
+            "CHAMBER_DRIVER_COMMIT": self.driver_commit or detect_driver_commit(),
+        }
 
     def hil_environment(self) -> dict[str, str]:
         """Equivalent ``CHAMBER_HIL_*`` mapping; empty for the simulator."""
@@ -73,7 +94,37 @@ class ChamberSettings:
         if not self.person_present_acknowledged:
             raise ChamberSafetyError(
                 "Physical chamber requires acknowledging that a person is present")
-        return hil_authorization_from_env(self.hil_environment())
+        authorization = hil_authorization_from_env(self.hil_environment())
+        self._validate_h02(authorization)
+        return authorization
+
+    def _validate_h02(self, authorization: HilAuthorization) -> None:
+        """Verify the signed permit now, so mistakes surface at save, not at start."""
+        environment = self.h02_environment()
+        if not environment:
+            return
+        from chamber_web.hil.supervised_profile import load_supervised_permit
+        permit = load_supervised_permit(environment)
+        if permit is None or not self.h02_witness.strip():
+            raise ChamberSafetyError(
+                "H02 needs the permit file, the site public key and a witness name")
+        data = permit.data
+        if (data["chamber_id"], data["serial_number"]) != (
+                authorization.chamber_id, authorization.expected_serial):
+            raise ChamberSafetyError(
+                "H02 permit chamber ID/serial does not match this chamber configuration")
+        low, high = data["temperature_min_c"], data["temperature_max_c"]
+        if not (authorization.temperature_min_c <= low and
+                high <= authorization.temperature_max_c):
+            raise ChamberSafetyError(
+                "H02 permit temperature range is wider than the software envelope")
+        for name, value in (("GUI", environment["CHAMBER_GUI_COMMIT"]),
+                            ("driver", environment["CHAMBER_DRIVER_COMMIT"])):
+            expected = data["gui_commit" if name == "GUI" else "driver_commit"]
+            if value != expected:
+                raise ChamberSafetyError(
+                    f"H02 permit {name} commit does not match this installation "
+                    f"(permit {expected[:12]}, installed {value[:12] or 'unknown'})")
 
 
 def settings_path() -> Path:
@@ -99,6 +150,11 @@ def load_settings(path: Path | None = None) -> ChamberSettings | None:
             temperature_min_c=float(data["temperature_min_c"]),
             temperature_max_c=float(data["temperature_max_c"]),
             person_present_acknowledged=data["person_present_acknowledged"] is True,
+            h02_permit_file=str(data.get("h02_permit_file", "")),
+            h02_trusted_key=str(data.get("h02_trusted_key", "")),
+            h02_witness=str(data.get("h02_witness", "")),
+            gui_commit=str(data.get("gui_commit", "")),
+            driver_commit=str(data.get("driver_commit", "")),
             saved_by=str(data.get("saved_by", "")),
             saved_at_utc=str(data.get("saved_at_utc", "")),
         )
@@ -163,4 +219,7 @@ def effective_hil_environment(env: Mapping[str, str],
     settings = load_settings(path)
     if settings is None or settings.chamber_type == "simulator":
         return env, "default"
-    return {**env, **settings.hil_environment()}, "chamber settings"
+    # Explicit CHAMBER_H02_* / commit variables in the process still win.
+    saved_h02 = {key: value for key, value in settings.h02_environment().items()
+                 if not env.get(key, "").strip()}
+    return {**env, **settings.hil_environment(), **saved_h02}, "chamber settings"

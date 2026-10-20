@@ -63,6 +63,11 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 temperature_min_c=float(temp_min.value),
                 temperature_max_c=float(temp_max.value),
                 person_present_acknowledged=bool(acknowledge.value),
+                h02_permit_file=(permit_file.value or "").strip(),
+                h02_trusted_key=(trusted_key.value or "").strip(),
+                h02_witness=(witness.value or "").strip(),
+                gui_commit=(gui_commit.value or "").strip().lower(),
+                driver_commit=(driver_commit.value or "").strip().lower(),
             )
         except (TypeError, ValueError):
             ui.notify("Temperature limits must be numbers.", color="negative")
@@ -281,6 +286,26 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 "A trained person will be present at the chamber whenever the server "
                 "runs with this configuration",
                 value=initial.person_present_acknowledged)
+            ui.label("Supervised profile runs (H02)").classes("text-subtitle2")
+            ui.label(
+                "Optional. Profiles run on the real chamber only with a permit signed "
+                "by the site approver (scripts/h02_sign_permit.py). Leave blank to keep "
+                "profile runs disabled; manual control is unaffected. The permit is "
+                "verified when you save. The independent watchdog starts automatically "
+                "with the server."
+            ).classes("text-xs text-grey-7")
+            permit_file = ui.input("Signed permit file path (on the server)",
+                                   value=initial.h02_permit_file).classes("w-full")
+            trusted_key = ui.input("Site public key (base64 or hex, Ed25519)",
+                                   value=initial.h02_trusted_key).classes("w-full")
+            witness = ui.input("Witness name (must match the permit)",
+                               value=initial.h02_witness).classes("w-full")
+            gui_commit = ui.input(
+                "GUI commit (blank = detect from this installation)",
+                value=initial.gui_commit).classes("w-full")
+            driver_commit = ui.input(
+                "Driver commit (blank = detect from this installation)",
+                value=initial.driver_commit).classes("w-full")
         password = ui.input("Current administrator password (required to save)",
                             password=True).props(
                                 "autocomplete=current-password").classes("w-full")
