@@ -51,6 +51,16 @@ class ProfileRunRuntime:
     def available(self) -> bool:
         return self._store is not None
 
+    @property
+    def store(self) -> RunStore | None:
+        """The one owned journal, or None when recording failed closed.
+
+        Read-only seam for G07-C history/log adapters; it never creates or
+        repairs a journal and must not be used to emit evidence.
+        """
+        with self._lock:
+            return self._store
+
     def start_blocker(self) -> str:
         """Empty when runs may start; otherwise the fail-closed reason."""
         return self.error
