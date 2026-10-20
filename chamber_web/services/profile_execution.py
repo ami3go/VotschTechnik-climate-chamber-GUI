@@ -423,15 +423,18 @@ class ProfileExecutionService:
         )
 
     async def shutdown(self) -> None:
-        """On server shutdown, issue trusted STOP before disconnecting the backend."""
+        """On server shutdown, let the active runner own one durable STOP."""
         runner = self.runner
         if runner is not None and runner.state is not None and runner.state not in TERMINAL:
-            await asyncio.to_thread(self._manager.stop, self._chamber_id)
-        if self._task is not None and not self._task.done():
+            await asyncio.to_thread(runner.request_shutdown_stop, self._chamber_id)
+        task = self._task
+        if runner is not None and runner.state not in TERMINAL:
+            waitable = task if task is not None and not task.done() else runner.run_until_terminal()
             try:
-                await asyncio.wait_for(asyncio.shield(self._task), timeout=10)
+                await asyncio.wait_for(asyncio.shield(waitable), timeout=10)
             except (asyncio.TimeoutError, Exception):
-                self._task.cancel()
+                if task is not None and not task.done():
+                    task.cancel()
         runner = self.runner
         if runner is not None and (runner.state is None or runner.state in TERMINAL):
             runner.close()
