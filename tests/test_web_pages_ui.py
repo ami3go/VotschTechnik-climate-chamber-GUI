@@ -75,13 +75,18 @@ async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], Us
         await user.should_see(heading, retries=30)
         await user.should_see("SIMULATION", retries=30)
     await user.open("/history")
-    # G07-C readers are wired to the composition-owned journal; an authenticated
-    # but empty deployment reports "no records" rather than a missing service.
+    # G07-C readers are wired to the composition-owned journal. Filter on a
+    # sentinel that cannot occur so this remains deterministic even when
+    # another collection-time composition import already opened its journal.
+    user.find("Search recorded run ID or profile").type("__no_such_run__")
+    user.find("Search").click()
     await user.should_see("No recorded runs match this search.", retries=30)
     other = create_user()
     await other.open("/logs")
     await other.should_see("Sign in", retries=30)
     await user.open("/logs")
+    user.find("Filter recorded messages").type("__no_such_event__")
+    user.find("Apply filters").click()
     await user.should_see("No recorded events match the filters.", retries=30)
     await user.open("/settings")
     await user.should_see("Control availability", retries=30)
