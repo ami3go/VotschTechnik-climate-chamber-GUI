@@ -125,6 +125,17 @@ class ChamberSettings:
                 raise ChamberSafetyError(
                     f"H02 permit {name} commit does not match this installation "
                     f"(permit {expected[:12]}, installed {value[:12] or 'unknown'})")
+        installed_gui = detect_gui_commit()
+        installed_driver = detect_driver_commit()
+        for name, installed, expected in (
+            ("GUI", installed_gui, data["gui_commit"]),
+            ("driver", installed_driver, data["driver_commit"]),
+        ):
+            if installed != expected:
+                raise ChamberSafetyError(
+                    f"H02 permit {name} commit does not match the verified installed "
+                    f"revision (permit {expected[:12]}, installed "
+                    f"{installed[:12] or 'unknown/dirty'})")
 
 
 def settings_path() -> Path:

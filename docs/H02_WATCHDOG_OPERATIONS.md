@@ -16,6 +16,15 @@ The application-side `chamber_web.hil.supervision.SupervisionHost` starts one in
 
 Mutual verification: the app heartbeats bounded G04/G07 state (controller generation and ownership, recorder health, telemetry age, measured temperature envelope, step/whole monotonic budgets) at `min(process/supervisor heartbeat, telemetry gap, readback deadline)/3`; the child enforces its own parent-heartbeat deadline and the monotonic step/whole budgets, answers every heartbeat with an ACK, and confirms the config handshake. Losing the child (or its ACK deadline) latches the host fail-closed.
 
+Protocol v2 distinguishes an armed run from its bounded normal STOP phase. During
+STOP the child accepts only the single expected G04 fence (`admitted generation +
+1`), continues checking telemetry, recorder health and the approved temperature
+envelope, and requires a fresh authoritative GOOD/STOPPED result within the signed
+`stop_verification_timeout_s`. It rearms its one-shot STOP request only after a
+verified STOP/idle boundary, so every later run receives independent protection.
+The watchdog child starts in a separate signal group; a terminal interrupt reaches
+the server first, allowing the server to send the authenticated shutdown message.
+
 Fault handling: on any violation the app routes the fault through the G06 runner (`notify_supervisor_fault` → durable STOP intent, UNKNOWN, no replay), submits one G04 STOP, then verifies a fresh GOOD STOPPED readback within `stop_verification_timeout_s`. Verification failure, child loss or spawn failure writes `watchdog-latch.json` and refuses all further physical starts until an approved on-site review clears it:
 
     python scripts/h02_watchdog_reset.py --evidence-dir PATH --reviewed-by "NAME" --confirm-clear
@@ -30,4 +39,6 @@ On physical watchdog expiry, prevent further G06 dispatch, commit abort/UNKNOWN 
 
 H02WatchdogLimits v1 has finite positive values for controller command timeout, readback deadline, maximum telemetry gap, per-step and overall profile deadlines, recorder heartbeat, application/process heartbeat, supervisor heartbeat, cleanup and STOP verification. Physical values MUST be approved in the signed site permit; there are no universal default physical safety durations. P00 requires readback and telemetry <= 5 seconds and whole-run <= 14 days. G06 PAUSE never resets step/run deadlines.
 
-**Site H02 permit: ABSENT. Physical tests: NOT RUN. Physical execution: NO-GO.**
+**Physical result 2026-10-20: functional profile completion and verified STOP,
+but watchdog completion-handshake acceptance failed. Corrected physical retest
+under a new exact-commit permit is required; current status remains NO-GO.**

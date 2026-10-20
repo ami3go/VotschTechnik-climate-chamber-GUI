@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
-from chamber_web.domain.chamber import ChamberSafetyError, ReadingQuality
+from chamber_web.domain.chamber import ChamberSafetyError, OperationState, ReadingQuality
 from chamber_web.execution.profile_runner import (
     TERMINAL, Clock, EventSink, ExecutionSnapshot, ProfileRunner, RunParameters, RunState,
     SupervisedRun, step_budget,
@@ -220,6 +220,13 @@ class ProfileExecutionService:
             "telemetry_age_s": age,
             "owner_ok": bool(health.connected and not health.stop_latched),
             "recorder_ok": not self._blocked_reason(),
+            "stop_verified": bool(
+                health.state == "VERIFIED_STOPPED" and
+                status.quality is ReadingQuality.GOOD and
+                status.operation_state is OperationState.STOPPED and
+                age is not None and
+                0 <= age <= supervised.permit.watchdog.readback_deadline_s
+            ),
             "temp_ok": bool(
                 status.quality is ReadingQuality.GOOD and measured is not None and
                 float(envelope["temperature_min_c"]) <= measured <=

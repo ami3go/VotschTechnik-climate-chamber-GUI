@@ -594,6 +594,7 @@ class ProfileRunner:
             now = self._now()
             return {
                 "terminal": state in TERMINAL,
+                "stopping": state is RunState.STOP_REQUESTED,
                 "step_index": int(self._step_index),
                 "step_remaining_s": max(0.0, self._step_deadline - now),
                 "whole_remaining_s": max(0.0, self._run_deadline - now),

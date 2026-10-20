@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from chamber_web.domain.chamber import ChamberSafetyError
+from chamber_web.hil.commits import detect_driver_commit, detect_gui_commit
 from chamber_web.hil.profile_admission import (
     AdmissionDenied, H02LiveChecks, H02WatchdogLimits, verify_signed_permit,
 )
@@ -155,12 +156,24 @@ def supervised_runtime_from_env(
     permit = load_supervised_permit(env)
     if permit is None:
         return None
+    installed_gui = detect_gui_commit()
+    installed_driver = detect_driver_commit()
+    configured_gui = env.get(ENV_GUI_COMMIT, "").strip()
+    configured_driver = env.get(ENV_DRIVER_COMMIT, "").strip()
+    for name, installed, configured, expected in (
+        ("GUI", installed_gui, configured_gui, permit.data["gui_commit"]),
+        ("driver", installed_driver, configured_driver, permit.data["driver_commit"]),
+    ):
+        if not installed or installed != configured or installed != expected:
+            raise ChamberSafetyError(
+                f"H02 {name} revision is unknown, dirty or does not match the "
+                "configured signed permit")
     return SupervisedProfileRuntime(
         permit=permit,
         witness=env.get(ENV_WITNESS, "").strip(),
         hil_acknowledged=True,
         supervisor_alive=supervisor_alive or (lambda: False),
-        gui_commit=env.get(ENV_GUI_COMMIT, "").strip(),
-        driver_commit=env.get(ENV_DRIVER_COMMIT, "").strip(),
+        gui_commit=installed_gui,
+        driver_commit=installed_driver,
         supervision=supervision,
     )

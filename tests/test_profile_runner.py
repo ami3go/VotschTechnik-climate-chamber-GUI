@@ -618,6 +618,9 @@ class RunnerTests(unittest.TestCase):
             dispatched_second["step_remaining_s"], started_second["step_remaining_s"],
         )
         self.runner.cancel("unit-chamber")
+        stopping = self.runner.supervision_state()
+        self.assertTrue(stopping["stopping"])
+        self.assertFalse(stopping["terminal"])
         self.terminal(RunState.CANCELLED)
 
     def test_cancel_cannot_overtake_durable_prepared_snapshot(self):

@@ -15,6 +15,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import time
 import unittest
+from unittest.mock import patch
 
 from chamber_web.adapters.fake import FakeBackend
 from chamber_web.domain.chamber import ChamberSafetyError
@@ -220,6 +221,38 @@ class SupervisedConfigTests(unittest.TestCase):
                     ENV_PERMIT_FILE: str(path),
                     ENV_TRUSTED_KEY: base64.b64encode(bytes(32)).decode(),
                 })
+
+    @unittest.skipIf(Ed25519PrivateKey is None, "cryptography not installed")
+    def test_runtime_binds_verified_installed_commits_not_saved_text(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = ProfileStore(root / "profiles.sqlite")
+            fixture = SignedPermitFixture(store)
+            path = fixture.write(root)
+            env = {
+                ENV_PERMIT_FILE: str(path),
+                ENV_TRUSTED_KEY: base64.b64encode(fixture.public).decode(),
+                "CHAMBER_H02_WITNESS": WITNESS,
+                "CHAMBER_GUI_COMMIT": GUI_COMMIT,
+                "CHAMBER_DRIVER_COMMIT": DRIVER_COMMIT,
+            }
+            with (
+                patch("chamber_web.hil.supervised_profile.detect_gui_commit",
+                      return_value=GUI_COMMIT),
+                patch("chamber_web.hil.supervised_profile.detect_driver_commit",
+                      return_value=DRIVER_COMMIT),
+            ):
+                runtime = supervised_runtime_from_env(env, hil_present=True)
+                self.assertIsNotNone(runtime)
+                self.assertEqual(runtime.gui_commit, GUI_COMMIT)
+            with (
+                patch("chamber_web.hil.supervised_profile.detect_gui_commit",
+                      return_value=""),
+                patch("chamber_web.hil.supervised_profile.detect_driver_commit",
+                      return_value=DRIVER_COMMIT),
+                self.assertRaises(ChamberSafetyError, msg="dirty checkout must fail"),
+            ):
+                supervised_runtime_from_env(env, hil_present=True)
 
 
 class SupervisedRunnerTests(unittest.TestCase):

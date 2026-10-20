@@ -163,6 +163,11 @@ class SupervisionHost:
                  "--port", str(port), "--evidence", child_log],
                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL, env=environment,
+                start_new_session=os.name != "nt",
+                creationflags=(
+                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                    if os.name == "nt" else 0
+                ),
             )
             self._process.stdin.write(json.dumps(config).encode("utf-8"))
             self._process.stdin.close()
@@ -224,13 +229,16 @@ class SupervisionHost:
         ).start()
 
     def _current_run(self) -> "RunSupervision | None":
+        expired = None
         with self._lock:
             run = self._run
             if run is not None and run.expired():
-                run.done = True
                 self._run = None
+                expired = run
                 run = None
-            return run
+        if expired is not None:
+            expired.disarm()
+        return run
 
     def _fail(self, reason: str) -> None:
         with self._lock:
@@ -329,14 +337,20 @@ class SupervisionHost:
             message = {
                 "type": wp.HEARTBEAT, "seq": self._seq,
                 "state": wp.STATE_ARMED if run is not None else wp.STATE_IDLE,
+                "run_id": None,
                 "generation": None, "expected_generation": None,
                 "step_index": None, "step_remaining_s": None,
                 "whole_remaining_s": None, "telemetry_age_s": None,
                 "owner_ok": None, "recorder_ok": None, "temp_ok": None,
+                "stop_verified": None,
             }
             if run is not None:
                 try:
-                    message.update(run.heartbeat_fields())
+                    fields = run.heartbeat_fields()
+                    if fields.pop("stopping", False):
+                        message["state"] = wp.STATE_STOPPING
+                    message.update(fields)
+                    message["run_id"] = run.run_id
                     message["expected_generation"] = run.generation
                 except Exception as exc:
                     self.evidence("STATE_PROVIDER_FAILED",
@@ -472,5 +486,8 @@ class RunSupervision:
         self._host.set_latch("STOP unverified after watchdog fault: " + reason)
 
     def disarm(self) -> None:
-        self.done = True
+        with self._lock:
+            if self.done:
+                return
+            self.done = True
         self._host.evidence("RUN_DISARM", run_id=self._run_id)
