@@ -266,10 +266,14 @@ class DirectScriptInvocationTests(unittest.TestCase):
     def test_direct_execution_remains_interactive_only(self):
         script = Path(__file__).resolve().parents[1] / "scripts" / "reset_credentials.py"
         with tempfile.TemporaryDirectory() as other_cwd:
+            # Pin stdin to a non-TTY so _local_reset_console() deterministically
+            # rejects the unattended subprocess on every platform. Without this
+            # the child inherits the parent's stdin, which on a Windows console
+            # reports isatty() True and falls through to the database check.
             result = subprocess.run(
                 [sys.executable, "-I", str(script)],
                 cwd=other_cwd, capture_output=True, text=True,
-                timeout=30, check=False,
+                stdin=subprocess.DEVNULL, timeout=30, check=False,
             )
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("interactive console", result.stderr)
