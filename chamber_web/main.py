@@ -68,7 +68,7 @@ _MODE = "Simulation" if _HIL is None else "Physical HIL"
 # execution disabled. The H02-C independent watchdog must additionally be
 # alive; until `_startup_supervision` proves it, physical starts are refused.
 _SUPERVISED = supervised_runtime_from_env(
-    os.environ, hil_present=_HIL is not None, supervisor_alive=lambda: False,
+    _HIL_ENV, hil_present=_HIL is not None, supervisor_alive=lambda: False,
 )
 _SUPERVISION: SupervisionHost | None = None
 

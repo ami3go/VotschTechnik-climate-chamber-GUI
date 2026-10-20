@@ -591,6 +591,35 @@ class RunnerTests(unittest.TestCase):
         self.terminal(RunState.CANCELLED)
         self.assertEqual(self.backend._target, 25)
 
+    def test_supervision_budget_resets_only_when_step_index_advances(self):
+        second = replace(step(target="26"), step=2)
+        self.prepare(profile=ParsedProfile((step(), second), name="two steps"))
+
+        prepared = self.runner.supervision_state()
+        self.assertEqual(prepared["step_index"], 0)
+        self.assertGreater(prepared["step_remaining_s"], 0)
+
+        self.runner.advance()  # dispatch step 1 without extending its budget
+        dispatched_first = self.runner.supervision_state()
+        self.assertEqual(dispatched_first["step_index"], 0)
+        self.assertLessEqual(
+            dispatched_first["step_remaining_s"], prepared["step_remaining_s"],
+        )
+
+        self.runner.advance()  # complete step 1 and allocate step 2 atomically
+        started_second = self.runner.supervision_state()
+        self.assertEqual(started_second["step_index"], 1)
+        self.assertGreater(started_second["step_remaining_s"], 0)
+
+        self.runner.advance()  # dispatch step 2 without extending its budget
+        dispatched_second = self.runner.supervision_state()
+        self.assertEqual(dispatched_second["step_index"], 1)
+        self.assertLessEqual(
+            dispatched_second["step_remaining_s"], started_second["step_remaining_s"],
+        )
+        self.runner.cancel("unit-chamber")
+        self.terminal(RunState.CANCELLED)
+
     def test_cancel_cannot_overtake_durable_prepared_snapshot(self):
         entered = threading.Event()
         release = threading.Event()

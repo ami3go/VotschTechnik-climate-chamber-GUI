@@ -451,6 +451,15 @@ class ProfileRunner:
                 self._run_deadline = self._t0 + total
                 self._step_index = 0
                 self._step_started = self._t0
+                # Allocate the first watchdog budget before supervision can be
+                # armed.  Later step budgets are allocated atomically with the
+                # step-index advance in _complete_step; _dispatch_step must not
+                # reset them and make a same-step countdown move backwards.
+                self._step_deadline = (
+                    self._step_started + self._step_budget(
+                        self._scheduled_steps[0], params,
+                    )
+                )
                 self._state = RunState.PREPARING
                 self._reason = ""
                 with self._event_guard:
@@ -510,8 +519,6 @@ class ProfileRunner:
         assert self._snapshot is not None and self._owner_token
         self._healthy(running=self._profile_running)
         step = self._step()
-        self._step_started = self._now()
-        self._step_deadline = self._step_started + self._step_budget(step, self._snapshot.parameters)
         target = float(step.target_temperature_c)
         self._setpoint_best = math.inf
         self._setpoint_observed = None
@@ -768,6 +775,16 @@ class ProfileRunner:
         if self._step_index == len(self._steps()):
             self._begin_stop(RunState.COMPLETED, "All steps complete; verified STOP required")
         else:
+            assert self._snapshot is not None
+            # Publish the new step index and its fresh deadline together under
+            # _mutex. The independent watchdog may then allow the budget reset
+            # exactly once, when it observes the index change.
+            self._step_started = self._now()
+            self._step_deadline = (
+                self._step_started + self._step_budget(
+                    self._step(), self._snapshot.parameters,
+                )
+            )
             self._transition(RunState.TRANSITIONING)
 
     def advance(self) -> RunState | None:

@@ -4,6 +4,7 @@ No physical hardware is contacted; settings only take effect at server start.
 """
 from __future__ import annotations
 
+import ast
 import json
 import tempfile
 import unittest
@@ -54,6 +55,22 @@ class ChamberSettingsTests(unittest.TestCase):
         actions = [row for row in self.store.audit_records()
                    if "chamber.settings.save" in row]
         self.assertTrue(actions)
+
+    def test_main_composes_h02_from_effective_settings_environment(self):
+        """Saved H02 fields must reach the runtime, not only CHAMBER_HIL fields."""
+        source = (Path(__file__).resolve().parents[1] / "chamber_web" / "main.py").read_text(
+            encoding="utf-8"
+        )
+        tree = ast.parse(source)
+        calls = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "supervised_runtime_from_env"
+        ]
+        self.assertEqual(len(calls), 1)
+        self.assertIsInstance(calls[0].args[0], ast.Name)
+        self.assertEqual(calls[0].args[0].id, "_HIL_ENV")
 
     def test_simulator_and_missing_file_stay_simulated(self):
         self.assertEqual(effective_hil_environment({}, self.path), ({}, "default"))
