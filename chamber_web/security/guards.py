@@ -6,8 +6,15 @@ G04 trusted server-only token-free compatibility calls to web requests.
 from __future__ import annotations
 
 import threading
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
+
+from chamber_web.domain.chamber import (
+    ChamberSafetyError,
+    OperationState,
+    ReadingQuality,
+)
 
 from .auth import Actor, AuthorizationError, Role, SecurityStore
 
@@ -183,8 +190,6 @@ class AuthorizedChamber:
                     "Stop and verify the chamber before running a profile")
             # A second authoritative status check is required before handing
             # over the lease. The profile runner independently rechecks.
-            from chamber_web.domain.chamber import OperationState, ReadingQuality
-            from datetime import datetime, timezone
             sample = self._manager.status(chamber_id)
             sampled = sample.sampled_at_utc
             if (sample.quality is not ReadingQuality.GOOD or
