@@ -2,6 +2,7 @@
 from typing import Callable
 
 import pytest
+from nicegui import ui
 from nicegui.testing import User
 
 
@@ -79,14 +80,14 @@ async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], Us
     # sentinel that cannot occur so this remains deterministic even when
     # another collection-time composition import already opened its journal.
     user.find("Search recorded run ID or profile").type("__no_such_run__")
-    user.find("Search").click()
+    user.find(kind=ui.button, content="Search").click()
     await user.should_see("No recorded runs match this search.", retries=30)
     other = create_user()
     await other.open("/logs")
     await other.should_see("Sign in", retries=30)
     await user.open("/logs")
     user.find("Filter recorded messages").type("__no_such_event__")
-    user.find("Apply filters").click()
+    user.find(kind=ui.button, content="Apply filters").click()
     await user.should_see("No recorded events match the filters.", retries=30)
     await user.open("/settings")
     await user.should_see("Control availability", retries=30)
