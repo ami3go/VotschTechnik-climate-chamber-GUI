@@ -5,6 +5,15 @@ import pytest
 from nicegui.testing import User
 
 
+def _table_with_column(user: User, field: str):
+    """Pick the rendered ui.table whose columns include ``field``."""
+    from nicegui import ui
+    candidates = [element for element in user.find(ui.table).elements
+                  if any(column.get("field") == field for column in element.columns)]
+    assert candidates, f"no ui.table with column {field!r} is rendered"
+    return candidates[-1]
+
+
 @pytest.fixture(autouse=True)
 def _trusted_loopback_test_client(monkeypatch):
     """Model W01's trusted loopback Host only in the in-process NiceGUI client.
@@ -61,12 +70,14 @@ async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], Us
         await user.should_see(heading, retries=30)
         await user.should_see("SIMULATION", retries=30)
     await user.open("/history")
-    await user.should_see("G07 run recording/history service is not installed.", retries=30)
+    # G07-C readers are wired to the composition-owned journal; an authenticated
+    # but empty deployment reports "no records" rather than a missing service.
+    await user.should_see("No recorded runs match this search.", retries=30)
     other = create_user()
     await other.open("/logs")
     await other.should_see("Sign in", retries=30)
     await user.open("/logs")
-    await user.should_see("G07 persistent event/audit log service is not installed.", retries=30)
+    await user.should_see("No recorded events match the filters.", retries=30)
     await user.open("/settings")
     await user.should_see("Control availability", retries=30)
     await user.should_see("Physical controls disabled", retries=30)
@@ -77,6 +88,97 @@ async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], Us
     store.logout(captured[0])
     user.find("Search").click()
     await user.should_see("Sign in", retries=30)
+
+
+async def test_recorded_runs_and_events_render_from_the_composition_journal(
+    create_user: Callable[[], User], monkeypatch, tmp_path,
+) -> None:
+    """G07-C: /history and /logs project the one owned journal, not fabrications."""
+    from dataclasses import dataclass
+    from uuid import uuid4
+
+    from chamber_web import main as application
+    from chamber_web.pages.profiles import get_profile_runtime
+    from chamber_web.persistence.runs import RunRecorder
+    from chamber_web.security import nicegui as security_ui
+    from chamber_web.security.auth import SecurityStore
+
+    store = SecurityStore(tmp_path / "security")
+    store.bootstrap_admin("test_admin", "StrongAdminPassword#1")
+    monkeypatch.setattr(security_ui, "_store", store)
+    monkeypatch.setattr(application._manual_service, "_security", store)
+    monkeypatch.setattr(application._manual_service._authorized, "_security", store)
+
+    @dataclass(frozen=True)
+    class Identity:
+        chamber_id: str
+        backend_id: str = "fake"
+        manufacturer: str = "Simulator"
+        model: str = "Mock"
+        serial_number: str = "TEST"
+        is_simulation: bool = True
+
+    @dataclass(frozen=True)
+    class Snapshot:
+        schema_version: int
+        run_id: str
+        chamber_id: str
+        identity: object
+        controller_generation: int
+        created_at_utc: str
+        profile_name: str
+        revision: int
+        operator_id: str
+
+    @dataclass(frozen=True)
+    class Event:
+        run_id: str
+        chamber_id: str
+        sequence: int
+        kind: str
+        state: str = "PREPARING"
+        monotonic_elapsed_s: float = 0.0
+        step_index: int = 0
+        detail: str = ""
+        temperature_c: float | None = None
+        quality: str | None = None
+        observed_at_utc: str = "2026-10-13T12:00:00+00:00"
+        source_sampled_at_utc: str | None = None
+        sample_index: int | None = None
+
+    # Seed the exact journal the composition root serves /history and /logs.
+    runtime = get_profile_runtime()
+    assert runtime.available, runtime.error
+    chamber_id = application.get_dashboard_service().view().chamber_id
+    recorder = RunRecorder(runtime.store)
+    run_id = str(uuid4())
+    time = "2026-10-13T12:00:00+00:00"
+    recorder.prepare(Snapshot(1, run_id, chamber_id, Identity(chamber_id), 4, time,
+                              "Cold soak", 3, "op-7"))
+    recorder.emit(Event(run_id, chamber_id, 1, "PREPARED"))
+    recorder.emit(Event(run_id, chamber_id, 2, "START_INTENT"))
+    recorder.emit(Event(run_id, chamber_id, 3, "STATE", state="FAULT",
+                        detail="controller fault observed"))
+
+    user = create_user()
+    await user.open("/login")
+    user.find("Username").type("test_admin")
+    user.find("Password").type("StrongAdminPassword#1")
+    user.find("Sign in").click()
+    await user.should_see("SIMULATION", retries=30)
+
+    await user.open("/history")
+    # Quasar tables render rows client-side, so assert the server-provided rows
+    # rather than relying on cell text in the server element tree.
+    history_table = _table_with_column(user, "run_id")
+    assert any(row["run_id"] == run_id for row in history_table.rows)
+    assert any(row["profile"] == "Cold soak · r3" for row in history_table.rows)
+    assert any(row["operator"] == "op-7" for row in history_table.rows)
+
+    await user.open("/logs")
+    logs_table = _table_with_column(user, "severity")
+    assert any(row["message"] == "controller fault observed" for row in logs_table.rows)
+    assert any(row["severity"] == "ERROR" for row in logs_table.rows)
 
 
 async def test_settings_tab_saves_chamber_connection_for_admin(

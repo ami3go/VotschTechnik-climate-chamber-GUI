@@ -29,6 +29,7 @@ from .hil.supervision import SupervisionHost
 from .security.nicegui import (active_tokens, cookie_secret, current_actor, deployment_policy,
                                get_security, logout, require_authenticated_page)
 from .security.auth import AuthenticationError, AuthorizationError, Role, SecurityProfile
+from .services.run_readers import RunStoreReader
 from .ui_pages import (NavigationContext, install_navigation_resolver,
                        register_pages, render_navigation)
 from .ui_state import (project_capabilities, project_chamber_identity,
@@ -172,8 +173,25 @@ def _server_navigation_context() -> NavigationContext:
 
 install_navigation_resolver(_server_navigation_context)
 
-# G07 readers are injected when the recording service is implemented.
-register_pages(get_dashboard_service, discovery_provider=lambda network: discover_votsch_chambers(network))
+def _run_journal_store():
+    """Composition-owned G07 journal for read-only history/log projection.
+
+    Resolved lazily so an unavailable journal (fail-closed start) yields an
+    unavailable page rather than a second, uncoordinated store handle.
+    """
+    from .pages.profiles import get_profile_runtime
+    return get_profile_runtime().store
+
+
+# G07-C read-only readers project the one owned run journal into /history and
+# /logs; authorization stays at the page boundary and reads are offloaded off
+# the event loop. No reader is fabricated when the journal is unavailable.
+register_pages(
+    get_dashboard_service,
+    history_reader=RunStoreReader(_run_journal_store),
+    event_reader=RunStoreReader(_run_journal_store),
+    discovery_provider=lambda network: discover_votsch_chambers(network),
+)
 
 
 CSS = (Path(__file__).parent / "assets" / "style.css").read_text(encoding="utf-8")

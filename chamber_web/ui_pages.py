@@ -1,6 +1,7 @@
 """G02-B read-only NiceGUI routes. No vendor imports, command calls, or local logs."""
 from __future__ import annotations
 
+import asyncio
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timezone
@@ -162,7 +163,7 @@ def register_pages(
     # /profiles is registered by G03-C with G08 guards in pages/profiles.py.
 
     @ui.page("/history")
-    def history_page():
+    async def history_page():
         if not require_authenticated_page():
             return
         service = get_dashboard_service()
@@ -184,12 +185,15 @@ def register_pages(
                 ], rows=[], row_key="run_id", pagination=15).props("flat bordered").classes(
                     "w-full small-table")
 
-                def reload():
+                async def reload():
                     if not require_authenticated_page():
                         return
+                    # SQLite reads are synchronous; keep them off the event loop.
+                    reader, chamber = history, service.chamber_id
                     try:
-                        page = history.list_runs(
-                            service.chamber_id, search=bounded_search(search.value), limit=50)
+                        page = await asyncio.to_thread(
+                            reader.list_runs, chamber,
+                            search=bounded_search(search.value), limit=50)
                         rows = [{
                             "run_id": row.run_id,
                             "profile": f"{row.profile_name} · r{row.profile_revision}",
@@ -198,7 +202,7 @@ def register_pages(
                             "ended": (row.ended_at_utc.astimezone(timezone.utc).isoformat()
                                       if row.ended_at_utc else "—"),
                             "outcome": row.outcome,
-                        } for row in page.records if row.chamber_id == service.chamber_id][:50]
+                        } for row in page.records if row.chamber_id == chamber][:50]
                     except Exception:
                         page = RecordPage(False, detail="Run history service failed; retry later.")
                         rows = []
@@ -207,17 +211,17 @@ def register_pages(
                         _status_panel(page, empty_text="No recorded runs match this search.")
                     table.update_rows(rows)
                 ui.button("Search", icon="search", on_click=reload).props("outline no-caps")
-                reload()
+                await reload()
 
     @ui.page("/logs")
-    def logs_page():
+    async def logs_page():
         if not require_authenticated_page():
             return
         service = get_dashboard_service()
         with page_frame("/logs", service, title="Logs"):
             with ui.column().classes("panel gap-3"):
                 ui.label("Persistent Event Logs").classes("panel-heading")
-                ui.label("G07 event records and G08-min security audit integration pending").classes(
+                ui.label("Server-recorded G07 journal events · G08-min audit integration pending").classes(
                     "text-xs text-grey-7")
                 with ui.row().classes("items-center gap-3 w-full flex-wrap"):
                     severity = ui.select(["ALL", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -236,12 +240,14 @@ def register_pages(
                 ], rows=[], row_key="id", pagination=15).props(
                     "flat bordered wrap-cells").classes("w-full small-table")
 
-                def reload():
+                async def reload():
                     if not require_authenticated_page():
                         return
+                    # SQLite reads are synchronous; keep them off the event loop.
+                    reader, chamber = events, service.chamber_id
                     try:
-                        page = events.list_events(
-                            service.chamber_id, severity=severity.value,
+                        page = await asyncio.to_thread(
+                            reader.list_events, chamber, severity=severity.value,
                             search=bounded_search(search.value), limit=50)
                         rows = [{
                             "id": row.event_id,
@@ -252,7 +258,7 @@ def register_pages(
                             "run": row.run_id or "—",
                             "step": row.step if row.step is not None else "—",
                             "message": row.message,
-                        } for row in page.records if row.chamber_id == service.chamber_id][:50]
+                        } for row in page.records if row.chamber_id == chamber][:50]
                     except Exception:
                         page = RecordPage(False, detail="Event log service failed; retry later.")
                         rows = []
@@ -260,7 +266,9 @@ def register_pages(
                     with status:
                         _status_panel(page, empty_text="No recorded events match the filters.")
                     table.update_rows(rows)
-                reload()
+                ui.button("Apply filters", icon="filter_list",
+                          on_click=reload).props("outline no-caps")
+                await reload()
 
     @ui.page("/settings")
     def settings_page():
