@@ -149,6 +149,10 @@ class ProfileRunRuntimeTests(unittest.TestCase):
         stub_main.get_dashboard_service = lambda: SimpleNamespace(manager=self.manager)
         stub_main.profile_execution_is_simulation = lambda: True
         stub_main.profile_execution_supervision = lambda: None
+        # The getter binds the G05 manual guard only when its composition
+        # SecurityStore matches the page's (see profiles.py); an isolated
+        # test that swaps the store must degrade to manual_guard=None.
+        stub_main.get_profile_manual_guard = lambda: SimpleNamespace(_security=None)
         with patch.dict(sys.modules, {"chamber_web.main": stub_main}), \
                 patch.object(profiles_page, "get_profile_editor_service", lambda: editor), \
                 patch.object(profiles_page, "get_security", lambda: self.security):
