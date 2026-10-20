@@ -52,6 +52,43 @@ Plus pytest subtests (A: 30+, B: 51, C: many) — none failed in run 2.
    **Recommendation:** add it to `requirements-dev.txt` so a single dev
    requirements file reproduces the CI test environment.
 
+## CI-run findings (combined job, working as designed)
+
+The GitHub combined job (`.github/workflows/s2-02-regression-ci.yml`, run
+`39391025193` @ head `eba0c6c`) ran the whole simulation suite in one process on
+Ubuntu 3.12 and Windows 3.10/3.12. Its first executions exposed two further
+test-hermeticity defects that **no existing workflow executes** — the per-file
+jobs never ran `tests/test_security_credential_reset.py`, and the dashboard UI
+test only ever ran in isolation with no combined-suite ordering/load.
+
+3. **`tests/test_security_credential_reset.py` (Windows legs).** Only linted by
+   `web-gui-demo.yml` (ruff); no workflow executes it. `subprocess.run(
+   capture_output=True)` did not pin stdin, so the child inherited the Windows
+   console handle (`isatty()` True) and `_local_reset_console()` fell through to
+   the database check instead of the intended "interactive console" refusal.
+   Fix: drive the refusal through the explicit `SSH_TTY` indicator (a plain env
+   lookup, rejected before any stdin test) **and** pin `stdin=subprocess.DEVNULL`.
+   Platform-deterministic; the guard is exercised, not weakened.
+4. **`tests/test_dashboard_profile_ui.py` second-run Stop (all legs; deterministic
+   on Linux once reproduced).** The test clicked the **second** `Stop Run` while
+   the control was still **disabled**: `execution.runner` is published by the
+   service worker thread inside `start_async`'s `to_thread` call, before the page
+   resumes and calls `refresh_run()` to enable Stop; NiceGUI silently drops
+   clicks on disabled elements. The following `should_see("STOP requested")`
+   then passed on the **retained first-stop toast** (the test harness's
+   `UserNotify` never expires notifications), so a run stuck at `REACHING`
+   looked green. Fix: wait for the Stop control to be enabled before clicking and
+   clear retained toasts before asserting the fresh STOP; the
+   `state == "CANCELLED"` assertion is unchanged and now genuinely exercised.
+
+Result after fixes: `518 passed, 1 skipped, 196 subtests passed`, and all three
+CI legs green with JUnit `tests=715 failures=0 errors=0 skipped=1` per leg and
+every watchdog `result: EXITED, returncode: 0` (no timeout kills).
+
+> The 715 vs 718 difference is the grouped runner (A..E) versus the single
+> combined process: grouping re-collects parametrised UI cases. Both are zero
+> failures; the single-process figure is the one the CI job asserts.
+
 ## Residual gaps (documented, out of S2-02 scope)
 
 - Windows/Python 3.10 legs: this baseline is Linux/3.12 only; Windows matrix is
