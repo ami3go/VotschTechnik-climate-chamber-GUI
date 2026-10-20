@@ -33,6 +33,11 @@ def _trusted_loopback_test_client(monkeypatch):
 
 
 async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], User], monkeypatch, tmp_path) -> None:
+    # The composition runtime is process-global and may be imported by another
+    # NiceGUI test before this test's HOME fixture takes effect. Pin the G07
+    # journal itself before importing the composition root so "empty" is a
+    # property of this test, not of suite order.
+    monkeypatch.setenv("CHAMBER_RUN_JOURNAL_DIR", str(tmp_path / "run-journal"))
     from chamber_web import main as application
     from chamber_web.security import nicegui as security_ui
     from chamber_web.security.auth import SecurityStore
@@ -94,6 +99,7 @@ async def test_recorded_runs_and_events_render_from_the_composition_journal(
     create_user: Callable[[], User], monkeypatch, tmp_path,
 ) -> None:
     """G07-C: /history and /logs project the one owned journal, not fabrications."""
+    monkeypatch.setenv("CHAMBER_RUN_JOURNAL_DIR", str(tmp_path / "run-journal"))
     from dataclasses import dataclass
     from uuid import uuid4
 
