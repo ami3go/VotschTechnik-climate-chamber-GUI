@@ -98,6 +98,22 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def canonical_sha256(path: Path) -> str:
+    """SHA-256 over the LF-normalized bytes of a text file.
+
+    Git checks text files out with CRLF on Windows and LF elsewhere, so the
+    raw bytes of the same tracked file differ per platform. A closure that
+    records a platform-dependent digest of its own input could never be
+    reproduced on another host, so the digest is taken over the canonical
+    line endings.
+    """
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block.replace(b"\r\n", b"\n"))
+    return digest.hexdigest()
+
+
 def _normalise(name: str) -> str:
     """PEP 503 normalization, used only to compare names."""
     return re.sub(r"[-_.]+", "-", name).lower()
@@ -590,7 +606,7 @@ def main(argv: list[str] | None = None) -> int:
                                        python_tag=python_tag)
         if not artifacts:
             raise ClosureError("resolved closure is empty")
-        requirements_hash = sha256_file(args.requirements)
+        requirements_hash = canonical_sha256(args.requirements)
         _write(args.lock, render_lock(artifacts, target=args.target,
                                       python_version=python_tag,
                                       requirements_sha256=requirements_hash))

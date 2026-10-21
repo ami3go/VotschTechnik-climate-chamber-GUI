@@ -254,6 +254,68 @@ class ClosureOfflineInstallTests(unittest.TestCase):
                                     self.root / "installed")
 
 
+class CommittedClosureTests(unittest.TestCase):
+    """The committed closure must stay pinned, hashed and self-consistent."""
+
+    @staticmethod
+    def _repository_root() -> Path:
+        return Path(__file__).resolve().parents[1]
+
+    def test_committed_closure_is_pinned_hashed_and_consistent(self):
+        root = self._repository_root()
+        lock = root / "requirements-w02-runtime.lock"
+        manifest = root / "w02-closure-manifest.json"
+        self.assertTrue(lock.is_file(), "the reviewed closure lock is missing")
+        self.assertTrue(manifest.is_file(), "the closure manifest is missing")
+        entries = closure.parse_lock(lock.read_text(encoding="utf-8"))
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        artifacts = [closure.Artifact(
+            name=str(item["name"]), version=str(item["version"]),
+            filename=str(item["filename"]), sha256=str(item["sha256"]),
+            url=str(item.get("url", "")),
+            requires_python=str(item.get("requires_python", "")),
+            license=str(item.get("license", ""))) for item in payload["artifacts"]]
+        closure.verify_manifest(artifacts, manifest)
+        locked = {(name, version): digest for name, version, digest in entries}
+        self.assertEqual(len(locked), len(artifacts))
+        for artifact in artifacts:
+            self.assertEqual(locked.get((artifact.name, artifact.version)),
+                             artifact.sha256, artifact.filename)
+
+    def test_committed_closure_only_contains_target_wheels(self):
+        root = self._repository_root()
+        payload = json.loads(
+            (root / "w02-closure-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload.get("target"), "win_amd64-cp312")
+        for item in payload["artifacts"]:
+            closure.check_wheel_platform(str(item["filename"]),
+                                         platform_tags=("win_amd64",),
+                                         python_tag="cp312")
+
+    def test_committed_closure_matches_the_pinned_requirements(self):
+        root = self._repository_root()
+        payload = json.loads(
+            (root / "w02-closure-manifest.json").read_text(encoding="utf-8"))
+        requirements = root / str(payload.get("requirements", ""))
+        self.assertTrue(requirements.is_file(), requirements)
+        # The digest is taken over the canonical line endings, so the same
+        # tracked file yields the same digest on a CRLF and on an LF checkout.
+        self.assertEqual(payload.get("requirements_sha256"),
+                         closure.canonical_sha256(requirements))
+
+    def test_canonical_digest_ignores_line_endings(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            crlf = root / "crlf.txt"
+            lf = root / "lf.txt"
+            crlf.write_bytes(b"a\r\nb\r\n")
+            lf.write_bytes(b"a\nb\n")
+            self.assertEqual(closure.canonical_sha256(crlf),
+                             closure.canonical_sha256(lf))
+            self.assertNotEqual(closure.sha256_file(crlf),
+                                closure.sha256_file(lf))
+
+
 class ClosureSbomTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
