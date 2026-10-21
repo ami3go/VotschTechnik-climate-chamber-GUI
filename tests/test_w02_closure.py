@@ -30,6 +30,7 @@ FAKE_WHEELS = {
 
 def _write_wheel(path: Path, name: str, version: str, *,
                  license_name: str = "MIT", requires_python: str = ">=3.10",
+                 requires: tuple[str, ...] = (),
                  payload: bytes = b"mock wheel") -> str:
     """Write a minimal, well-formed wheel and return its SHA-256.
 
@@ -37,15 +38,17 @@ def _write_wheel(path: Path, name: str, version: str, *,
     installation test installs these wheels for real.
     """
     dist_info = f"{name.replace('-', '_')}-{version}.dist-info"
+    headers = [
+        "Metadata-Version: 2.1",
+        f"Name: {name}",
+        f"Version: {version}",
+        f"License: {license_name}",
+        f"Requires-Python: {requires_python}",
+    ]
+    headers.extend(f"Requires-Dist: {item}" for item in requires)
     members = {
         f"{name}/__init__.py": ("VERSION = %r\n" % version).encode("utf-8"),
-        f"{dist_info}/METADATA": (
-            "Metadata-Version: 2.1\n"
-            f"Name: {name}\n"
-            f"Version: {version}\n"
-            f"License: {license_name}\n"
-            f"Requires-Python: {requires_python}\n"
-            "\n").encode("utf-8"),
+        f"{dist_info}/METADATA": ("\n".join(headers) + "\n\n").encode("utf-8"),
         f"{dist_info}/WHEEL": (
             "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: false\n"
             "Tag: %s-%s-%s\n" % (PYTHON_TAG, PYTHON_TAG, PLATFORM)).encode("utf-8"),
@@ -314,6 +317,160 @@ class CommittedClosureTests(unittest.TestCase):
                              closure.canonical_sha256(lf))
             self.assertNotEqual(closure.sha256_file(crlf),
                                 closure.sha256_file(lf))
+
+
+class ClosureCompletenessTests(unittest.TestCase):
+    """The closure must contain every requirement its members impose."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.wheelhouse = self.root / "wheelhouse"
+        self.wheelhouse.mkdir()
+
+    def _closure(self, wheels: dict[str, tuple[str, str, tuple[str, ...]]]) -> list[closure.Artifact]:
+        artifacts = []
+        for filename, (name, version, requires) in wheels.items():
+            digest = _write_wheel(self.wheelhouse / filename, name, version,
+                                  requires=requires)
+            artifacts.append(closure.Artifact(
+                name=name, version=version, filename=filename, sha256=digest,
+                url="https://example.invalid/" + filename,
+                requires_python=">=3.10", license="MIT"))
+        return artifacts
+
+    def test_a_complete_closure_is_accepted(self):
+        artifacts = self._closure({
+            "base-1.0.0-py3-none-any.whl": ("base", "1.0.0", ()),
+            "app-1.0.0-py3-none-any.whl": ("app", "1.0.0", ("base>=1.0.0",)),
+        })
+        closure.verify_closure_complete(artifacts, self.wheelhouse,
+                                         target="win_amd64-cp312")
+
+    def test_a_missing_requirement_is_refused(self):
+        artifacts = self._closure({
+            "app-1.0.0-py3-none-any.whl": ("app", "1.0.0", ("missingpkg>=1.0",)),
+        })
+        with self.assertRaisesRegex(closure.ClosureError, "incomplete"):
+            closure.verify_closure_complete(artifacts, self.wheelhouse,
+                                             target="win_amd64-cp312")
+
+    def test_an_unsatisfied_version_is_refused(self):
+        artifacts = self._closure({
+            "base-1.0.0-py3-none-any.whl": ("base", "1.0.0", ()),
+            "app-1.0.0-py3-none-any.whl": ("app", "1.0.0", ("base>=2.0",)),
+        })
+        with self.assertRaisesRegex(closure.ClosureError, "does not satisfy"):
+            closure.verify_closure_complete(artifacts, self.wheelhouse,
+                                             target="win_amd64-cp312")
+
+    def test_dependencies_behind_a_requested_extra_are_required(self):
+        """``app`` needs ``base[extra]``, so base's extra dependency counts."""
+        artifacts = self._closure({
+            "app-1.0.0-py3-none-any.whl": ("app", "1.0.0", ("base[extra]",)),
+            "base-1.0.0-py3-none-any.whl": (
+                "base", "1.0.0", ("extradep>=1.0; extra == \"extra\"",)),
+        })
+        with self.assertRaisesRegex(closure.ClosureError, "incomplete"):
+            closure.verify_closure_complete(artifacts, self.wheelhouse,
+                                             target="win_amd64-cp312")
+
+    def test_an_unrequested_extra_is_not_required(self):
+        artifacts = self._closure({
+            "app-1.0.0-py3-none-any.whl": ("app", "1.0.0", ("base",)),
+            "base-1.0.0-py3-none-any.whl": (
+                "base", "1.0.0", ("extradep>=1.0; extra == \"extra\"",)),
+        })
+        closure.verify_closure_complete(artifacts, self.wheelhouse,
+                                         target="win_amd64-cp312")
+
+    def test_markers_are_evaluated_for_the_target_not_the_host(self):
+        """A Linux-only dependency is not required by a Windows closure."""
+        artifacts = self._closure({
+            "app-1.0.0-py3-none-any.whl": (
+                "app", "1.0.0", ('linuxonly>=1.0; sys_platform == "linux"',)),
+        })
+        closure.verify_closure_complete(artifacts, self.wheelhouse,
+                                         target="win_amd64-cp312")
+        # The same closure is incomplete for a Linux target.
+        with self.assertRaisesRegex(closure.ClosureError, "incomplete"):
+            closure.verify_closure_complete(artifacts, self.wheelhouse,
+                                             target="linux_x86_64-cp312")
+
+    def test_a_windows_only_dependency_is_required_by_a_windows_closure(self):
+        artifacts = self._closure({
+            "app-1.0.0-py3-none-any.whl": (
+                "app", "1.0.0", ('winonly>=1.0; sys_platform == "win32"',)),
+        })
+        with self.assertRaisesRegex(closure.ClosureError, "incomplete"):
+            closure.verify_closure_complete(artifacts, self.wheelhouse,
+                                             target="win_amd64-cp312")
+
+
+class ClosureMetadataTests(unittest.TestCase):
+    """The metadata parser must not be fooled by a folded field."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def _wheel_with_folded_license(self) -> Path:
+        path = self.root / "folded-1.0.0-py3-none-any.whl"
+        dist_info = "folded-1.0.0.dist-info"
+        metadata = (
+            "Metadata-Version: 2.4\n"
+            "Name: folded\n"
+            "Version: 1.0.0\n"
+            "License: MIT License\n"
+            "        \n"
+            "        Copyright (c) 2024 Example\n"
+            "        \n"
+            "        Permission is hereby granted, free of charge, to any person\n"
+            "        obtaining a copy of this software.\n"
+            "        \n"
+            "Requires-Python: >=3.10\n"
+            "Requires-Dist: colorama>=0.4.6\n"
+            "\n"
+            "Body text after the headers.\n"
+        )
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("folded/__init__.py", "x = 1\n")
+            archive.writestr(f"{dist_info}/METADATA", metadata)
+            archive.writestr(f"{dist_info}/WHEEL",
+                             "Wheel-Version: 1.0\nGenerator: test\n"
+                             "Root-Is-Purelib: true\nTag: py3-none-any\n")
+        return path
+
+    def test_a_folded_field_does_not_hide_the_following_headers(self):
+        path = self._wheel_with_folded_license()
+        self.assertEqual(closure.local_wheel_requirements(path, target="win_amd64-cp312"),
+                         ["colorama>=0.4.6"])
+        self.assertEqual(closure.wheel_metadata(path)["name"], "folded")
+        self.assertEqual(closure.wheel_metadata(path)["version"], "1.0.0")
+
+    def test_vcs_pins_are_read_from_the_requirements_file(self):
+        requirements = self.root / "requirements-hardware.txt"
+        requirements.write_text(
+            "# reviewed external driver\n"
+            "VotschTechnikClimateChamber @ git+https://example.invalid/driver.git@"
+            "b56cfbd54570e66cddf83106505487d3b19d9677\n"
+            "nicegui==3.18.0\n",
+            encoding="utf-8")
+        pins = closure.vcs_pins(requirements)
+        self.assertEqual(len(pins), 1)
+        name, url, commit = pins[0]
+        self.assertEqual(name, "VotschTechnikClimateChamber")
+        self.assertEqual(url, "git+https://example.invalid/driver.git")
+        self.assertEqual(commit, "b56cfbd54570e66cddf83106505487d3b19d9677")
+
+    def test_an_unreadable_vcs_pin_is_refused(self):
+        requirements = self.root / "requirements-bad.txt"
+        requirements.write_text("driver @ git+https://example.invalid/driver.git\n",
+                                encoding="utf-8")
+        with self.assertRaisesRegex(closure.ClosureError, "unreadable VCS pin"):
+            closure.vcs_pins(requirements)
 
 
 class ClosureSbomTests(unittest.TestCase):

@@ -100,6 +100,15 @@
       "version": "8.5.0"
     },
     {
+      "filename": "colorama-0.4.6-py2.py3-none-any.whl",
+      "license": "NOASSERTION",
+      "name": "colorama",
+      "requires_python": "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,!=3.6.*,>=2.7",
+      "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6",
+      "url": "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl",
+      "version": "0.4.6"
+    },
+    {
       "filename": "docutils-0.23-py3-none-any.whl",
       "license": "NOASSERTION",
       "name": "docutils",
@@ -431,6 +440,15 @@
       "sha256": "7d575b54cb3863ef9bc290ea4b009999d55dc237326131e4853cf33e888fee03",
       "url": "https://files.pythonhosted.org/packages/bb/cc/51a7b4abf4ac593b8e7eb3794b28e5a35ae26eed8bc04787628d215af82f/yarl-1.25.1-cp312-cp312-win_amd64.whl",
       "version": "1.25.1"
+    },
+    {
+      "filename": "votschtechnikclimatechamber-0.2.0-py3-none-any.whl",
+      "license": "MIT License",
+      "name": "VotschTechnikClimateChamber",
+      "requires_python": ">=3.7",
+      "sha256": "13b411742015097ed94e8f41eb21be52c119f02201972214fbf386df1606e26e",
+      "url": "git+https://github.com/ami3go/VotschTechnik-climate-chamber-Python.git@b56cfbd54570e66cddf83106505487d3b19d9677",
+      "version": "0.2.0"
     }
   ],
   "platform": [

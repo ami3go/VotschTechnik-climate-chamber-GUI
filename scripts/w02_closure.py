@@ -39,6 +39,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -51,11 +52,49 @@ LOCK_NAME = "requirements-w02-runtime.lock"
 MANIFEST_NAME = "w02-closure-manifest.json"
 
 #: Supported closure targets. A target is
-#: ``(platform tags, python tag, interpreter platform that must build it)``.
-TARGETS: dict[str, tuple[tuple[str, ...], str, str]] = {
-    "win_amd64-cp312": (("win_amd64",), "cp312", "win32"),
-    "win_amd64-cp310": (("win_amd64",), "cp310", "win32"),
-    "linux_x86_64-cp312": (("manylinux", "linux"), "cp312", "linux"),
+#: ``(platform tags, python tag, interpreter platform, target environment)``.
+#: The environment is the one the closure's markers are evaluated against; it
+#: is never the build host's environment.
+TARGETS: dict[str, tuple[tuple[str, ...], str, str, dict[str, str]]] = {
+    "win_amd64-cp312": (("win_amd64",), "cp312", "win32", {
+        "implementation_name": "cpython",
+        "implementation_version": "3.12.0",
+        "os_name": "nt",
+        "platform_machine": "AMD64",
+        "platform_python_implementation": "CPython",
+        "platform_release": "",
+        "platform_system": "Windows",
+        "platform_version": "",
+        "python_full_version": "3.12.0",
+        "python_version": "3.12",
+        "sys_platform": "win32",
+    }),
+    "win_amd64-cp310": (("win_amd64",), "cp310", "win32", {
+        "implementation_name": "cpython",
+        "implementation_version": "3.10.0",
+        "os_name": "nt",
+        "platform_machine": "AMD64",
+        "platform_python_implementation": "CPython",
+        "platform_release": "",
+        "platform_system": "Windows",
+        "platform_version": "",
+        "python_full_version": "3.10.0",
+        "python_version": "3.10",
+        "sys_platform": "win32",
+    }),
+    "linux_x86_64-cp312": (("manylinux", "linux"), "cp312", "linux", {
+        "implementation_name": "cpython",
+        "implementation_version": "3.12.0",
+        "os_name": "posix",
+        "platform_machine": "x86_64",
+        "platform_python_implementation": "CPython",
+        "platform_release": "",
+        "platform_system": "Linux",
+        "platform_version": "",
+        "python_full_version": "3.12.0",
+        "python_version": "3.12",
+        "sys_platform": "linux",
+    }),
 }
 
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -189,22 +228,31 @@ def parse_lock(text: str) -> list[tuple[str, str, str]]:
 # Wheel handling
 # --------------------------------------------------------------------------
 
-def wheel_metadata(path: Path) -> dict[str, str]:
-    """Read the core metadata of a wheel without installing it."""
+def wheel_metadata_text(path: Path) -> str:
+    """The raw core metadata of a wheel, without installing it."""
     with zipfile.ZipFile(path) as archive:
         names = [name for name in archive.namelist()
                  if name.endswith(".dist-info/METADATA")]
         if len(names) != 1:
             raise ClosureError("wheel has no unique .dist-info/METADATA: " + path.name)
         with archive.open(names[0]) as handle:
-            payload = handle.read().decode("utf-8", "replace")
+            return handle.read().decode("utf-8", "replace")
+
+
+def wheel_metadata(path: Path) -> dict[str, str]:
+    """Read the core metadata of a wheel without installing it.
+
+    The headers end at the first *empty* line; a whitespace-only line is a
+    folded continuation of the previous field, so a folded license text does
+    not hide the fields that follow it.
+    """
     fields: dict[str, str] = {}
-    for line in payload.splitlines():
-        if not line.strip():
-            break  # headers end at the first blank line
+    for line in wheel_metadata_text(path).splitlines():
+        if not line:
+            break  # headers end at the first empty line
         if ":" in line:
             key, _, value = line.partition(":")
-            fields[key.strip().lower()] = value.strip()
+            fields.setdefault(key.strip().lower(), value.strip())
     return fields
 
 
@@ -265,6 +313,13 @@ def require_native_target(target: str, *, host_platform: str | None = None) -> N
         raise ClosureError(
             "the closure must be resolved natively on the target platform; "
             f"this host is {host}, not {native}")
+
+
+def target_environment(target: str) -> dict[str, str]:
+    """The environment the closure's markers are evaluated against."""
+    if target not in TARGETS:
+        raise ClosureError("unsupported target: " + target)
+    return dict(TARGETS[target][3])
 
 
 def check_wheel_platform(filename: str, *, platform_tags: tuple[str, ...],
@@ -363,6 +418,117 @@ def verify_wheelhouse(entries: list[tuple[str, str, str]], wheelhouse: Path, *,
             f"missing={missing} unexpected={extra} damaged={damaged}")
 
 
+# --------------------------------------------------------------------------
+# Closure completeness
+# --------------------------------------------------------------------------
+
+def _requirement_fields(metadata_text: str) -> list[str]:
+    """The ``Requires-Dist`` values of a wheel's core metadata.
+
+    The headers end at the first *empty* line. A line that only holds
+    whitespace is a folded continuation of the previous field (a license
+    text, for example) and must not be mistaken for the end of the headers.
+    """
+    fields: list[str] = []
+    for line in metadata_text.splitlines():
+        if not line:
+            break  # the metadata headers end at the first empty line
+        if line.lower().startswith("requires-dist:"):
+            fields.append(line.split(":", 1)[1].strip())
+    return fields
+
+
+def _marker_applies(marker: object, environment: dict[str, str],
+                    extra: str) -> bool:
+    """Evaluate a requirement marker against the target environment."""
+    from packaging.markers import Marker
+    if marker is None:
+        return True
+    if isinstance(marker, str):
+        if not marker.strip():
+            return True
+        parsed = Marker(marker)
+    else:
+        parsed = marker
+    context = dict(environment)
+    context["extra"] = extra
+    return bool(parsed.evaluate(context))
+
+
+def closure_dependencies(artifacts: list[Artifact], wheelhouse: Path, *,
+                         target: str) -> dict[str, list[tuple[object, str]]]:
+    """Map each closure member to the requirements it actually imposes.
+
+    Returns ``{distribution: [(requirement, dependent)]}`` for the
+    requirements that apply to the *target* environment, including the
+    dependencies behind the extras other members request.
+    """
+    from packaging.requirements import Requirement
+
+    environment = target_environment(target)
+    members = {_normalise(artifact.name): artifact for artifact in artifacts}
+    # Which extras does each member need? A member's extra dependencies are
+    # only real when somebody asks for that extra.
+    wanted_extras: dict[str, set[str]] = {key: set() for key in members}
+    for artifact in artifacts:
+        metadata = wheel_metadata_text(wheelhouse / artifact.filename)
+        for raw in _requirement_fields(metadata):
+            requirement = Requirement(raw)
+            owner = _normalise(requirement.name)
+            if owner in members:
+                wanted_extras[owner].update(requirement.extras)
+    dependencies: dict[str, list[tuple[object, str]]] = {}
+    for artifact in artifacts:
+        key = _normalise(artifact.name)
+        metadata = wheel_metadata_text(wheelhouse / artifact.filename)
+        applied: list[tuple[object, str]] = []
+        for raw in _requirement_fields(metadata):
+            requirement = Requirement(raw)
+            candidates = sorted(wanted_extras.get(key, set())) + [""]
+            if not any(_marker_applies(requirement.marker, environment, extra)
+                       for extra in candidates):
+                continue
+            applied.append((requirement, artifact.name))
+        dependencies[artifact.name] = applied
+    return dependencies
+
+
+def verify_closure_complete(artifacts: list[Artifact], wheelhouse: Path, *,
+                             target: str) -> None:
+    """Fail closed unless every requirement of the closure is inside it.
+
+    pip resolves the *index* closure correctly, but a vendored wheel that is
+    added afterwards carries its own requirements. A closure that misses one
+    of them installs on a connected machine and fails on a disconnected one.
+    This check is what makes the word "complete" mean something.
+    """
+    from packaging.utils import canonicalize_name
+
+    members = {canonicalize_name(artifact.name): artifact for artifact in artifacts}
+    missing: list[str] = []
+    unsatisfied: list[str] = []
+    for _dependent, applied in closure_dependencies(
+            artifacts, wheelhouse, target=target).items():
+        for requirement, dependent in applied:
+            key = canonicalize_name(requirement.name)
+            member = members.get(key)
+            if member is None:
+                missing.append(f"{dependent} requires {requirement.name}")
+                continue
+            if requirement.specifier and not requirement.specifier.contains(
+                    member.version, prereleases=True):
+                unsatisfied.append(
+                    f"{dependent} requires {requirement.name}"
+                    f"{requirement.specifier} but the closure has {member.version}")
+    if missing:
+        raise ClosureError(
+            "the closure is incomplete: " + "; ".join(sorted(set(missing))))
+    if unsatisfied:
+        raise ClosureError(
+            "the closure does not satisfy its own requirements: "
+            + "; ".join(sorted(set(unsatisfied))))
+
+
 def verify_manifest(artifacts: list[Artifact], manifest_path: Path) -> None:
     """Check a closure manifest against the artifacts it claims to describe."""
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -455,7 +621,8 @@ def _pip_run(arguments: list[str], *, cwd: Path | None = None) -> subprocess.Com
     )
 
 
-def resolve_closure(requirements: Path, *, python_version: str) -> list[dict]:
+def resolve_closure(requirements: Path, *, python_version: str,
+                    extra_requirements: list[str] | None = None) -> list[dict]:
     """Resolve the runtime closure with pip and return the install report.
 
     Runs natively on the target interpreter: pip evaluates environment markers
@@ -464,9 +631,19 @@ def resolve_closure(requirements: Path, *, python_version: str) -> list[dict]:
     """
     with tempfile.TemporaryDirectory(prefix="w02-closure-") as scratch:
         report = Path(scratch) / "resolution.json"
+        source = requirements
+        if extra_requirements:
+            # The requirements of a vendored wheel are resolved with the rest
+            # of the closure; otherwise they would be missing from the
+            # offline installation.
+            source = Path(scratch) / "requirements.txt"
+            source.write_text(
+                requirements.read_text(encoding="utf-8")
+                + "".join("\n" + item + "\n" for item in extra_requirements),
+                encoding="utf-8")
         completed = _pip_run([
             "install", "--dry-run", "--ignore-installed", "--report", str(report),
-            "--only-binary=:all:", "--no-cache-dir", "-r", str(requirements),
+            "--only-binary=:all:", "--no-cache-dir", "-r", str(source),
         ])
         if completed.returncode != 0 or not report.exists():
             raise ClosureError(
@@ -475,8 +652,95 @@ def resolve_closure(requirements: Path, *, python_version: str) -> list[dict]:
         return json.loads(report.read_text(encoding="utf-8")).get("install", [])
 
 
+def vcs_pins(requirements: Path) -> list[tuple[str, str, str]]:
+    """Extract the ``name @ git+url@commit`` pins of a requirements file.
+
+    The external Votsch driver is not distributed on an index, so its exact
+    revision has to be read from the same pinned requirements file the
+    application uses. One pin, one source of truth.
+    """
+    pins: list[tuple[str, str, str]] = []
+    for raw in requirements.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or "@" not in line:
+            continue
+        name, _, rest = line.partition("@")
+        rest = rest.strip()
+        if not rest.startswith("git+"):
+            continue
+        url, _, commit = rest.rpartition("@")
+        if not url or not re.fullmatch(r"[0-9a-f]{7,40}", commit):
+            raise ClosureError("unreadable VCS pin: " + raw)
+        pins.append((name.strip(), url.strip(), commit))
+    return pins
+
+
+def _git(arguments: list[str], *, cwd: Path | None = None) -> str:
+    completed = subprocess.run(["git", *arguments], cwd=str(cwd) if cwd else None,
+                               capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        raise ClosureError("git " + " ".join(arguments) + " failed: "
+                           + completed.stderr.strip()[-1000:])
+    return completed.stdout.strip()
+
+
+def build_vcs_wheel(name: str, url: str, commit: str, workdir: Path) -> tuple[Path, str]:
+    """Build a pinned VCS dependency into a reproducible wheel.
+
+    The wheel is built with ``SOURCE_DATE_EPOCH`` set to the pinned commit's
+    timestamp and without build isolation, so the same pinned revision and
+    the same pinned build backend always produce the same bytes - and
+    therefore the same SHA-256 in the closure.
+    """
+    source = workdir / ("src-" + re.sub(r"[^A-Za-z0-9]+", "-", name))
+    wheels = workdir / ("wheel-" + re.sub(r"[^A-Za-z0-9]+", "-", name))
+    # pip writes VCS requirements as "git+<url>"; git itself wants the plain
+    # URL. The recorded provenance keeps the pip spelling.
+    clone_url = url[len("git+"):] if url.startswith("git+") else url
+    _git(["clone", "--quiet", "--no-checkout", clone_url, str(source)])
+    _git(["-C", str(source), "checkout", "--quiet", commit])
+    epoch = _git(["-C", str(source), "log", "-1", "--format=%ct", commit])
+    if not epoch.isdigit():
+        raise ClosureError("could not read the commit timestamp of " + commit)
+    environment = dict(os.environ)
+    environment["SOURCE_DATE_EPOCH"] = epoch
+    completed = subprocess.run(
+        [sys.executable, "-m", "pip", "wheel", "--no-deps", "--no-cache-dir",
+         "--no-build-isolation", "--wheel-dir", str(wheels), str(source)],
+        capture_output=True, text=True, check=False, env=environment)
+    produced = sorted(wheels.glob("*.whl")) if wheels.is_dir() else []
+    if completed.returncode != 0 or len(produced) != 1:
+        raise ClosureError(
+            "could not build a reproducible wheel for " + name + ": "
+            + (completed.stderr.strip()[-1500:] or "no wheel produced"))
+    return produced[0], f"{url}@{commit}"
+
+
+def local_wheel_requirements(path: Path, *, target: str) -> list[str]:
+    """The runtime requirements a vendored wheel imposes on the target.
+
+    A vendored wheel (the external Votsch driver) is not on an index, so pip
+    cannot resolve its dependencies for us. They are read from the wheel's
+    own metadata and resolved with the rest of the closure, otherwise the
+    offline installation would fail on the disconnected target.
+    """
+    from packaging.requirements import Requirement
+
+    environment = target_environment(target)
+    requirements: list[str] = []
+    for raw in _requirement_fields(wheel_metadata_text(path)):
+        requirement = Requirement(raw)
+        if not _marker_applies(requirement.marker, environment, ""):
+            continue
+        if requirement.extras:
+            raise ClosureError(
+                "a vendored wheel must not request extras: " + path.name)
+        requirements.append(str(requirement))
+    return requirements
+
+
 def download_artifacts(report: list[dict], wheelhouse: Path, *,
-                        platform_tags: tuple[str, ...], python_tag: str) -> list[Artifact]:
+                       platform_tags: tuple[str, ...], python_tag: str) -> list[Artifact]:
     """Download every resolved wheel into the wheelhouse and verify it."""
     wheelhouse.mkdir(parents=True, exist_ok=True)
     artifacts: list[Artifact] = []
@@ -510,6 +774,36 @@ def download_artifacts(report: list[dict], wheelhouse: Path, *,
             url=url,
             requires_python=str(fields.get("requires-python", "")),
             license=wheel_license(target),
+        ))
+    return artifacts
+
+
+def add_local_wheels(paths: list[Path], wheelhouse: Path, *,
+                     platform_tags: tuple[str, ...], python_tag: str,
+                     provenance: dict[str, str]) -> list[Artifact]:
+    """Copy vendored wheels into the wheelhouse and record them."""
+    artifacts: list[Artifact] = []
+    for path in paths:
+        if not path.is_file() or not path.name.endswith(".whl"):
+            raise ClosureError("a vendored artifact must be a wheel file: " + str(path))
+        check_wheel_platform(path.name, platform_tags=platform_tags,
+                             python_tag=python_tag)
+        fields = wheel_metadata(path)
+        name = str(fields.get("name", ""))
+        if not name:
+            raise ClosureError("a vendored wheel has no Name metadata: " + path.name)
+        destination = wheelhouse / path.name
+        if destination.exists():
+            raise ClosureError("duplicate vendored artifact: " + path.name)
+        shutil.copyfile(path, destination)
+        artifacts.append(Artifact(
+            name=name,
+            version=str(fields.get("version", "")),
+            filename=path.name,
+            sha256=sha256_file(destination),
+            url=provenance.get(_normalise(name), "vendored:" + path.name),
+            requires_python=str(fields.get("requires-python", "")),
+            license=wheel_license(destination),
         ))
     return artifacts
 
@@ -562,6 +856,16 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--manifest", type=Path, default=Path(MANIFEST_NAME))
     build.add_argument("--target", default="win_amd64-cp312")
     build.add_argument("--version", default="0.0.0")
+    build.add_argument("--local-wheel", action="append", default=[],
+                       help="a vendored wheel that is not on an index "
+                            "(for example the external Votsch driver)")
+    build.add_argument("--local-provenance", action="append", default=[],
+                       help="the recorded provenance of a vendored wheel, "
+                            "as 'name=reference'")
+    build.add_argument("--vcs-requirement", action="append", default=[],
+                       type=Path,
+                       help="a requirements file whose 'name @ git+url@commit' "
+                            "pins are vendored into the closure")
 
     verify = sub.add_parser("verify", help="verify a wheelhouse against a lock")
     verify.add_argument("--wheelhouse", type=Path, required=True)
@@ -587,7 +891,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "build":
         if args.target not in TARGETS:
             raise ClosureError("unsupported target: " + args.target)
-        platform_tags, python_tag, _ = TARGETS[args.target]
+        platform_tags, python_tag, _native, _environment = TARGETS[args.target]
         # The wheelhouse holds artifacts only. The lock and the manifest
         # describe the closure and must not be mixed into it, or the closure
         # verification could never match the directory exactly.
@@ -599,13 +903,46 @@ def main(argv: list[str] | None = None) -> int:
                     "the closure lock and manifest must not be written inside "
                     "the wheelhouse: " + str(described))
         require_native_target(args.target)
-        report = resolve_closure(args.requirements,
-                                  python_version=python_tag)
-        artifacts = download_artifacts(report, args.wheelhouse,
-                                       platform_tags=platform_tags,
-                                       python_tag=python_tag)
+        vendored = [Path(item) for item in args.local_wheel]
+        provenance = {}
+        for item in args.local_provenance:
+            name, _, reference = item.partition("=")
+            if not name or not reference:
+                raise ClosureError(
+                    "--local-provenance must be 'name=reference': " + item)
+            provenance[_normalise(name)] = reference
+        extra_requirements: list[str] = []
+        for path in vendored:
+            if not path.is_file() or not path.name.endswith(".whl"):
+                raise ClosureError(
+                    "a vendored artifact must be a wheel file: " + str(path))
+            check_wheel_platform(path.name, platform_tags=platform_tags,
+                                 python_tag=python_tag)
+            extra_requirements.extend(
+                local_wheel_requirements(path, target=args.target))
+        with tempfile.TemporaryDirectory(prefix="w02-vcs-") as scratch:
+            workdir = Path(scratch)
+            for source in args.vcs_requirement:
+                for name, url, commit in vcs_pins(source):
+                    wheel, reference = build_vcs_wheel(name, url, commit, workdir)
+                    check_wheel_platform(wheel.name, platform_tags=platform_tags,
+                                         python_tag=python_tag)
+                    vendored.append(wheel)
+                    provenance[_normalise(name)] = reference
+                    extra_requirements.extend(
+                        local_wheel_requirements(wheel, target=args.target))
+            report = resolve_closure(args.requirements,
+                                      python_version=python_tag,
+                                      extra_requirements=extra_requirements)
+            artifacts = download_artifacts(report, args.wheelhouse,
+                                           platform_tags=platform_tags,
+                                           python_tag=python_tag)
+            artifacts.extend(add_local_wheels(
+                vendored, args.wheelhouse, platform_tags=platform_tags,
+                python_tag=python_tag, provenance=provenance))
         if not artifacts:
             raise ClosureError("resolved closure is empty")
+        verify_closure_complete(artifacts, args.wheelhouse, target=args.target)
         requirements_hash = canonical_sha256(args.requirements)
         _write(args.lock, render_lock(artifacts, target=args.target,
                                       python_version=python_tag,
@@ -632,7 +969,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "verify":
         if args.target not in TARGETS:
             raise ClosureError("unsupported target: " + args.target)
-        platform_tags, python_tag, _ = TARGETS[args.target]
+        platform_tags, python_tag, _native, _environment = TARGETS[args.target]
         entries = parse_lock(args.lock.read_text(encoding="utf-8"))
         verify_wheelhouse(entries, args.wheelhouse, platform_tags=platform_tags,
                           python_tag=python_tag)
@@ -644,6 +981,7 @@ def main(argv: list[str] | None = None) -> int:
                 url=str(item.get("url", "")), requires_python=str(item.get("requires_python", "")),
                 license=str(item.get("license", ""))) for item in payload["artifacts"]]
             verify_manifest(artifacts, args.manifest)
+            verify_closure_complete(artifacts, args.wheelhouse, target=args.target)
         print(f"Closure verified against {args.lock}")
         return 0
 
