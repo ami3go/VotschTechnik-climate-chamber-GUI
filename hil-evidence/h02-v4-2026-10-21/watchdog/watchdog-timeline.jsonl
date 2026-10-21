@@ -1,0 +1,30 @@
+{"at_utc": "2026-10-20T15:35:20.417474+00:00", "chamber_id": "hil-votsch", "event": "HOST_START", "monotonic": 547756.745824275, "pid": 2671287, "serial_number": "58566207770010"}
+{"at_utc": "2026-10-20T15:35:20.529063+00:00", "child_pid": 2671287, "event": "CHILD_READY", "monotonic": 547756.857415929}
+{"at_utc": "2026-10-20T15:39:08.392973+00:00", "event": "RUN_ARM", "generation": 113, "monotonic": 547984.721325445, "permit_sha256": "d4855444e5111beb89cffaa0a5a34cf4a8ad1dd2faff7af846807a36225078bb", "run_id": "2bddf450-6ea8-43b4-96f8-8a6f33ee8c46"}
+{"at_utc": "2026-10-20T15:40:15.131617+00:00", "event": "STOP_REQUEST", "monotonic": 548051.459983173, "reason": "step budget moved backwards", "run_id": "2bddf450-6ea8-43b4-96f8-8a6f33ee8c46"}
+{"at_utc": "2026-10-20T15:40:15.381923+00:00", "event": "STOP_VERIFIED", "monotonic": 548051.710290442, "reason": "step budget moved backwards", "run_id": "2bddf450-6ea8-43b4-96f8-8a6f33ee8c46"}
+{"at_utc": "2026-10-20T15:44:20.603766+00:00", "event": "SUPERVISOR_LOST", "monotonic": 548296.932126101, "reason": "watchdog connection lost"}
+{"at_utc": "2026-10-20T15:44:20.604345+00:00", "event": "LATCH_SET", "monotonic": 548296.932686113, "reason": "watchdog connection lost"}
+{"at_utc": "2026-10-20T15:44:20.748099+00:00", "event": "HOST_STOP", "monotonic": 548297.076489054}
+{"at_utc": "2026-10-20T15:47:11.483513+00:00", "event": "LATCH_BLOCKED", "monotonic": 548467.811857855, "reason": "watchdog restart latch: watchdog connection lost"}
+{"at_utc": "2026-10-20T15:47:54.476698+00:00", "event": "HOST_STOP", "monotonic": 548510.805176295}
+{"at_utc": "2026-10-20T15:47:57.714777+00:00", "event": "LATCH_CLEARED", "latch": {"at_utc": "2026-10-20T15:44:20.604132+00:00", "reason": "watchdog connection lost"}, "reviewed_by": "admin"}
+{"at_utc": "2026-10-20T15:48:01.784769+00:00", "chamber_id": "hil-votsch", "event": "HOST_START", "monotonic": 548518.11311505, "pid": 2678663, "serial_number": "58566207770010"}
+{"at_utc": "2026-10-20T15:48:01.873367+00:00", "child_pid": 2678663, "event": "CHILD_READY", "monotonic": 548518.201738778}
+{"at_utc": "2026-10-20T15:49:57.977917+00:00", "event": "RUN_ARM", "generation": 120, "monotonic": 548634.306278746, "permit_sha256": "df932c6c7b7e3b504bdecf92529f56f9e205eae9fe5760cae259f2e959491e54", "run_id": "873059ab-c830-44b6-ae02-95b6f5435917"}
+{"at_utc": "2026-10-20T15:57:07.321532+00:00", "event": "STOP_REQUEST", "monotonic": 549063.649888086, "reason": "controller generation changed", "run_id": "873059ab-c830-44b6-ae02-95b6f5435917"}
+{"at_utc": "2026-10-20T15:57:07.327480+00:00", "event": "STOP_VERIFIED", "monotonic": 549063.655830089, "reason": "controller generation changed", "run_id": "873059ab-c830-44b6-ae02-95b6f5435917"}
+{"at_utc": "2026-10-20T15:59:39.159535+00:00", "event": "SUPERVISOR_LOST", "monotonic": 549215.487887702, "reason": "watchdog connection lost"}
+{"at_utc": "2026-10-20T15:59:39.160012+00:00", "event": "LATCH_SET", "monotonic": 549215.488353658, "reason": "watchdog connection lost"}
+{"at_utc": "2026-10-20T15:59:39.334356+00:00", "event": "HOST_STOP", "monotonic": 549215.662706505}
+{"at_utc": "2026-10-20T16:26:17.631798+00:00", "event": "LATCH_BLOCKED", "monotonic": 1507.752656364, "reason": "watchdog restart latch: watchdog connection lost"}
+{"at_utc": "2026-10-20T16:26:45.936118+00:00", "event": "HOST_STOP", "monotonic": 1536.056981311}
+{"at_utc": "2026-10-20T16:26:54.788338+00:00", "event": "LATCH_CLEARED", "latch": {"at_utc": "2026-10-20T15:59:39.159837+00:00", "reason": "watchdog connection lost"}, "reviewed_by": "admin"}
+{"at_utc": "2026-10-20T16:27:02.992289+00:00", "chamber_id": "hil-votsch", "event": "HOST_START", "monotonic": 1553.113146574, "pid": 40560, "serial_number": "58566207770010"}
+{"at_utc": "2026-10-20T16:27:03.084996+00:00", "child_pid": 40560, "event": "CHILD_READY", "monotonic": 1553.205874737}
+{"at_utc": "2026-10-20T16:28:08.196377+00:00", "event": "RUN_ARM", "generation": 127, "monotonic": 1618.317244293, "permit_sha256": "7cba454715083bc20e5ed4e31753ad34c797267fe41c54efac9bb61206ee5912", "run_id": "60e8f4da-ea08-4806-9c5c-1c2124f89eb0"}
+{"at_utc": "2026-10-20T16:35:02.632234+00:00", "event": "RUN_DISARM", "monotonic": 2032.753120754, "run_id": "60e8f4da-ea08-4806-9c5c-1c2124f89eb0"}
+{"at_utc": "2026-10-21T08:55:24.131280+00:00", "chamber_id": "hil-votsch", "event": "HOST_START", "monotonic": 1692.237521242, "pid": 17906, "serial_number": "58566207770010"}
+{"at_utc": "2026-10-21T08:55:24.217604+00:00", "child_pid": 17906, "event": "CHILD_READY", "monotonic": 1692.323874012}
+{"at_utc": "2026-10-21T10:41:46.976496+00:00", "event": "RUN_ARM", "generation": 130, "monotonic": 8075.082747621, "permit_sha256": "79dc3041eb6d6976abde80e3e0aebd5cf66cea5fd21d9aaffd917898da204490", "run_id": "5be68792-77f7-471b-946c-20558f1e6502"}
+{"at_utc": "2026-10-21T10:48:43.565654+00:00", "event": "RUN_DISARM", "monotonic": 8491.671911612, "run_id": "5be68792-77f7-471b-946c-20558f1e6502"}
