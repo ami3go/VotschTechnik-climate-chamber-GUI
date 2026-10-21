@@ -221,3 +221,49 @@ Hardware blockers B1/B2/B3/B4 and H2/H4/H7/H8 must not be treated as closed by s
 **Update 2026-10-18:** the H02 software foundation merged as PR #39 `1dae5ade00f67318f01c763e395f0e85f5310c6a` with all PR checks green (preflight validator and test watchdog only — no physical connection). Runtime composition (H02-B), the separate physical watchdog (H02-C) and site permits remain OPEN per [REMAINING_DEVELOPMENT_TASKS.md](REMAINING_DEVELOPMENT_TASKS.md). **GO/NO-GO unchanged: NO-GO. Hardware test result: NOT RUN.**
 
 **Update 2026-10-18 (later):** H02-B runtime composition merged (#55 `2f63d58`, #56 `4f9eaf0`, 16/16 checks green) and the current execution plan was published as PR #57 `c669f2956f2a5ddd3911f6de38b06dbb7b98b4ab`. The H02-C independent watchdog implementation (separate OS process, authenticated loopback IPC with mutually verified heartbeats, one prioritized G04 STOP request with bounded fresh STOP verification, restart latch and `scripts/h02_watchdog_reset.py` review path) merged as PR #58 `36e25a1`. Site permit signature and independent safety review remain ABSENT. **GO/NO-GO unchanged: NO-GO. Hardware test result: NOT RUN.**
+
+## Stage 2 package status — 2026-10-21
+
+Stage 2 tracker: [STAGE_2_PILOT_READINESS_PLAN.md](STAGE_2_PILOT_READINESS_PLAN.md). This
+section records Stage 2 package deliveries only. It does **not** close any
+BLOCKER/HIGH above, does not change the R01 decision (**NO-GO**) and asserts
+no physical, HIL or site-signature evidence.
+
+| Package | Status | Evidence | Remaining |
+|---|---|---|---|
+| S2-01 HIL evidence closure | **NOT DELIVERED** — needs the site authority | No signed H01 acceptance form or controlled evidence index in the repository | Site signoff and raw H01 evidence ingest |
+| S2-02 Combined regression baseline | **DELIVERED — implemented + simulation-tested** | GUI PR [#73](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/73) merged `014456b` (branch head `ea14bc7`); combined simulation job on Ubuntu 3.12 + Windows 3.10/3.12 ([main run 39678456898](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39678456898)); restored NiceGUI job on Windows 3.10/3.12 ([main run 39678457039](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39678457039)); local combined suite 536 passed / 1 skipped / 196 subtests; controlled evidence record [test-evidence/s2-02/S2_02_REPORT.md](../test-evidence/s2-02/S2_02_REPORT.md) | Independent review, S2-03/S2-04 Windows VM evidence, S2-07 physical H02 acceptance |
+| S2-03 W02 offline signed bundle | **NOT STARTED** | Existing W01/W02 foundation only | Reproducible signed offline bundle, trusted verifier, SBOM |
+| S2-04 Installation/upgrade/recovery | **NOT STARTED** | — | Clean air-gapped Win10/11 acceptance |
+| S2-05 G07 evidence and operations | **PARTIAL** — journal readers merged (#74) | GUI PR [#74](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/74) | Authorized, SHA-verified exports; corruption/ENOSPC recovery |
+| S2-06 G08 operational security acceptance | **NOT STARTED** | — | Independent deployment review |
+| S2-07 H02 physical-profile acceptance | **NOT RUN — NO-GO** | No physical H02 result in the repository | New, separately signed H02 permit; witnessed run |
+| S2-08 Pilot usability and supervised soak | **NOT STARTED** | — | Depends on S2-03/04/05/06/07 |
+| S2-09 R01 release candidate decision | **NO-GO** | — | All applicable packages |
+
+### Findings closed by S2-02
+
+- **CI was blind on `main`.** `web-gui-demo.yml` carried a literal `\n` inside a
+  YAML scalar (introduced by #62 on 2026-10-19), so the workflow produced **zero
+  jobs** on every `main` push and reported failure without testing anything.
+  Repaired in #73; the job now runs its Windows 3.10/3.12 matrix.
+- **G05 refused a legitimate operator Start (product defect).** The Start-after-STOP
+  path learned the operator-lease revision through a *best-effort, non-blocking*
+  probe intended only for the priority STOP path. When the one-second dashboard
+  refresh held the same registry lock, the probe reported "unknown", which the
+  Start path could not distinguish from "no lease held": the Start was refused
+  with `STOP recovery not verified; control remains locked` and the STOP fence
+  stayed latched, stranding the operator. Reproduced deterministically before
+  the fix; `AuthorizedChamber.ensure_manual_operator_lease_revision()` now reads
+  the revision in the same critical section as the claim. The safety envelope is
+  unchanged: the rearm still requires the exact lease revision, the caller's
+  ownership, a latched `VERIFIED_STOPPED` controller and the exact G04
+  generation, and G04 still performs its own fresh STOPPED readback.
+- **Refusals were not diagnosable.** A refused manual command reported only the
+  exception type; the bounded reason is now reported to the operator, the audit
+  trail and CI.
+
+**Boundary:** S2-02 is simulation-only. `tests/hardware/` was **NOT RUN**, no
+chamber was connected, no physical command was issued, and no device
+authorization, H02 permit, W02 release, G08 operational acceptance or Stage 3
+pilot use is granted or implied by this delivery.

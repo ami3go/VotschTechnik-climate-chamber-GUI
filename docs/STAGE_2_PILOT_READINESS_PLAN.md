@@ -1,12 +1,12 @@
 # Stage 2 — Pre-production hardening and controlled pilot readiness
 
-**Plan revision:** 1.0 (2026-10-19)  
+**Plan revision:** 1.1 (2026-10-21 — S2-02 delivered; package status added)  
 **Design stage:** **STAGE 2 ACTIVE — engineering and pilot preparation**  
 **Prior milestone:** H01 supervised manual-control HIL executed; 8/8 physical tests PASS (2026-10-19).  
 **Site acceptance:** **PENDING DOCUMENTED SIGNATURES**.  
 **H02 physical profile acceptance:** **NOT YET EVIDENCED**.  
 **R01 production release:** **NO-GO**.  
-**GUI main inspected:** `4c97cb01157c7442ef308149c8da07fc82b1b4d8` (PR #70).  
+**GUI main inspected:** `014456bfa2604e1bdf8b21207bbbe598d5ba03dc` (PR #73, S2-02 combined regression baseline).  
 **External driver inspected:** `b56cfbd54570e66cddf83106505487d3b19d9677` (driver PR #5).  
 **Scope:** one Vötsch chamber, isolated/local network, NiceGUI web UI.
 
@@ -82,6 +82,26 @@ Retain **one live physical controller** per deployment, generic Python packages 
 
 **Optional/deferred:** H03 manufacturer typed auxiliary outputs, gradients and output restoration require verified OEM capabilities, signed baseline/restoration policy and their own HIL acceptance. Do **not** make an unapproved gradient or output API a hidden prerequisite for safe temperature-only v1 operation; leave the feature unavailable. Multi-chamber remains out of scope.
 
+### Package status — 2026-10-21
+
+| Package | State | Note |
+|---|---|---|
+| S2-01 HIL evidence closure | **NOT DELIVERED** | Blocked on the site authority and the raw H01 evidence; no new physical command was issued. |
+| S2-02 Combined regression baseline | **DELIVERED — implemented + simulation-tested** | PR [#73](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/73) merged `014456b`. Added the order-independent combined simulation job (Ubuntu 3.12, Windows 3.10/3.12), committed the controlled evidence record, repaired the `web-gui-demo.yml` workflow that had produced **zero jobs on every `main` push since 2026-10-19**, and fixed a G05 defect that refused a legitimate operator Start after a verified STOP. `tests/hardware/` **NOT RUN**; no chamber connected. |
+| S2-03 W02 offline signed bundle | **NOT STARTED** | Next package on Track B; the W01/W02 foundation is unchanged. |
+| S2-04 Installation/upgrade/recovery | **NOT STARTED** | Depends on S2-03. |
+| S2-05 G07 evidence and operations | **PARTIAL** | G07 journal readers merged (#74); authorized, SHA-verified exports and corruption/ENOSPC recovery remain open. |
+| S2-06 G08 operational security acceptance | **NOT STARTED** | Independent deployment review; starts after S2-03/04 deployment evidence. |
+| S2-07 H02 physical-profile acceptance | **NOT RUN — NO-GO** | Still blocked by a separately signed H02 permit and the S2-01 site policy. |
+| S2-08 Pilot usability and supervised soak | **NOT STARTED** | Depends on S2-03/04/05/06 and S2-07. |
+| S2-09 R01 release candidate decision | **NO-GO** | Unchanged; no S2-02 result advances the release decision. |
+
+**S2-02 changed no device authorization.** The delivery is simulation-only and
+does not approve physical HIL, a W02 release, operational G08 acceptance or
+Stage 3 pilot use. Detailed status and the findings closed are recorded in the
+[readiness ledger](READINESS_FINDINGS.md#stage-2-package-status--2026-10-21) and
+in [test-evidence/s2-02/S2_02_REPORT.md](../test-evidence/s2-02/S2_02_REPORT.md).
+
 ### Parallel execution with ownership
 
 - **Track A, evidence + safety:** S2-01 → S2-07 → S2-08. Owns site evidence; real-device work stays **blocked by scoped signed authorization**.
@@ -95,7 +115,7 @@ Retain **one live physical controller** per deployment, generic Python packages 
 |---|---|---|
 | H01 signed acceptance | Named approver + operator/witness + scope, exact serial, dated raw report and deviation closure; valid site-certified temperature/STOP policy | **OPEN: user reports complete, repository signature not present** |
 | H02 if physical profiles enabled | Signed *H02-specific* site permit, exact profile digest/GUI/driver revisions, witnessed run, separate watchdog and G07 independent readback evidence | **OPEN: no physical H02 result in repository** |
-| G04/G05/G06 safe control | Simulator races and browser workflows plus approved site physical scope; no unverified/competing restart | **PARTIAL: code/CI and recorded manual HIL** |
+| G04/G05/G06 safe control | Simulator races and browser workflows plus approved site physical scope; no unverified/competing restart | **PARTIAL: code/CI and recorded manual HIL** — S2-02 added the combined simulation baseline and closed a G05 refusal of an operator Start after a verified STOP; the approved *site physical scope* is still absent |
 | G07 evidence and recovery | Storage/readback/audit/export integrity, crash/restart evidence on target Windows storage | **OPEN** |
 | G08 local/LAN operations | Site-reviewed security profile, bounded network exposure, credential handling, ACL, independent review | **OPEN** |
 | W02 delivery | Reproducible signed offline bundle, trusted verifier, Win10/11 clean-airgap deployment and rollback | **OPEN** |
