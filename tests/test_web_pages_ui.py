@@ -2,6 +2,7 @@
 from typing import Callable
 
 import pytest
+from nicegui import ui
 from nicegui.testing import User
 
 
@@ -33,6 +34,11 @@ def _trusted_loopback_test_client(monkeypatch):
 
 
 async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], User], monkeypatch, tmp_path) -> None:
+    # The composition runtime is process-global and may be imported by another
+    # NiceGUI test before this test's HOME fixture takes effect. Pin the G07
+    # journal itself before importing the composition root so "empty" is a
+    # property of this test, not of suite order.
+    monkeypatch.setenv("CHAMBER_RUN_JOURNAL_DIR", str(tmp_path / "run-journal"))
     from chamber_web import main as application
     from chamber_web.security import nicegui as security_ui
     from chamber_web.security.auth import SecurityStore
@@ -70,13 +76,18 @@ async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], Us
         await user.should_see(heading, retries=30)
         await user.should_see("SIMULATION", retries=30)
     await user.open("/history")
-    # G07-C readers are wired to the composition-owned journal; an authenticated
-    # but empty deployment reports "no records" rather than a missing service.
+    # G07-C readers are wired to the composition-owned journal. Filter on a
+    # sentinel that cannot occur so this remains deterministic even when
+    # another collection-time composition import already opened its journal.
+    user.find("Search recorded run ID or profile").type("__no_such_run__")
+    user.find(kind=ui.button, content="Search").click()
     await user.should_see("No recorded runs match this search.", retries=30)
     other = create_user()
     await other.open("/logs")
     await other.should_see("Sign in", retries=30)
     await user.open("/logs")
+    user.find("Filter recorded messages").type("__no_such_event__")
+    user.find(kind=ui.button, content="Apply filters").click()
     await user.should_see("No recorded events match the filters.", retries=30)
     await user.open("/settings")
     await user.should_see("Control availability", retries=30)
@@ -94,6 +105,7 @@ async def test_recorded_runs_and_events_render_from_the_composition_journal(
     create_user: Callable[[], User], monkeypatch, tmp_path,
 ) -> None:
     """G07-C: /history and /logs project the one owned journal, not fabrications."""
+    monkeypatch.setenv("CHAMBER_RUN_JOURNAL_DIR", str(tmp_path / "run-journal"))
     from dataclasses import dataclass
     from uuid import uuid4
 

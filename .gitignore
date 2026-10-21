@@ -6,6 +6,11 @@ __pycache__/
 .coverage
 *.egg-info/
 
+# S2-02 raw watchdog evidence and JUnit output stay local; the tracked record
+# is the report, runner script and hash manifest under test-evidence/.
+/test-evidence/**/watchdog-*/
+/test-evidence/**/*.xml
+
 # Editor-local configuration
 .idea/
 
