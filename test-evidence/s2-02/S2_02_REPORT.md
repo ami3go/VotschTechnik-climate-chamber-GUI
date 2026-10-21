@@ -89,6 +89,46 @@ every watchdog `result: EXITED, returncode: 0` (no timeout kills).
 > combined process: grouping re-collects parametrised UI cases. Both are zero
 > failures; the single-process figure is the one the CI job asserts.
 
+## Repaired-workflow findings (2026-10-20/21)
+
+Repairing the malformed `web-gui-demo.yml` step (finding 5 below) re-enabled a
+CI job that had produced **zero jobs on every `main` push since 2026-10-19**
+(`fb6014a` introduced a literal `\n` inside a YAML scalar). With the job
+running again, its order-sensitive NiceGUI simulations exposed one more
+defect that the combined single-process job did not.
+
+5. **`tests/test_manual_ui.py::test_dashboard_stop_without_claim_then_start_recovers_as_operator`
+   — G05 refused a legitimate operator Start (product defect, not test rot).**
+   The job failed at `tests/test_manual_ui.py:122` with the page showing
+   `REJECTED · start · C…` while the controller stayed
+   `VERIFIED_STOPPED` with the STOP fence still latched (the "Verified STOP"
+   profile hint). Diagnosis: the G05 Start path learned the operator-lease
+   revision through `AuthorizedChamber.owned_lease_revision_now()` — a
+   *best-effort, non-blocking* probe that exists so a priority STOP never
+   waits for the registry lock. The dashboard refreshes the manual view once
+   a second and reads the same registry; when that reader held the lock, the
+   probe returned "no revision", which the Start path could not distinguish
+   from "no lease held", so it refused the Start with
+   `STOP recovery not verified; control remains locked` and left the operator
+   with no way to clear the fence.
+   Reproduced deterministically: with the probe forced to report contention
+   the Start is refused with exactly the CI signature
+   (`REJECTED` / `ChamberSafetyError` / `VERIFIED_STOPPED` / `stop_latched`).
+   **Fix:** `AuthorizedChamber.ensure_manual_operator_lease_revision()` reads
+   the revision in the same critical section as the claim, so contention can
+   no longer masquerade as "not the lease owner". The rearm still requires the
+   exact lease revision, the caller's ownership, a latched `VERIFIED_STOPPED`
+   controller and the exact G04 generation, and G04 still performs its own
+   fresh STOPPED readback — the safety envelope is unchanged.
+   Regression tests: `test_contended_lease_probe_never_refuses_an_operator_start`
+   (deterministic) and
+   `test_start_after_stop_survives_a_concurrent_registry_reader` (concurrency).
+6. **Refusals were not diagnosable.** A refused manual command reported only
+   the exception *type* (`Command refused or unverified: ChamberSafetyError`)
+   to the operator, the audit trail and CI. The bounded refusal reason is now
+   included (`_bounded_reason`), so an operator sees *why* a command was
+   refused and a CI failure is self-explaining.
+
 ## Residual gaps (documented, out of S2-02 scope)
 
 - Windows/Python 3.10 legs: this baseline is Linux/3.12 only; Windows matrix is
@@ -99,6 +139,9 @@ every watchdog `result: EXITED, returncode: 0` (no timeout kills).
 - CI coverage gap: consider adding `tests/test_profile_runtime.py` (and a full
   `pytest tests/` combined job) to a workflow so local-only rot like finding 1
   cannot merge again.
+- The G05 Start-after-STOP contention window was intermittent (1 of 7 repaired
+  workflow runs). It is now closed by construction rather than by retry, and
+  the deterministic regression test replaces the need to catch it by luck.
 
 ## Evidence index
 

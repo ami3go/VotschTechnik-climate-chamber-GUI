@@ -1,10 +1,38 @@
 """G05 NiceGUI event integration, browser refresh and read-only viewer smoke."""
 from __future__ import annotations
 
+import asyncio
 from typing import Callable
 
 import pytest
-from nicegui.testing import User
+from nicegui import ui
+from nicegui.testing import User, UserInteraction
+
+
+def _button(user: User, label: str):
+    """The single button whose visible text is exactly the given label."""
+    matches = [element for element in user.find(ui.button).elements
+               if element.text == label]
+    assert len(matches) == 1, (
+        f"expected exactly one {label!r} button, found {len(matches)}")
+    return matches[0]
+
+
+async def _click_when_enabled(user: User, label: str, *, retries: int = 100) -> None:
+    """Click one exact control only once the UI has enabled it.
+
+    A disabled NiceGUI button silently drops the click, so clicking before
+    the page refreshed would let the test pass without exercising the action
+    (a retained outcome line could then satisfy ``should_see``). Click the
+    exact control, never a similarly named one such as "Stop Run".
+    """
+    for _ in range(retries):
+        button = _button(user, label)
+        if button.enabled:
+            UserInteraction(user, {button}, label).click()
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"{label!r} never became enabled")
 
 
 @pytest.fixture(autouse=True)
@@ -63,13 +91,13 @@ async def test_manual_dashboard_two_browsers_and_authorized_stop(
     # A fresh browser page must dispatch as the currently authenticated
     # operator. The lease owner can STOP and then START again without admin
     # reconciliation; STOP itself never requires passing the G04 token.
-    first.find("Start").click()
+    await _click_when_enabled(first, "Start")
     await first.should_see("CONFIRMED · start", retries=60)
-    first.find("Stop").click()
+    await _click_when_enabled(first, "Stop")
     await first.should_see("STOP verified; controls ready", retries=60)
-    first.find("Start").click()
+    await _click_when_enabled(first, "Start")
     await first.should_see("CONFIRMED · start", retries=60)
-    first.find("Stop").click()
+    await _click_when_enabled(first, "Stop")
     await first.should_see("STOP verified; controls ready", retries=60)
     await first.open("/admin")
     await first.should_see("fence clear", retries=40)
@@ -116,13 +144,13 @@ async def test_dashboard_stop_without_claim_then_start_recovers_as_operator(
 
     # STOP does not require a lease. The next START must independently recheck
     # fresh STOPPED readback and claim the free lease before issuing START.
-    browser.find("Stop").click()
+    await _click_when_enabled(browser, "Stop")
     await browser.should_see("CONFIRMED · stop", retries=60)
-    browser.find("Start").click()
+    await _click_when_enabled(browser, "Start")
     await browser.should_see("CONFIRMED · start", retries=60)
-    browser.find("Stop").click()
+    await _click_when_enabled(browser, "Stop")
     await browser.should_see("STOP verified; controls ready", retries=60)
-    browser.find("Start").click()
+    await _click_when_enabled(browser, "Start")
     await browser.should_see("CONFIRMED · start", retries=60)
     assert application._manual_service.view(
         security.login("operator_1", "StrongOperatorPassword#2").session,

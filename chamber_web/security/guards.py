@@ -148,18 +148,36 @@ class AuthorizedChamber:
         The registry lock serializes competing browser claims; G04 remains the
         final authority, including when a profile owns the controller.
         """
+        self.ensure_manual_operator_lease_revision(session, csrf, chamber_id)
+
+    def ensure_manual_operator_lease_revision(
+        self, session: str | None, csrf: str | None, chamber_id: str,
+    ) -> int:
+        """Acquire a free manual lease and return its registry revision.
+
+        The revision is read inside the same critical section as the claim, so
+        a concurrent reader (for example the one-second dashboard refresh)
+        can never make an *owned* lease look unowned. The previous design used
+        a separate best-effort, non-blocking probe that was only ever safe on
+        the priority STOP path; on a Start path its contention was
+        indistinguishable from "no lease held" and refused a legitimate
+        operator Start while the STOP fence stayed latched.
+
+        Returns the current registry revision of the lease the caller holds.
+        """
         actor = self.authorize(
             session, csrf, Permission.CHAMBER_CONTROL, chamber_id=chamber_id)
         self._manager.get(chamber_id)
         with self._token_lock:
             if actor.user_id in self._token_owner.values():
-                return
+                return self._token_revision
             if self._token_owner:
                 raise AuthorizationError("Another operator owns chamber control")
             # execute() audits INTENT/SUCCESS and registers the opaque token.
             # The reentrant lock makes the check/claim/update atomic for manual
             # browser requests while G04 blocks a parallel G06 owner.
             self.execute(session, csrf, chamber_id, "claim_operator")
+            return self._token_revision
 
     def release_stopped_manual_lease_for_profile(
         self, session: str | None, csrf: str | None, chamber_id: str,
