@@ -3,3 +3,7 @@ cryptography==46.0.2
 # Requirement and marker parsing for the W02 air-gap dependency closure
 # (scripts/w02_closure.py). Build-host only, never shipped.
 packaging==26.3
+# The pinned build backend for a vendored wheel. The wheel is built without
+# build isolation, so this pin is what makes the vendored wheel
+# byte-reproducible and therefore hash-lockable.
+setuptools==84.2.1
