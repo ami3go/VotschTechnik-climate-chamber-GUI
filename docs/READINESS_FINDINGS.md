@@ -233,7 +233,7 @@ no physical, HIL or site-signature evidence.
 |---|---|---|---|
 | S2-01 HIL evidence closure | **NOT DELIVERED** — needs the site authority | No signed H01 acceptance form or controlled evidence index in the repository | Site signoff and raw H01 evidence ingest |
 | S2-02 Combined regression baseline | **DELIVERED — implemented + simulation-tested** | GUI PR [#73](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/73) merged `014456b` (branch head `ea14bc7`); combined simulation job on Ubuntu 3.12 + Windows 3.10/3.12 ([main run 39678456898](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39678456898)); restored NiceGUI job on Windows 3.10/3.12 ([main run 39678457039](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39678457039)); local combined suite 536 passed / 1 skipped / 196 subtests; controlled evidence record [test-evidence/s2-02/S2_02_REPORT.md](../test-evidence/s2-02/S2_02_REPORT.md) | Independent review, S2-03/S2-04 Windows VM evidence, S2-07 physical H02 acceptance |
-| S2-03 W02 offline signed bundle | **NOT STARTED** | Existing W01/W02 foundation only | Reproducible signed offline bundle, trusted verifier, SBOM |
+| S2-03 W02 offline signed bundle | **PARTIAL — air-gap dependency closure delivered** | GUI PR [#77](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/77) merged `bcdade3`: `requirements-w02-runtime.lock` (48 win_amd64/cp312 distributions, each pinned and hashed), `w02-closure-manifest.json`, the runtime CycloneDX SBOM derived from that closure, and a Windows CI job that reproduces the closure and installs it with `--no-index --require-hashes` ([closure job on PR](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39684390357)); continuous gate on `main` added by PR [#78](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/78) | Vendored Vötsch driver wheel with its own recorded hash; signed artifact with a site publisher key; license approval (every row still `REVIEW_REQUIRED`); unattested build provenance; the frozen Windows package itself; the disconnected clean-Windows 10/11 acceptance (S2-04) |
 | S2-04 Installation/upgrade/recovery | **NOT STARTED** | — | Clean air-gapped Win10/11 acceptance |
 | S2-05 G07 evidence and operations | **PARTIAL** — journal readers merged (#74) | GUI PR [#74](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/74) | Authorized, SHA-verified exports; corruption/ENOSPC recovery |
 | S2-06 G08 operational security acceptance | **NOT STARTED** | — | Independent deployment review |
@@ -262,6 +262,38 @@ no physical, HIL or site-signature evidence.
 - **Refusals were not diagnosable.** A refused manual command reported only the
   exception type; the bounded reason is now reported to the operator, the audit
   trail and CI.
+
+### Findings closed by the S2-03 increment
+
+- **The dependency closure was not hash-locked.** The W02 bundle recorded only
+  the build host's installed packages, with every license `REVIEW_REQUIRED` and
+  the scope property `unapproved-build-environment-not-runtime-closure`. The
+  frozen Windows runtime closure is now a reviewed repository artifact:
+  `requirements-w02-runtime.lock` pins 48 `win_amd64`/CPython 3.12
+  distributions by SHA-256 in pip `--require-hashes` format, and
+  `w02-closure-manifest.json` records every artifact's digest, source URL,
+  declared license and `Requires-Python`.
+- **The runtime SBOM was a build-host inventory.** It is now derived from the
+  locked closure, so build-only tools (PyInstaller, pip, setuptools) can no
+  longer be presented as shipped components.
+- **Nothing proved an air-gap install.** `scripts/w02_closure.py` installs with
+  `pip install --no-index --find-links <wheelhouse> --require-hashes`, so a
+  damaged or missing artifact breaks the installation instead of falling back
+  to the network. The Windows CI job reproduces the committed closure from the
+  pinned requirements and installs from it, on `main` as well as on pull
+  requests.
+- **The closure's own input digest was platform-dependent.** Git checks text
+  files out with CRLF on Windows and LF elsewhere, so the raw digest of the
+  same tracked requirements file differed per platform and could never be
+  reproduced on another host. The digest is now taken over the canonical (LF)
+  line endings, and the closure artifacts are pinned to LF in `.gitattributes`.
+
+**Still open inside S2-03:** the external Vötsch driver is not a PyPI
+distribution and is not part of this closure; it must be vendored as a locally
+built wheel with its own recorded hash before an air-gap install is complete.
+The signed artifact still needs a site publisher key, every license row is
+still `REVIEW_REQUIRED`, the build provenance is still unattested, and the
+disconnected clean-Windows 10/11 acceptance is S2-04.
 
 **Boundary:** S2-02 is simulation-only. `tests/hardware/` was **NOT RUN**, no
 chamber was connected, no physical command was issued, and no device
