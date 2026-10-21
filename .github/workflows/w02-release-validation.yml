@@ -73,22 +73,22 @@ jobs:
           python -m scripts.w02_closure build
           --requirements requirements-web.txt
           --wheelhouse w02-wheelhouse
-          --lock w02-wheelhouse/built.lock
-          --manifest w02-wheelhouse/built-manifest.json
+          --lock w02-closure-build/built.lock
+          --manifest w02-closure-build/built-manifest.json
           --target win_amd64-cp312
           --version 1.0.0
       - name: Verify the freshly built wheelhouse
         run: >
           python -m scripts.w02_closure verify
           --wheelhouse w02-wheelhouse
-          --lock w02-wheelhouse/built.lock
-          --manifest w02-wheelhouse/built-manifest.json
+          --lock w02-closure-build/built.lock
+          --manifest w02-closure-build/built-manifest.json
           --target win_amd64-cp312
       - name: Prove an offline installation with no index access
         run: >
           python -m scripts.w02_closure install
           --wheelhouse w02-wheelhouse
-          --lock w02-wheelhouse/built.lock
+          --lock w02-closure-build/built.lock
           --target-dir offline-target
       - name: Reproduce the reviewed closure when it is committed
         if: hashFiles('requirements-w02-runtime.lock') != ''
@@ -108,10 +108,10 @@ jobs:
       - name: Emit the runtime SBOM and license inventory
         run: >
           python -m scripts.w02_closure sbom
-          --lock w02-wheelhouse/built.lock
-          --manifest w02-wheelhouse/built-manifest.json
-          --sbom-out w02-wheelhouse/sbom.cdx.json
-          --licenses-out w02-wheelhouse/THIRD_PARTY_LICENSES.csv
+          --lock w02-closure-build/built.lock
+          --manifest w02-closure-build/built-manifest.json
+          --sbom-out w02-closure-build/sbom.cdx.json
+          --licenses-out w02-closure-build/THIRD_PARTY_LICENSES.csv
           --target win_amd64-cp312
           --version 1.0.0
       - name: Publish the closure evidence
@@ -120,10 +120,10 @@ jobs:
         with:
           name: w02-airgap-closure-win-amd64-cp312
           path: |
-            w02-wheelhouse/built.lock
-            w02-wheelhouse/built-manifest.json
-            w02-wheelhouse/sbom.cdx.json
-            w02-wheelhouse/THIRD_PARTY_LICENSES.csv
+            w02-closure-build/built.lock
+            w02-closure-build/built-manifest.json
+            w02-closure-build/sbom.cdx.json
+            w02-closure-build/THIRD_PARTY_LICENSES.csv
           if-no-files-found: error
       - name: Report gating
         run: echo "W02 release NO-GO - the closure is software evidence only; disconnected clean-VM acceptance, a site publisher key and independent review remain required"

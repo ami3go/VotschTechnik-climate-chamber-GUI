@@ -279,6 +279,24 @@ class ClosureToolTests(unittest.TestCase):
                           "--lock", str(self.root / "lock"),
                           "--target", "linux-x86_64"])
 
+    def test_lock_inside_the_wheelhouse_is_refused(self):
+        """The wheelhouse holds artifacts only; the lock describes them."""
+        wheelhouse = self.root / "wheelhouse"
+        wheelhouse.mkdir()
+        with self.assertRaisesRegex(closure.ClosureError, "inside the wheelhouse"):
+            closure.main(["build", "--requirements", str(self.root / "req.txt"),
+                          "--wheelhouse", str(wheelhouse),
+                          "--lock", str(wheelhouse / "built.lock"),
+                          "--manifest", str(self.root / "manifest.json")])
+
+    def test_cross_platform_resolution_is_refused_before_any_download(self):
+        """A foreign platform would resolve the wrong markers; refuse it."""
+        with self.assertRaisesRegex(closure.ClosureError, "natively on the target"):
+            closure.main(["build", "--requirements", str(self.root / "req.txt"),
+                          "--wheelhouse", str(self.root / "wh"),
+                          "--lock", str(self.root / "lock"),
+                          "--manifest", str(self.root / "manifest.json")])
+
     def test_verify_rejects_a_lock_without_hashes(self):
         lock = self.root / "lock"
         lock.write_text("nicegui==3.18.0\n", encoding="utf-8")

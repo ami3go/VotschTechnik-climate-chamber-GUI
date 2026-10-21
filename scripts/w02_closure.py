@@ -552,6 +552,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.target not in TARGETS:
             raise ClosureError("unsupported target: " + args.target)
         platform_tags, python_tag = TARGETS[args.target]
+        # The wheelhouse holds artifacts only. The lock and the manifest
+        # describe the closure and must not be mixed into it, or the closure
+        # verification could never match the directory exactly.
+        wheelhouse = args.wheelhouse.resolve()
+        for described in (args.lock, args.manifest):
+            resolved = described.resolve()
+            if resolved == wheelhouse or wheelhouse in resolved.parents:
+                raise ClosureError(
+                    "the closure lock and manifest must not be written inside "
+                    "the wheelhouse: " + str(described))
         native = sys.platform == "win32" and "win_amd64" in platform_tags
         if not native:
             raise ClosureError(
