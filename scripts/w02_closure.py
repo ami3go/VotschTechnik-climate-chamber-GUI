@@ -713,7 +713,7 @@ def build_vcs_wheel(name: str, url: str, commit: str, workdir: Path) -> tuple[Pa
         raise ClosureError(
             "could not build a reproducible wheel for " + name + ": "
             + (completed.stderr.strip()[-1500:] or "no wheel produced"))
-    return produced[0], f"git+{url}@{commit}"
+    return produced[0], f"{url}@{commit}"
 
 
 def local_wheel_requirements(path: Path, *, target: str) -> list[str]:
