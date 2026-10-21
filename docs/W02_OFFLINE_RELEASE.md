@@ -83,9 +83,16 @@ downloads, verifies and installs the closure on a connected Windows runner.
 That proves the closure is complete and hash-verified; it does **not** prove
 the disconnected clean-Windows 10/11 acceptance (Stage 2 S2-04), the site
 publisher key, the signed artifact or the independent supply-chain review.
-The external Vötsch driver is not part of the PyPI closure and still has to be
-vendored as a locally built wheel on the Windows build host with its own
-recorded hash before an air-gap install can be complete.
+
+The external Vötsch driver is not an index distribution, so it is **vendored**:
+the pin is read from the same `requirements-hardware.txt` the application
+uses, the repository is cloned at that commit and the wheel is built with
+`SOURCE_DATE_EPOCH` set to the commit timestamp, with a pinned build backend
+and without build isolation. The wheel is therefore byte-reproducible on the
+build host and its SHA-256 belongs in the closure, with the recorded
+provenance `git+<url>@<commit>`. A wheel built on a different operating
+system hashes differently, which is why the closure is resolved natively on
+its target.
 
 ## Updates, backups and data safety
 
@@ -103,7 +110,7 @@ This transactional install/migration/rollback sequence is **not implemented** an
 | --- | --- | --- |
 | Code signing and closed-file inventory | **PARTIAL SOFTWARE** | Final-head 3.10/3.12 Windows unit results, independent review |
 | Connected Windows frozen x64 smoke | **EARLY W01 evidence only** | Final-head W01 job and extraction / simulator launch |
-| Complete lockfile, hashes and air-gap wheel closure | **SOFTWARE MERGED; DISCONNECTED ACCEPTANCE OPEN** | Approved wheelhouse hash lock, offline pip resolution and damaged-wheel negative tests — tooling, negative tests and the reviewed closure merged ([S2-03](#air-gap-dependency-closure-s2-03-software-increment)): `requirements-w02-runtime.lock` pins the 48 `win_amd64`/CPython 3.12 runtime distributions by SHA-256, and the Windows CI job reproduces that closure and installs it with `--no-index --require-hashes`. **Still open:** the vendored Vötsch driver wheel, the install on a clean disconnected target (Stage 2 S2-04) and the independent supply-chain review |
+| Complete lockfile, hashes and air-gap wheel closure | **SOFTWARE MERGED; DISCONNECTED ACCEPTANCE OPEN** | Approved wheelhouse hash lock, offline pip resolution and damaged-wheel negative tests — tooling, negative tests and the reviewed closure merged ([S2-03](#air-gap-dependency-closure-s2-03-software-increment)): `requirements-w02-runtime.lock` pins the **50** `win_amd64`/CPython 3.12 runtime distributions by SHA-256 — the PyPI runtime, the reproducibly built vendored Vötsch driver and the driver's own `colorama` dependency — and the Windows CI job reproduces that closure and installs it with `--no-index --require-hashes`. Every requirement of every closure member is proven to be inside the closure. **Still open:** the install on a clean disconnected target (Stage 2 S2-04) and the independent supply-chain review |
 | SBOM and license/provenance review | **RUNTIME SBOM MERGED; APPROVAL OPEN** | Reviewed runtime/component inventory with licenses, signed build provenance — the runtime SBOM is now derived from the locked closure instead of the build host, but every license row is still `REVIEW_REQUIRED` and the provenance is still unattested |
 | Independent target-side verifier with no Python | **CANDIDATE CODE / NO-GO** | Frozen tool + PowerShell 5.1 Windows CI, independently attested tool/key policy, clean offline Windows 10/11 evidence |
 | Profile/G07/G08 data migration and reversible upgrade | **NO-GO** | Atomic stage/swap, snapshot, schema and interrupted-update trials |
