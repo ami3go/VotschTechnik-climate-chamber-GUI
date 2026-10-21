@@ -45,6 +45,48 @@ powershell.exe -NoProfile -File C:\SiteTrusted\verify_w02_release.ps1 `
 
 The independently provisioned verifier and PowerShell 5.1 wrapper require **exact Windows CI proof and separate clean disconnected Windows 10/11 testing**, controlled signing/Authenticode or protected digest attestation, site trust-key management, permissions review and security approval. Until then the release gate **remains fail-closed / NO-GO**. Signed production W02 artifacts have **not** been generated with a site-approved key.
 
+## Air-gap dependency closure (S2-03 software increment)
+
+`scripts/w02_closure.py` produces and verifies the **complete transitive dependency
+closure** of the frozen Windows runtime: every wheel pinned by SHA-256, resolved
+natively on the target platform, installable with no index access.
+
+| Command | Purpose |
+|---|---|
+| `python -m scripts.w02_closure build` | Resolve the closure with pip, download every wheel into a wheelhouse, verify each SHA-256 and write `requirements-w02-runtime.lock` + `w02-closure-manifest.json` |
+| `python -m scripts.w02_closure verify` | Fail closed unless the wheelhouse is *exactly* the locked closure: a damaged, missing or extra artifact is a refusal |
+| `python -m scripts.w02_closure install` | Prove the offline installation with `pip install --no-index --find-links <wheelhouse> --require-hashes` |
+| `python -m scripts.w02_closure sbom` | Emit the **runtime** CycloneDX SBOM and license inventory from the closure |
+
+Rules the tool enforces, each of which closes a specific way a previous
+release could have been wrong:
+
+- **Resolution happens natively on the target.** `pip --platform` evaluates
+  environment markers against the *build* interpreter, which silently produces
+  a wrong closure on Windows (a Linux-only `uvloop` dependency). A wrong
+  closure is worse than none, so a foreign-platform resolution is refused.
+- **Wheels only.** An sdist would need a compiler on the target and cannot be
+  hash-verified after a build.
+- **Every entry is pinned and hashed.** An unhashed entry is refused; the lock
+  is pip `--require-hashes` compatible so the same file proves the install.
+- **The runtime SBOM comes from the closure**, not from the build environment.
+  A build host contains build-only tools (PyInstaller, pip, setuptools) that
+  are not shipped; the previous `sbom.cdx.json` was exactly such an inventory
+  and is marked `unapproved-build-environment-not-runtime-closure`.
+- **No license is self-approved.** Every row of the license inventory stays
+  `REVIEW_REQUIRED`; only a qualified reviewer and the site release register
+  can approve redistribution.
+
+**This is connected-build-host software evidence, not certification.** The
+Windows CI job (`airgap-closure` in `w02-release-validation.yml`) resolves,
+downloads, verifies and installs the closure on a connected Windows runner.
+That proves the closure is complete and hash-verified; it does **not** prove
+the disconnected clean-Windows 10/11 acceptance (Stage 2 S2-04), the site
+publisher key, the signed artifact or the independent supply-chain review.
+The external Vötsch driver is not part of the PyPI closure and still has to be
+vendored as a locally built wheel on the Windows build host with its own
+recorded hash before an air-gap install can be complete.
+
 ## Updates, backups and data safety
 
 `python -m scripts.w02_release --stage-update --bundle OLD --candidate NEW --backup PREVIOUS --public-key C:\SiteTrusted\w02-publisher.pem` verifies both software trees, refuses same-core/same-version and downgrades, rejects aliasing/overlapping staging directories and creates a verified copy of OLD using `PREVIOUS.pending` followed by rename. It does **not** replace binaries, stop processes, migrate SQLite or back up user data; do not mistake this for an installed/atomic updater.
@@ -61,8 +103,8 @@ This transactional install/migration/rollback sequence is **not implemented** an
 | --- | --- | --- |
 | Code signing and closed-file inventory | **PARTIAL SOFTWARE** | Final-head 3.10/3.12 Windows unit results, independent review |
 | Connected Windows frozen x64 smoke | **EARLY W01 evidence only** | Final-head W01 job and extraction / simulator launch |
-| Complete lockfile, hashes and air-gap wheel closure | **NO-GO** | Approved wheelhouse hash lock, offline pip resolution and damaged-wheel negative tests |
-| SBOM and license/provenance review | **PROVISIONAL FILES ONLY** | Reviewed runtime/component inventory with licenses, signed build provenance |
+| Complete lockfile, hashes and air-gap wheel closure | **SOFTWARE TOOLING MERGED; WINDOWS CLOSURE ARTIFACT PENDING REVIEW** | Approved wheelhouse hash lock, offline pip resolution and damaged-wheel negative tests — tooling and negative tests merged ([S2-03](#air-gap-dependency-closure-s2-03-software-increment)); the generated Windows closure still has to be reviewed and committed, and the disconnected install still has to be proven on a clean target |
+| SBOM and license/provenance review | **PROVISIONAL FILES ONLY** | Reviewed runtime/component inventory with licenses, signed build provenance — the runtime SBOM is now derived from the locked closure, but every license row is still `REVIEW_REQUIRED` and the provenance is still unattested |
 | Independent target-side verifier with no Python | **CANDIDATE CODE / NO-GO** | Frozen tool + PowerShell 5.1 Windows CI, independently attested tool/key policy, clean offline Windows 10/11 evidence |
 | Profile/G07/G08 data migration and reversible upgrade | **NO-GO** | Atomic stage/swap, snapshot, schema and interrupted-update trials |
 | Windows service/portable logoff/reboot and NTFS credentials | **NO-GO** | Clean-VM functional and security observations and site-approved policy |
