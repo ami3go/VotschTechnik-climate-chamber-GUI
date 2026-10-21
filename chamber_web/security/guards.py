@@ -240,6 +240,11 @@ class AuthorizedChamber:
 
         Never wait for an admin handover or a token-registry lock before
         dispatching STOP. Contention disables automatic rearm, not STOP.
+
+        Only the priority STOP path may use this probe: ``None`` means
+        "unknown", which is safe there (the rearm is merely skipped) but is
+        indistinguishable from "no lease held" on a Start path. A Start must
+        use ``ensure_manual_operator_lease_revision`` instead.
         """
         if not self._token_lock.acquire(blocking=False):
             return None
