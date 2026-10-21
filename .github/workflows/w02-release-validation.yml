@@ -18,6 +18,15 @@ on:
       - "requirements-w02-runtime.lock"
       - "w02-closure-manifest.json"
       - ".github/workflows/w02-release-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/w02_closure.py"
+      - "tests/test_w02_closure.py"
+      - "requirements-w02-runtime.lock"
+      - "w02-closure-manifest.json"
+      - "requirements-web.txt"
+      - ".github/workflows/w02-release-validation.yml"
   workflow_dispatch:
 jobs:
   signed-inventory:
