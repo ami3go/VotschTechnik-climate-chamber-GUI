@@ -7,7 +7,10 @@ a damaged wheel, a missing wheel and an unapproved license through the tool.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -28,22 +31,34 @@ FAKE_WHEELS = {
 def _write_wheel(path: Path, name: str, version: str, *,
                  license_name: str = "MIT", requires_python: str = ">=3.10",
                  payload: bytes = b"mock wheel") -> str:
-    """Write a minimal, well-formed wheel and return its SHA-256."""
+    """Write a minimal, well-formed wheel and return its SHA-256.
+
+    A real ``RECORD`` is included so pip can install the wheel: the offline
+    installation test installs these wheels for real.
+    """
     dist_info = f"{name.replace('-', '_')}-{version}.dist-info"
-    metadata = (
-        "Metadata-Version: 2.1\n"
-        f"Name: {name}\n"
-        f"Version: {version}\n"
-        f"License: {license_name}\n"
-        f"Requires-Python: {requires_python}\n"
-        "\n"
-    )
+    members = {
+        f"{name}/__init__.py": ("VERSION = %r\n" % version).encode("utf-8"),
+        f"{dist_info}/METADATA": (
+            "Metadata-Version: 2.1\n"
+            f"Name: {name}\n"
+            f"Version: {version}\n"
+            f"License: {license_name}\n"
+            f"Requires-Python: {requires_python}\n"
+            "\n").encode("utf-8"),
+        f"{dist_info}/WHEEL": (
+            "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: false\n"
+            "Tag: %s-%s-%s\n" % (PYTHON_TAG, PYTHON_TAG, PLATFORM)).encode("utf-8"),
+    }
+    record_lines = []
+    for member, data in sorted(members.items()):
+        digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=")
+        record_lines.append(f"{member},sha256={digest.decode()},{len(data)}")
+    record_lines.append(f"{dist_info}/RECORD,,")
+    members[f"{dist_info}/RECORD"] = ("\n".join(record_lines) + "\n").encode("utf-8")
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr(f"{name}/__init__.py", "VERSION = %r\n" % version)
-        archive.writestr(f"{dist_info}/METADATA", metadata)
-        archive.writestr(f"{dist_info}/WHEEL",
-                         "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: false\n"
-                         "Tag: %s-%s-%s\n" % (PYTHON_TAG, PYTHON_TAG, PLATFORM))
+        for member, data in members.items():
+            archive.writestr(member, data)
     return closure.sha256_file(path)
 
 
@@ -204,6 +219,41 @@ class ClosureWheelhouseTests(unittest.TestCase):
             closure.verify_manifest(self.artifacts, manifest)
 
 
+class ClosureOfflineInstallTests(unittest.TestCase):
+    """The strongest negative: an air-gap install must fail closed."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.wheelhouse = self.root / "wheelhouse"
+        self.wheelhouse.mkdir()
+        filename = "demopkg-1.0.0-py3-none-any.whl"
+        path = self.wheelhouse / filename
+        digest = _write_wheel(path, "demopkg", "1.0.0")
+        self.lock = self.root / "lock"
+        self.lock.write_text(
+            "demopkg==1.0.0 \\\n    --hash=sha256:" + digest + "\n", encoding="utf-8")
+
+    def test_offline_install_uses_only_the_wheelhouse(self):
+        target = self.root / "installed"
+        closure.install_offline(self.wheelhouse, self.lock, target)
+        self.assertTrue(any(path.name == "demopkg" for path in target.iterdir()))
+
+    def test_offline_install_refuses_a_damaged_wheel(self):
+        """A corrupted artifact must break the install, never be fetched."""
+        (self.wheelhouse / "demopkg-1.0.0-py3-none-any.whl").write_bytes(b"tampered")
+        with self.assertRaisesRegex(closure.ClosureError, "offline installation failed"):
+            closure.install_offline(self.wheelhouse, self.lock,
+                                    self.root / "installed")
+
+    def test_offline_install_refuses_an_incomplete_closure(self):
+        (self.wheelhouse / "demopkg-1.0.0-py3-none-any.whl").unlink()
+        with self.assertRaisesRegex(closure.ClosureError, "offline installation failed"):
+            closure.install_offline(self.wheelhouse, self.lock,
+                                    self.root / "installed")
+
+
 class ClosureSbomTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -269,9 +319,25 @@ class ClosureToolTests(unittest.TestCase):
 
     def test_cross_platform_resolution_is_refused(self):
         """A foreign platform would resolve the wrong markers; refuse it."""
-        with self.assertRaises(closure.ClosureError):
+        foreign = ("linux_x86_64-cp312" if sys.platform != "linux"
+                   else "win_amd64-cp312")
+        with self.assertRaisesRegex(closure.ClosureError, "natively on the target"):
             closure.main(["build", "--requirements", str(self.root / "req.txt"),
-                          "--wheelhouse", str(self.root / "wh")])
+                          "--wheelhouse", str(self.root / "wh"),
+                          "--lock", str(self.root / "lock"),
+                          "--manifest", str(self.root / "manifest.json"),
+                          "--target", foreign])
+
+    def test_native_target_rule_is_platform_independent(self):
+        """The rule itself is checked against both hosts, not this one."""
+        with self.assertRaises(closure.ClosureError):
+            closure.require_native_target("win_amd64-cp312", host_platform="linux")
+        with self.assertRaises(closure.ClosureError):
+            closure.require_native_target("linux_x86_64-cp312", host_platform="win32")
+        closure.require_native_target("win_amd64-cp312", host_platform="win32")
+        closure.require_native_target("linux_x86_64-cp312", host_platform="linux")
+        with self.assertRaises(closure.ClosureError):
+            closure.require_native_target("plan9-x86_64")
 
     def test_unknown_target_is_refused(self):
         with self.assertRaises(closure.ClosureError):
@@ -287,14 +353,6 @@ class ClosureToolTests(unittest.TestCase):
             closure.main(["build", "--requirements", str(self.root / "req.txt"),
                           "--wheelhouse", str(wheelhouse),
                           "--lock", str(wheelhouse / "built.lock"),
-                          "--manifest", str(self.root / "manifest.json")])
-
-    def test_cross_platform_resolution_is_refused_before_any_download(self):
-        """A foreign platform would resolve the wrong markers; refuse it."""
-        with self.assertRaisesRegex(closure.ClosureError, "natively on the target"):
-            closure.main(["build", "--requirements", str(self.root / "req.txt"),
-                          "--wheelhouse", str(self.root / "wh"),
-                          "--lock", str(self.root / "lock"),
                           "--manifest", str(self.root / "manifest.json")])
 
     def test_verify_rejects_a_lock_without_hashes(self):

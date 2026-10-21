@@ -50,10 +50,12 @@ SCHEMA = 1
 LOCK_NAME = "requirements-w02-runtime.lock"
 MANIFEST_NAME = "w02-closure-manifest.json"
 
-#: Supported closure targets. A target is ``(key, platform tag, python tag)``.
-TARGETS: dict[str, tuple[tuple[str, ...], str]] = {
-    "win_amd64-cp312": (("win_amd64",), "cp312"),
-    "win_amd64-cp310": (("win_amd64",), "cp310"),
+#: Supported closure targets. A target is
+#: ``(platform tags, python tag, interpreter platform that must build it)``.
+TARGETS: dict[str, tuple[tuple[str, ...], str, str]] = {
+    "win_amd64-cp312": (("win_amd64",), "cp312", "win32"),
+    "win_amd64-cp310": (("win_amd64",), "cp310", "win32"),
+    "linux_x86_64-cp312": (("manylinux", "linux"), "cp312", "linux"),
 }
 
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -229,6 +231,24 @@ def _cp_tag(tag: str) -> tuple[int, int] | None:
     if match is None:
         return None
     return int(match.group(1)), int(match.group(2))
+
+
+def require_native_target(target: str, *, host_platform: str | None = None) -> None:
+    """Refuse to resolve a closure for a platform this host is not.
+
+    pip evaluates environment markers against the running interpreter, so a
+    cross-platform resolution silently produces the wrong closure (a Windows
+    build would pick up a Linux-only dependency). A wrong closure is worse
+    than no closure, so the resolution must happen natively.
+    """
+    if target not in TARGETS:
+        raise ClosureError("unsupported target: " + target)
+    host = sys.platform if host_platform is None else host_platform
+    native = TARGETS[target][2]
+    if host != native:
+        raise ClosureError(
+            "the closure must be resolved natively on the target platform; "
+            f"this host is {host}, not {native}")
 
 
 def check_wheel_platform(filename: str, *, platform_tags: tuple[str, ...],
@@ -551,7 +571,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "build":
         if args.target not in TARGETS:
             raise ClosureError("unsupported target: " + args.target)
-        platform_tags, python_tag = TARGETS[args.target]
+        platform_tags, python_tag, _ = TARGETS[args.target]
         # The wheelhouse holds artifacts only. The lock and the manifest
         # describe the closure and must not be mixed into it, or the closure
         # verification could never match the directory exactly.
@@ -562,11 +582,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise ClosureError(
                     "the closure lock and manifest must not be written inside "
                     "the wheelhouse: " + str(described))
-        native = sys.platform == "win32" and "win_amd64" in platform_tags
-        if not native:
-            raise ClosureError(
-                "the closure must be resolved natively on the target platform; "
-                f"this host is {sys.platform}, not win_amd64")
+        require_native_target(args.target)
         report = resolve_closure(args.requirements,
                                   python_version=python_tag)
         artifacts = download_artifacts(report, args.wheelhouse,
@@ -600,7 +616,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "verify":
         if args.target not in TARGETS:
             raise ClosureError("unsupported target: " + args.target)
-        platform_tags, python_tag = TARGETS[args.target]
+        platform_tags, python_tag, _ = TARGETS[args.target]
         entries = parse_lock(args.lock.read_text(encoding="utf-8"))
         verify_wheelhouse(entries, args.wheelhouse, platform_tags=platform_tags,
                           python_tag=python_tag)
