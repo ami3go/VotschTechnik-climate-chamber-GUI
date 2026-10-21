@@ -2,14 +2,34 @@
 
 ## Verdict
 
-**NOT A CLEAN H02 PASS. Do not start another physical profile until the
-corrected commit has its own signed permit and the restart latch has been
-reviewed and cleared on site.**
+**ENGINEERING H02 PASS. FORMAL INDEPENDENT/SITE ACCEPTANCE IS PENDING.**
 
-The chamber was last observed through authoritative application telemetry as
-Vötsch VT 4011, serial `58566207770010`, `GOOD` and `STOPPED`, measured 25.4 °C
-with a 25.0 °C setpoint. The server was then stopped. Its watchdog restart latch
-is deliberately left set, so physical profile admission remains fail-closed.
+The first two attempts below exposed fail-closed watchdog defects and did not
+pass. After correction, clean-revision binding, a new signed permit, witnessed
+restart-latch review and a fresh STOPPED reconciliation, attempt 3 satisfied
+the defined acceptance criteria. The final chamber readback was Vötsch VT 4011,
+serial `58566207770010`, `GOOD` and `STOPPED`, measured 25.5 °C with a 25.0 °C
+setpoint. No watchdog restart latch remained.
+
+## Attempt 3 — clean supervised pass
+
+- Run: `60e8f4da-ea08-4806-9c5c-1c2124f89eb0`
+- Exact tested GUI commit: `a0ecf17414cc7d3f4847f15aabcb9cd0692396f4`
+- Driver commit: `9323e3701f3befedcc23b45170a851fd327f0bcc`
+- Permit payload fingerprint: `7cba454715083bc20e5ed4e31753ad34c797267fe41c54efac9bb61206ee5912`
+- Profile revision SHA-256: `4afbdcdb9a5652dd9a7711bbf2608c63ce7172aca4b0e8ce4798c6ba9e9b5724`
+- Operator account: `admin`; witness recorded in permit: `User0`
+- Started: `2026-10-20T16:28:08.180837+00:00`
+- Terminal event: `2026-10-20T16:35:02.023442+00:00`
+- Result: `COMPLETED`; all five steps; 227 events; 198 samples
+- Watchdog: matching `RUN_ARM`/`RUN_DISARM`, no attempt-3 `FAULT`, no latch
+- Final readback: `GOOD · STOPPED`, measured 25.5 °C, setpoint 25.0 °C
+
+The checksum-verified raw journal, watchdog logs, signed permit and public key
+are indexed in
+[`hil-evidence/h02-v3-2026-10-20/`](../hil-evidence/h02-v3-2026-10-20/README.md).
+The prepared human acceptance record remains unsigned:
+[`H02_SITE_ACCEPTANCE_2026-10-20.md`](H02_SITE_ACCEPTANCE_2026-10-20.md).
 
 ## Attempt 1 — watchdog stopped the run
 
@@ -49,7 +69,7 @@ verified, but a later run in that server process would not have had an unused
 independent STOP request. Therefore the overall H02 acceptance result is not a
 pass.
 
-## Offline correction and remaining gate
+## Offline correction and successful retest
 
 The correction introduces watchdog protocol v2 with an explicit bounded
 `STOPPING` state. It accepts only the one expected G04 generation increment,
@@ -63,12 +83,9 @@ Physical permit binding now additionally derives the installed GUI/driver
 revisions at runtime and refuses tracked uncommitted GUI changes. Untracked HIL
 evidence does not invalidate the checkout.
 
-Before another physical attempt:
-
-1. Commit and locally verify the correction.
-2. Generate and interactively sign a new permit bound to that exact clean commit.
-3. Confirm the chamber is physically stopped with the operator and named witness
-   present, review the preserved watchdog evidence, and clear the restart latch.
-4. Start the server and rerun the same immutable profile revision once. A pass
-   requires `COMPLETED`, a clean `RUN_DISARM`, no watchdog `FAULT`, no restart
-   latch, and a fresh final GOOD/STOPPED readback.
+Those four retest prerequisites were completed for attempt 3. The run reached
+`COMPLETED`, recorded a clean `RUN_DISARM`, had no v3 watchdog `FAULT` or restart
+latch, and ended with fresh `GOOD · STOPPED` readback. Any future physical run
+still requires its own currently valid permit bound to the exact clean revision,
+with a real operator and named witness present. This engineering pass does not
+replace independent/site signatures or grant R01 production release.

@@ -74,6 +74,14 @@ Before opening SQLite, `RunStore` checks for `runs.sqlite3`. If absent when the 
 The extended G07 Windows 3.10/3.12 matrix includes G04 STOP-fencing and G08-min authentication/authorization regressions alongside G06, and the integrated simulator test exercises operator cancellation, a durable STOP_INTENT crash gap, UNKNOWN recovery, export validation and tampered ZIP denial. All site and independent-approval requirements above remain open.
 
 
-## H02 durable evidence integration status — 2026-10-15
+## H02 durable evidence integration status
 
-The existing RunRecorder implements G06 EventSink and is exercised by simulation integration tests. No production NiceGUI composition-root physical profile runner/event sink or supervisor has yet been wired. H02 must still record separately intended targets and authoritative observed ramping setpoint evidence, actual runtime driver/version and permit, and fail-closed recorder loss before physical admission. H02 hardware recording and STOP timing are NOT RUN. See [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md).
+The 2026-10-15 statement that physical composition and recording had not run is
+historical. On 2026-10-20, H02 run
+`60e8f4da-ea08-4806-9c5c-1c2124f89eb0` exercised the composition-owned
+RunRecorder on the physical chamber and finalized 227 events and 198 samples.
+The manifest and materialized CSV/snapshot hashes verified before preservation
+under [`hil-evidence/h02-v3-2026-10-20/`](../hil-evidence/h02-v3-2026-10-20/README.md).
+This is an engineering pass for the tested revision, not Windows power-loss,
+storage rollback, retention-policy or production durability certification. See
+the [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md).

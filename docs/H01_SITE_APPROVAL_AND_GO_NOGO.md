@@ -31,4 +31,10 @@ Independent review must inspect: module import isolation (Vötsch protocol only 
 
 ## H02 physical profile authorization — independently scoped
 
-**NO-GO.** Any earlier H01 manual-control authorization is insufficient for H02 automated profile execution. H02 requires a separately signed site permit, independently reviewed watchdog and G04/G06/G07/G08 integration, approved STOP procedure, named in-person operator/witness, and additional permission for intrusive fault injection. Software CI/PR merge cannot authorize physical profiles. No H02 physical tests have run.
+Any earlier H01 manual-control authorization is insufficient for H02 automated
+profile execution. A separately permitted, witnessed H02 engineering run passed
+on 2026-10-20 with the independent watchdog and G04/G06/G07/G08 integration.
+That result authorizes no later run and does not itself provide independent/site
+acceptance. Future runs need their own signed permit, approved STOP procedure
+and named in-person operator/witness; intrusive fault injection needs additional
+permission. Software CI/PR merge cannot authorize physical profiles.
