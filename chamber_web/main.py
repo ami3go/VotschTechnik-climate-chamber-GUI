@@ -713,6 +713,40 @@ def admin_page() -> None:
         ui.notify("Administrator account renamed. Sign in again.", color="positive")
         logout()
 
+    def account_rows() -> list[dict[str, str]]:
+        session = active_tokens()[0]
+        return [{
+            "username": account.username,
+            "role": account.role.value,
+            "status": "Enabled" if account.enabled else "Disabled",
+        } for account in get_security().list_users(session)]
+
+    async def create_account() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        if account_password.value != account_password_repeat.value:
+            ui.notify("New account passwords do not match.", color="negative")
+            return
+        try:
+            session, csrf = active_tokens()
+            await asyncio.to_thread(
+                get_security().create_user, session, csrf,
+                account_username.value, account_password.value,
+                Role(account_role.value),
+            )
+            rows = await asyncio.to_thread(account_rows)
+        except (AuthenticationError, AuthorizationError, ValueError):
+            ui.notify(
+                "User creation denied. Check the username, password length, and role.",
+                color="negative",
+            )
+            return
+        account_username.value = ""
+        account_password.value = ""
+        account_password_repeat.value = ""
+        accounts_table.update_rows(rows)
+        ui.notify("User created and enabled.", color="positive")
+
     async def apply_security_profile() -> None:
         if not require_authenticated_page(touch=False):
             return
@@ -865,6 +899,47 @@ def admin_page() -> None:
                             "To change the PIN, use Enroll account PIN below. "
                             "Each credential change requires administrator authentication."
                         ).classes("text-xs")
+                    with ui.column().classes("panel gap-3"):
+                        _panel_title("group_add", "User Accounts")
+                        ui.label(
+                            "Create a separate enabled Operator or Viewer account. "
+                            "Account changes are authorized server-side and written to "
+                            "the security audit log."
+                        ).classes("text-sm")
+                        accounts_table = ui.table(
+                            columns=[
+                                {"name": "username", "label": "Username",
+                                 "field": "username", "align": "left"},
+                                {"name": "role", "label": "Role",
+                                 "field": "role", "align": "left"},
+                                {"name": "status", "label": "Status",
+                                 "field": "status", "align": "left"},
+                            ],
+                            rows=account_rows(),
+                            row_key="username",
+                        ).classes("w-full")
+                        account_username = ui.input(
+                            "New account username"
+                        ).props("autocomplete=off").classes("w-full")
+                        account_role = ui.select(
+                            {
+                                Role.OPERATOR.value: "Operator — chamber control",
+                                Role.VIEWER.value: "Viewer — read only",
+                                Role.ADMIN.value: "Administrator — full access",
+                            },
+                            value=Role.OPERATOR.value,
+                            label="New account role",
+                        ).classes("w-full")
+                        account_password = ui.input(
+                            "New account password (12+ bytes)", password=True
+                        ).props("autocomplete=new-password").classes("w-full")
+                        account_password_repeat = ui.input(
+                            "Repeat new account password", password=True
+                        ).props("autocomplete=new-password").classes("w-full")
+                        ui.button(
+                            "Create enabled user", icon="person_add",
+                            on_click=create_account,
+                        ).props("outline no-caps")
                     with ui.column().classes("panel gap-3"):
                         _panel_title("security", "Security Profiles")
                         ui.label(
