@@ -1,0 +1,33 @@
+{"t_s": 2.07, "utc": "2026-10-19T08:33:53+00:00", "event": "precheck", "serial": "58566207770010", "measured_c": 24.83, "setpoint_c": 25.0, "running": false}
+{"t_s": 2.64, "utc": "2026-10-19T08:33:54+00:00", "event": "startup_reconcile", "state": "CONFIRMED"}
+{"t_s": 2.65, "utc": "2026-10-19T08:33:54+00:00", "event": "identity", "model": "VT 4011", "serial": "58566207770010", "ramp_c_per_min": [5.0, 3.0]}
+{"t_s": 2.68, "utc": "2026-10-19T08:33:54+00:00", "event": "teardown_stop", "state": "CONFIRMED", "message": "Confirmed by authoritative physical device readback"}
+{"t_s": 3.26, "utc": "2026-10-19T08:33:54+00:00", "event": "startup_reconcile", "state": "CONFIRMED"}
+{"t_s": 8.39, "utc": "2026-10-19T08:33:59+00:00", "event": "telemetry", "max_latency_ms": 16, "measured_min": 24.86, "measured_max": 24.89}
+{"t_s": 8.42, "utc": "2026-10-19T08:34:00+00:00", "event": "teardown_stop", "state": "CONFIRMED", "message": "Confirmed by authoritative physical device readback"}
+{"t_s": 8.99, "utc": "2026-10-19T08:34:00+00:00", "event": "startup_reconcile", "state": "CONFIRMED"}
+{"t_s": 9.02, "utc": "2026-10-19T08:34:00+00:00", "event": "out_of_envelope", "target_c": 35.0, "state": "REJECTED"}
+{"t_s": 9.03, "utc": "2026-10-19T08:34:00+00:00", "event": "out_of_envelope", "target_c": 15.0, "state": "REJECTED"}
+{"t_s": 9.07, "utc": "2026-10-19T08:34:00+00:00", "event": "teardown_stop", "state": "CONFIRMED", "message": "Confirmed by authoritative physical device readback"}
+{"t_s": 9.61, "utc": "2026-10-19T08:34:01+00:00", "event": "startup_reconcile", "state": "CONFIRMED"}
+{"t_s": 9.65, "utc": "2026-10-19T08:34:01+00:00", "event": "teardown_stop", "state": "CONFIRMED", "message": "Confirmed by authoritative physical device readback"}
+{"t_s": 10.22, "utc": "2026-10-19T08:34:01+00:00", "event": "startup_reconcile", "state": "CONFIRMED"}
+{"t_s": 23.06, "utc": "2026-10-19T08:34:14+00:00", "event": "set_temperature", "target_c": 26.0, "state": "CONFIRMED", "seconds": 12.8}
+{"t_s": 44.07, "utc": "2026-10-19T08:34:35+00:00", "event": "set_temperature", "target_c": 25.0, "state": "CONFIRMED", "seconds": 21.0}
+{"t_s": 44.12, "utc": "2026-10-19T08:34:35+00:00", "event": "teardown_stop", "state": "CONFIRMED", "message": "Confirmed by authoritative physical device readback"}
+{"t_s": 44.69, "utc": "2026-10-19T08:34:36+00:00", "event": "startup_reconcile", "state": "CONFIRMED"}
+{"t_s": 58.85, "utc": "2026-10-19T08:34:50+00:00", "event": "running", "measured_c": 25.14, "setpoint_c": 26.0}
+{"t_s": 63.86, "utc": "2026-10-19T08:34:55+00:00", "event": "running", "measured_c": 25.16, "setpoint_c": 26.0}
+{"t_s": 68.88, "utc": "2026-10-19T08:35:00+00:00", "event": "running", "measured_c": 25.19, "setpoint_c": 26.0}
+{"t_s": 73.89, "utc": "2026-10-19T08:35:05+00:00", "event": "running", "measured_c": 25.28, "setpoint_c": 26.0}
+{"t_s": 79.13, "utc": "2026-10-19T08:35:10+00:00", "event": "stop", "state": "CONFIRMED"}
+{"t_s": 79.18, "utc": "2026-10-19T08:35:10+00:00", "event": "teardown_stop", "state": "CONFIRMED", "message": "Confirmed by authoritative physical device readback"}
+{"t_s": 79.75, "utc": "2026-10-19T08:35:11+00:00", "event": "startup_reconcile", "state": "CONFIRMED"}
+{"t_s": 83.04, "utc": "2026-10-19T08:35:14+00:00", "event": "stop_during_ramp", "stop": "CONFIRMED", "stop_seconds": 0.25, "set": "UNKNOWN"}
+{"t_s": 83.1, "utc": "2026-10-19T08:35:14+00:00", "event": "teardown_stop", "state": "CONFIRMED", "message": "Confirmed by authoritative physical device readback"}
+{"t_s": 109.38, "utc": "2026-10-19T08:35:40+00:00", "event": "web_running", "target_c": 26.0}
+{"t_s": 130.07, "utc": "2026-10-19T08:36:01+00:00", "event": "web_stopped"}
+{"t_s": 132.33, "utc": "2026-10-19T08:36:03+00:00", "event": "web_postcheck", "serial": "58566207770010", "measured_c": 26.51, "setpoint_c": 26.0, "running": false}
+{"t_s": 132.37, "utc": "2026-10-19T08:36:03+00:00", "event": "restored_setpoint", "setpoint_c": 25.0}
+{"t_s": 132.37, "utc": "2026-10-19T08:36:03+00:00", "event": "postcheck", "running": false, "measured_c": 26.56}
+{"t_s": 132.37, "utc": "2026-10-19T08:36:03+00:00", "event": "evidence_dir", "path": "hil-evidence"}
