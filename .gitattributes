@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# The reviewed air-gap closure is a build artifact: keep its bytes identical
+# on every checkout so its digests are reproducible.
+requirements-w02-runtime.lock text eol=lf
+w02-closure-manifest.json text eol=lf

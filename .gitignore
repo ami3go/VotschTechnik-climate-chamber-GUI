@@ -19,5 +19,13 @@ __pycache__/
 /dist/
 *.zip
 
+# W02 air-gap wheelhouse: downloaded artifacts, never source-controlled. The
+# reviewed closure is the hash-locked lock file and its manifest.
+w02-wheelhouse/
+w02-closure-build/
+/wheelhouse/
+/offline-target/
+/offline-reviewed/
+
 # Retired standalone desktop prototypes
 /Archive/
