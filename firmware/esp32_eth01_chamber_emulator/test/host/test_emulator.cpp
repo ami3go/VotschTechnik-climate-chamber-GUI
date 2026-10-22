@@ -25,6 +25,12 @@ int main() {
     assert(call(cmd("11072", "1\xB6" "3.5")) == "1\r");
     assert(call(cmd("11066", "1")) == "1\xB6" "5.000\r");
     assert(call(cmd("11070", "1")) == "1\xB6" "3.500\r");
+    assert(call(cmd("14001", "7\xB6" "1")) == "1\r");
+    assert(call(cmd("14003", "7")) == "1\xB6" "1\r");
+    assert(call(cmd("14001", "8\xB6" "1")) == "1\r");
+    assert(call(cmd("14003", "8")) == "1\xB6" "1\r");
+    assert(call(cmd("14001", "8\xB6" "0")) == "1\r");
+    assert(call(cmd("14003", "8")) == "1\xB6" "0\r");
     assert(call(cmd("14001", "1\xB6" "0")) == "1\r");
     assert(call(cmd("14003", "1")) == "1\xB6" "0\r");
     assert(call(cmd("14001", "1\xB6" "1")) == "1\r");
