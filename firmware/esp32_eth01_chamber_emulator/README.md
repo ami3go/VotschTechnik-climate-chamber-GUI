@@ -66,6 +66,25 @@ changes only thermal progression, not GUI wall-clock dwell. Current firmware
 implements basic and accelerated modes; realistic inertia/noise are future scope.
 See documentation under `docs/ESP32_ETH01_EMULATOR_*.md`.
 
+## Optional hardware check (manual opt-in only)
+
+After independently verifying the purchased board and USB-to-UART wiring,
+install the maintained external driver and `pyserial`, then run from the
+repository root on a dedicated isolated LAN with the device physically present:
+
+```shell
+ESP_EMULATOR_HARDWARE_OPT_IN=1 python scripts/h02_watchdog_command.py \\
+  --timeout-s 180 --idle-timeout-s 45 --log-dir test-evidence/esp32-emulator/hardware-watchdog -- \\
+  python firmware/esp32_eth01_chamber_emulator/test/hardware/verify_board.py \\
+  --ip 192.168.1.200 --uart-port /dev/ttyUSB0 --serial SIMESP0001 \\
+  --ack-isolated-test-lan --ack-physical-uart
+```
+
+Supply `--allow-writes` only for authorized Start/Stop cycles on the
+verified emulator, never a real chamber. On Windows use an appropriate
+`COM` port and set the environment variable in the shell first. This
+standalone test does not enable NiceGUI physical-control privileges.
+
 ## Unimplemented and provisional
 
 `GET CHAMBER STATUS` (10012) has a provisional RUNNING/STOPPED/ALARM
