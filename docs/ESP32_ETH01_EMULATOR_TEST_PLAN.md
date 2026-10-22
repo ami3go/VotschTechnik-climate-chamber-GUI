@@ -49,10 +49,14 @@ that physical STOP was confirmed. The driver must throw StopNotVerified.
 - API exchanges: existing driver has a monotonic timeout, never retries a
   possibly executed write. Reference TCP server only used on test hosts.
 
-Suggested physical opt-in runner must reject execution unless explicit
-`ESP_EMULATOR_HARDWARE_OPT_IN=1`, isolated subnet, verified device identity,
-recorded UART logs and operator present. **No physical test runner is
-automatically invoked in CI.**
+The implemented opt-in physical runner is
+`firmware/esp32_eth01_chamber_emulator/test/hardware/verify_board.py`.
+It rejects execution without `ESP_EMULATOR_HARDWARE_OPT_IN=1`, isolation
+acknowledgment, physical UART acknowledgment and matching live UART
+IP/MAC/serial against driver identity. Mutating Start/Stop checks require
+`--allow-writes`. It must be invoked under the repository H02 watchdog.
+This is test authorization for the isolated bench ONLY, never GUI attestation
+or certification. **No physical test is automatically invoked in CI.**
 
 ## Acceptance must not reinterpret test evidence
 
