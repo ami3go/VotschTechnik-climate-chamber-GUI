@@ -196,6 +196,51 @@ class W02ReleaseTests(unittest.TestCase):
         self.assertEqual(provenance["dependency_closure"], "UNVERIFIED")
         self.assertEqual(provenance["publisher_signature"], "NOT_ISSUED")
 
+    def test_the_reviewed_closure_replaces_the_build_environment_inventory(self):
+        """With a closure the reports describe the RUNTIME, not the build host.
+
+        The build environment contains build-only tools that are not shipped.
+        A bundle built from the reviewed closure must report the closure.
+        """
+        output = self.bundle.parent / "closure-supply-chain"
+        output.mkdir()
+        packages = [
+            {"name": "nicegui", "version": "3.18.0", "license": "MIT"},
+            {"name": "pyinstaller", "version": "6.16.0", "license": "GPL-2.0"},
+        ]
+        closure = {
+            "lock_sha256": "c" * 64,
+            "artifacts": [
+                {"name": "nicegui", "version": "3.18.0", "sha256": "d" * 64,
+                 "license": "MIT"},
+                {"name": "aiofiles", "version": "25.1.0", "sha256": "e" * 64,
+                 "license": "Apache-2.0"},
+            ],
+        }
+        windows_manifest.write_supply_chain_reports(
+            output, installed=packages, version="1.0.0", include_driver=False,
+            web_sha256="a" * 64, driver_sha256="b" * 64, closure=closure)
+        sbom = json.loads((output / "sbom.cdx.json").read_text(encoding="utf-8"))
+        names = {component["name"] for component in sbom["components"]}
+        # The build-only tool is not a shipped component.
+        self.assertEqual(names, {"nicegui", "aiofiles"})
+        self.assertIn("locked-runtime-closure", json.dumps(sbom))
+        self.assertNotIn("unapproved-build-environment-not-runtime-closure",
+                         json.dumps(sbom))
+        component = next(item for item in sbom["components"]
+                         if item["name"] == "aiofiles")
+        self.assertEqual(component["hashes"],
+                         [{"alg": "SHA-256", "content": "e" * 64}])
+        licenses = (output / "THIRD_PARTY_LICENSES.csv").read_text(encoding="utf-8")
+        self.assertIn("aiofiles", licenses)
+        self.assertNotIn("pyinstaller", licenses)
+        # No license is approved by this function either way.
+        self.assertEqual(licenses.count("REVIEW_REQUIRED"), 2)
+        provenance = json.loads((output / "build-provenance.json").read_text(encoding="utf-8"))
+        self.assertEqual(provenance["dependency_closure"], "VERIFIED-HASH-LOCKED")
+        self.assertEqual(provenance["dependency_closure_sha256"], "c" * 64)
+        self.assertEqual(provenance["publisher_signature"], "NOT_ISSUED")
+
 
     def test_reparse_point_flag_rejected_on_old_windows_python(self):
         # Unlike Path.is_junction(), st_file_attributes exists in Python 3.10.
