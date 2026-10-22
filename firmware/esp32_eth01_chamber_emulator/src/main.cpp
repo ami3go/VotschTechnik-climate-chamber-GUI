@@ -124,7 +124,7 @@ void handle_uart(String command) {
         }
         if (inertia) chamber.inertia_seconds = value;
         else chamber.noise_amplitude = value;
-        Serial.printf("%s=%.3f\\n", inertia ? "inertia_s" : "noise_c", value);
+        Serial.printf("%s=%.3f\n", inertia ? "inertia_s" : "noise_c", value);
     } else if (command.startsWith("speed ")) {
         String arg = command.substring(6);
         char *end = nullptr;
