@@ -173,9 +173,10 @@ def launch(*, open_browser: bool = True, check_only: bool = False,
            app_id: str = APP_ID, state_name: str = "W01",
            executable: Path | None = None, url: str | None = None,
            host: str = "127.0.0.1", command: list[str] | None = None,
-           env: dict[str, str] | None = None) -> int:
+           env: dict[str, str] | None = None,
+           default_port: int = DEFAULT_PORT) -> int:
     """Attach only after HMAC proof from this user's installed server."""
-    port = configured_port()
+    port = configured_port(default_port)
     with process_lock("launcher.lock", wait_seconds=LOCK_WAIT_SECONDS,
                       state_name=state_name):
         instance = read_instance(state_name)

@@ -220,7 +220,7 @@ def launch(*, open_browser: bool = True, check_only: bool = False) -> int:
         open_browser=open_browser, check_only=check_only, app_id=APP_ID,
         state_name=STATE_NAMESPACE, executable=executable, url=launcher_url(),
         host=os.environ.get("CHAMBER_BIND_HOST", "127.0.0.1"),
-        command=command, env=env)
+        command=command, env=env, default_port=DEFAULT_PORT)
 
 
 def launcher_main() -> int:
