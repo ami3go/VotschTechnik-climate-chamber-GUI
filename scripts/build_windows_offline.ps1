@@ -124,7 +124,7 @@ try {
         $createdStamp = $true
     }
     $serverEntry = if ($preProduction) {
-        Join-Path $repo "scripts/windows_app_server.py"
+        Join-Path $repo "scripts/preproduction_server.py"
     } else {
         Join-Path $repo "scripts/windows_server.py"
     }
@@ -149,7 +149,7 @@ try {
     Native $serverExe $testFlags
 
     # Script A is a genuinely separate maintained thin-launcher build.
-    & (Join-Path $repo "scripts/build_windows_launcher.ps1") -Clean -OutputDir $bundle -Configuration $Configuration -Version $Version -Python $Python -Entry $(if ($preProduction) { "scripts/windows_app_launcher.py" } else { "scripts/windows_launcher.py" }) -Variant $variantKey
+    & (Join-Path $repo "scripts/build_windows_launcher.ps1") -Clean -OutputDir $bundle -Configuration $Configuration -Version $Version -Python $Python -Entry $(if ($preProduction) { "scripts/preproduction_launcher.py" } else { "scripts/windows_launcher.py" }) -Variant $variantKey
     if (-not $?) { throw "Launcher build failed" }
     if ($preProduction) {
         Copy-Item (Join-Path $repo "README_PREPRODUCTION_WINDOWS.md") $bundle

@@ -133,8 +133,6 @@ def _write_instance(path: Path, identity: dict) -> None:
 
 
 def serve(*, port: int | None = None) -> int:
-    if os.name != "nt":
-        raise RuntimeError("The packaged pre-production server is Windows-only")
     _, applied = load_environment()
     if port is None:
         port = configured_port()
@@ -206,13 +204,23 @@ def launch(*, open_browser: bool = True, check_only: bool = False) -> int:
             raise RuntimeError("No default browser could be opened")
         return 0
     executable = None
+    command = None
+    env = None
+    port = configured_port()
     if getattr(sys, "frozen", False):
         executable = (Path(sys.executable).resolve().parent / "server"
                       / "ClimateChamberServer.exe")
+    elif os.name != "nt":
+        root = str(Path(__file__).resolve().parents[1])
+        existing = os.environ.get("PYTHONPATH", "")
+        command = [sys.executable, "-m", "chamber_web.desktop_runtime",
+                   "--port", str(port)]
+        env = {"PYTHONPATH": root + (os.pathsep + existing if existing else "")}
     return windows_runtime.launch(
         open_browser=open_browser, check_only=check_only, app_id=APP_ID,
         state_name=STATE_NAMESPACE, executable=executable, url=launcher_url(),
-        host=os.environ.get("CHAMBER_BIND_HOST", "127.0.0.1"))
+        host=os.environ.get("CHAMBER_BIND_HOST", "127.0.0.1"),
+        command=command, env=env)
 
 
 def launcher_main() -> int:
@@ -341,3 +349,7 @@ __all__ = [
     "launcher_main", "launcher_url", "load_environment", "parse_config",
     "self_test", "serve", "server_main",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(server_main())

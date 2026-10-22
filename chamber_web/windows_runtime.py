@@ -41,7 +41,11 @@ def state_dir(name: str = "W01") -> Path:
     else:
         root = os.environ.get("LOCALAPPDATA")
         if not root:
-            root = str(Path.home() / "AppData" / "Local")
+            if os.name == "nt":
+                root = str(Path.home() / "AppData" / "Local")
+            else:
+                root = str(Path(os.environ.get(
+                    "XDG_STATE_HOME", Path.home() / ".local" / "state")))
         result = Path(root) / "ClimateChamber" / name
     result.mkdir(parents=True, exist_ok=True)
     return result
@@ -61,14 +65,30 @@ def configured_port() -> int:
 @contextmanager
 def process_lock(name: str, *, wait_seconds: float = 0,
                  state_name: str = "W01"):
-    """Windows kernel byte-range lock (released even after abrupt process exit)."""
-    if os.name != "nt":
-        raise RuntimeError("W01 launcher is Windows-only")
-    import msvcrt  # Windows only
-
+    """Kernel lock released even after abrupt exit (Windows byte range, flock)."""
     path = state_dir(state_name) / name
     handle = open(path, "a+b")
     try:
+        if os.name != "nt":
+            import fcntl
+
+            end = time.monotonic() + wait_seconds
+            while True:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError as exc:
+                    if time.monotonic() >= end:
+                        raise RuntimeError(
+                            "A Climate Chamber process already owns " + name) from exc
+                    time.sleep(0.2)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            return
+        import msvcrt  # Windows only
+
         handle.seek(0)
         if handle.read(1) == b"":
             handle.write(b"0")
@@ -152,7 +172,8 @@ def server_executable() -> Path:
 def launch(*, open_browser: bool = True, check_only: bool = False,
            app_id: str = APP_ID, state_name: str = "W01",
            executable: Path | None = None, url: str | None = None,
-           host: str = "127.0.0.1") -> int:
+           host: str = "127.0.0.1", command: list[str] | None = None,
+           env: dict[str, str] | None = None) -> int:
     """Attach only after HMAC proof from this user's installed server."""
     port = configured_port()
     with process_lock("launcher.lock", wait_seconds=LOCK_WAIT_SECONDS,
@@ -166,15 +187,19 @@ def launch(*, open_browser: bool = True, check_only: bool = False,
                 raise RuntimeError("No authenticated Climate Chamber server is running")
             if port_occupied(port):
                 raise RuntimeError("Port is occupied by an unrecognized application: " + str(port))
-            server_exe = executable or server_executable()
-            if not server_exe.is_file():
-                raise RuntimeError("Missing bundled server: " + str(server_exe))
+            if command is None:
+                server_exe = executable or server_executable()
+                if not server_exe.is_file():
+                    raise RuntimeError("Missing bundled server: " + str(server_exe))
+                command = [str(server_exe), "--port", str(port)]
             log_path = state_dir(state_name) / "server.log"
+            child_env = dict(os.environ)
+            child_env.update(env or {})
             with open(log_path, "ab", buffering=0) as logfile:
                 proc = subprocess.Popen(
-                    [str(server_exe), "--port", str(port)],
+                    command,
                     cwd=str(state_dir(state_name)), stdin=subprocess.DEVNULL,
-                    stdout=logfile, stderr=subprocess.STDOUT,
+                    stdout=logfile, stderr=subprocess.STDOUT, env=child_env,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                     close_fds=True,
                 )

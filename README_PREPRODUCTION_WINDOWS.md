@@ -78,6 +78,23 @@ bootstrap/recovery and restore staging always require a local console. The
 backup-signing key stays in the security directory and must be escrowed
 separately. Staged restore never overwrites a live database.
 
+## Run from a source checkout (validation, not a release)
+
+The same runtime starts outside a bundle, on Windows or Linux, for local
+pre-production validation (state/logs under `%LOCALAPPDATA%` or
+`$XDG_STATE_HOME`):
+
+```
+python -m chamber_web.desktop_runtime --check-config --config chamber.env
+python -m chamber_web.desktop_runtime --self-test
+python -m chamber_web.desktop_runtime --port 8090
+```
+
+The launcher (`python -m chamber_web.desktop_runtime` via
+`scripts/preproduction_launcher.py`) spawns that server on non-Windows instead
+of a bundled `.exe`. `--self-test` refuses a dirty git tree and verifies no
+physical device can be opened.
+
 ## Build (Windows x64, Python 3.12, PowerShell 5.1+)
 
 ```

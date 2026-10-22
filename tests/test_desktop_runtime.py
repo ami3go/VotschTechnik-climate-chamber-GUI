@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import tempfile
 import threading
 import unittest
@@ -154,3 +155,18 @@ class RevisionStampTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProcessLockTests(unittest.TestCase):
+    def test_lock_is_exclusive_and_released(self):
+        from chamber_web.windows_runtime import process_lock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["CHAMBER_STATE_DIR"] = tmp
+            with process_lock("server.lock", state_name="App"):
+                with self.assertRaises(RuntimeError):
+                    with process_lock("server.lock", state_name="App",
+                                      wait_seconds=0.1):
+                        pass
+            with process_lock("server.lock", state_name="App"):
+                pass
