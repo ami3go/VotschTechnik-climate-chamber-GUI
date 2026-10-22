@@ -31,12 +31,6 @@ bool number(const std::string &text, double &value) {
 bool index(const Request &r, size_t count, const char *expected = "1") {
     return r.args.size() == count && r.args[0] == expected;
 }
-bool state_arg(const Request &r, bool &state) {
-    if (!index(r, 2)) return false;
-    if (r.args[1] == "0") { state = false; return true; }
-    if (r.args[1] == "1") { state = true; return true; }
-    return false;
-}
 } // namespace
 
 bool Chamber::set_temperature(double value) {
