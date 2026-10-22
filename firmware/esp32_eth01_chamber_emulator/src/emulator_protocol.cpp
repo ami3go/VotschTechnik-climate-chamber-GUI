@@ -134,7 +134,14 @@ std::string handle_frame(const std::string &frame, Chamber &m, const Faults &fau
             if (r.args[0] == "8") return ok(m.dryer ? "1" : "0");
             return error("INDEX");
         case 14001:
-            if (!state_arg(r, boolean)) return error("ARG");
+            // Same numeric opcode for START MANUAL_MODE (output 1) and
+            // SET DIGITAL_OUT VALUE (aux outputs 7/8). Index disambiguates.
+            if (r.args.size() != 2 ||
+                (r.args[0] != "1" && r.args[0] != "7" && r.args[0] != "8") ||
+                (r.args[1] != "0" && r.args[1] != "1")) return error("ARG");
+            boolean = r.args[1] == "1";
+            if (r.args[0] == "7") { m.compressed_air = boolean; return ok(); }
+            if (r.args[0] == "8") { m.dryer = boolean; return ok(); }
             if (!boolean && faults.sticky_stop) return ok();
             m.running = boolean;
             return ok();
