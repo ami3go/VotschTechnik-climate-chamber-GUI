@@ -135,7 +135,7 @@ def _write_instance(path: Path, identity: dict) -> None:
 def serve(*, port: int | None = None) -> int:
     _, applied = load_environment()
     if port is None:
-        port = configured_port()
+        port = configured_port(DEFAULT_PORT)
     if not 1024 <= port <= 65535:
         raise RuntimeError("Invalid server port")
     os.environ["CHAMBER_PORT"] = str(port)
@@ -182,7 +182,7 @@ def serve(*, port: int | None = None) -> int:
 
 
 def launcher_url() -> str:
-    port = configured_port()
+    port = configured_port(DEFAULT_PORT)
     origin = os.environ.get("CHAMBER_PUBLIC_ORIGIN", "").strip()
     if origin:
         return origin.rstrip("/") + "/"
@@ -206,7 +206,7 @@ def launch(*, open_browser: bool = True, check_only: bool = False) -> int:
     executable = None
     command = None
     env = None
-    port = configured_port()
+    port = configured_port(DEFAULT_PORT)
     if getattr(sys, "frozen", False):
         executable = (Path(sys.executable).resolve().parent / "server"
                       / "ClimateChamberServer.exe")

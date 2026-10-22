@@ -170,3 +170,10 @@ class ProcessLockTests(unittest.TestCase):
                 pass
             with process_lock("server.lock", state_name="App"):
                 pass
+
+    def test_preproduction_defaults_to_port_8090(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop("CHAMBER_PORT", None)
+            os.environ.pop("CHAMBER_PUBLIC_ORIGIN", None)
+            self.assertEqual(runtime.config_path().name, "chamber.env")
+            self.assertEqual(runtime.launcher_url(), "http://127.0.0.1:8090/")

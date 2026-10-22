@@ -51,8 +51,8 @@ def state_dir(name: str = "W01") -> Path:
     return result
 
 
-def configured_port() -> int:
-    raw = os.environ.get("CHAMBER_PORT", str(DEFAULT_PORT))
+def configured_port(default: int = DEFAULT_PORT) -> int:
+    raw = os.environ.get("CHAMBER_PORT", str(default))
     try:
         port = int(raw)
     except ValueError as exc:
