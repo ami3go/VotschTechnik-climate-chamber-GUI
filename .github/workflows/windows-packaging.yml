@@ -87,8 +87,12 @@ jobs:
           # contains exactly the reviewed artifacts.
           & ./scripts/build_windows_offline.ps1 -Clean -Version 0.1.0-w01-closure `
               -OutputDir "$env:RUNNER_TEMP/bundles-closure" -UseReviewedClosure
-          if (-not (Test-Path "$env:RUNNER_TEMP/bundles-closure/ClimateChamber-Web-Windows-x64-0.1.0-w01-closure-offline.zip")) { throw "Closure-built archive missing" }
-          $bundle = "$env:RUNNER_TEMP/bundles-closure/ClimateChamber-Web-Windows-x64-0.1.0-w01-closure-offline"
+          $closureZip = "$env:RUNNER_TEMP/bundles-closure/ClimateChamber-Web-Windows-x64-0.1.0-w01-closure-offline.zip"
+          if (-not (Test-Path $closureZip)) { throw "Closure-built archive missing" }
+          # The build only keeps the archive; verify the extracted bundle.
+          $closureExtract = "$env:RUNNER_TEMP/closure-extracted"
+          Expand-Archive -LiteralPath $closureZip -DestinationPath $closureExtract
+          $bundle = Join-Path $closureExtract "ClimateChamber-Web-Windows-x64-0.1.0-w01-closure-offline"
           python ./scripts/windows_manifest.py --bundle $bundle --verify
           if ($LASTEXITCODE -ne 0) { throw "Closure-built manifest verification failed" }
           $manifest = Get-Content "$bundle/build-manifest.json" -Raw | ConvertFrom-Json
