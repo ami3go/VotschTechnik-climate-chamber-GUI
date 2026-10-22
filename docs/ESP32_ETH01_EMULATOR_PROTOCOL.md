@@ -48,8 +48,8 @@ more than four arguments, invalid separator/CR, empty arguments, non-ASCII,
 oversized frames and invalid indices. Unsupported commands explicitly reject.
 
 **Missing:** program commands, message/alarm lists, most ancillary I/O,
-physical firmware captures, certified semantics for 10012. Driver method
-`dryer` and `compressed_air` setters use 14001 indexes 8/7; this
-initial emulator deliberately does NOT implement those writes because command
-14001 could alias manual mode. Must resolve with real driver/capture before
-enabling them rather than generating an unsafe success.
+physical firmware captures, certified semantics for 10012. The driver uses
+numeric command 14001 for both manual start/stop (output 1) and auxiliary
+digital writes (outputs 7/8); emulator distinguishes these by output index.
+The exact auxiliary behavior still needs actual-chamber capture before being
+considered certified.
