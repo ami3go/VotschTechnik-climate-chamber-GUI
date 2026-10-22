@@ -14,6 +14,8 @@ on:
       - "docs/W02_SECURITY_REVIEW.md"
       - "requirements-web.txt"
       - "requirements-hardware.txt"
+      - "requirements-w02-runtime.lock"
+      - "w02-closure-manifest.json"
   push:
     branches: [main]
     paths:
@@ -24,6 +26,8 @@ on:
       - ".github/workflows/windows-packaging.yml"
       - "requirements-web.txt"
       - "requirements-hardware.txt"
+      - "requirements-w02-runtime.lock"
+      - "w02-closure-manifest.json"
   workflow_dispatch:
 
 jobs:
@@ -75,6 +79,28 @@ jobs:
         run: |
           & ./scripts/build_windows_offline.ps1 -Clean -Version 0.1.0-w01 -OutputDir "$env:RUNNER_TEMP/bundles"
           if (-not (Test-Path "$env:RUNNER_TEMP/bundles/ClimateChamber-Web-Windows-x64-0.1.0-w01-offline.zip")) { throw "Offline archive missing" }
+      - name: Frozen offline ZIP built from the reviewed dependency closure
+        shell: pwsh
+        run: |
+          # The release path: the runtime is installed from the reviewed,
+          # hash-locked closure with no index access, so the frozen bundle
+          # contains exactly the reviewed artifacts.
+          & ./scripts/build_windows_offline.ps1 -Clean -Version 0.1.0-w01-closure `
+              -OutputDir "$env:RUNNER_TEMP/bundles-closure" -UseReviewedClosure
+          if (-not (Test-Path "$env:RUNNER_TEMP/bundles-closure/ClimateChamber-Web-Windows-x64-0.1.0-w01-closure-offline.zip")) { throw "Closure-built archive missing" }
+          $bundle = "$env:RUNNER_TEMP/bundles-closure/ClimateChamber-Web-Windows-x64-0.1.0-w01-closure-offline"
+          python ./scripts/windows_manifest.py --bundle $bundle --verify
+          if ($LASTEXITCODE -ne 0) { throw "Closure-built manifest verification failed" }
+          $manifest = Get-Content "$bundle/build-manifest.json" -Raw | ConvertFrom-Json
+          if ($manifest.dependency_closure -ne "VERIFIED-HASH-LOCKED") { throw "The closure-built bundle does not record a verified closure" }
+          $expected = (Get-FileHash -Algorithm SHA256 "./requirements-w02-runtime.lock").Hash.ToLowerInvariant()
+          if ($manifest.dependency_closure_sha256 -ne $expected) { throw "The recorded closure digest is not the reviewed lock" }
+          $sbom = Get-Content "$bundle/sbom.cdx.json" -Raw | ConvertFrom-Json
+          $scope = ($sbom.metadata.properties | Where-Object { $_.name -eq "w02:inventory-scope" }).value
+          if ($scope -ne "locked-runtime-closure") { throw "The bundle SBOM does not describe the runtime closure" }
+          $server = "$bundle/server/ClimateChamberServer.exe"
+          & $server --self-test --require-module VotschTechnikClimateChamber
+          if ($LASTEXITCODE -ne 0) { throw "Closure-built vendor package / adapter self-test failed" }
       - name: Extract, run, reuse, and reject foreign listener
         shell: pwsh
         run: |
