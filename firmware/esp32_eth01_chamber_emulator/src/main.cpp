@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include "emulator_protocol.h"
 
 namespace {
@@ -80,7 +81,7 @@ bool valid_ip(const String &value) {
 void handle_uart(String command) {
     command.trim();
     if (command == "help") {
-        Serial.println("status | fault clear | fault sticky_stop|drop_stop|timeout|partial|invalid_sensor|freeze|alarm|reset|off | fault delay <0..2000> | speed <0.1..100> | identity serial <alphanumeric> | net dhcp | net static <ip> <mask> <gw> <dns> | nvs reset");
+        Serial.println("status | fault clear | fault sticky_stop|drop_stop|timeout|partial|invalid_sensor|freeze|runaway_heat|runaway_cool|alarm|reset|off | fault delay <0..2000> | speed <0.1..100> | identity serial <alphanumeric> | net dhcp | net static <ip> <mask> <gw> <dns> | nvs reset");
     } else if (command == "status") {
         diagnostics();
     } else if (command == "fault clear" || command == "fault off") {
@@ -94,6 +95,8 @@ void handle_uart(String command) {
         else if (command == "fault partial") next.partial_reply = true;
         else if (command == "fault invalid_sensor") next.invalid_sensor = true;
         else if (command == "fault freeze") next.freeze_temperature = true;
+        else if (command == "fault runaway_heat") next.runaway_heat = true;
+        else if (command == "fault runaway_cool") next.runaway_cool = true;
         else if (command == "fault alarm") next.alarm = true;
         else if (command == "fault reset") next.reset_on_command = true;
         else if (command.startsWith("fault delay ")) {
@@ -104,6 +107,24 @@ void handle_uart(String command) {
         } else { Serial.println("ERR unknown fault"); return; }
         faults = next;
         Serial.printf("FAULT ENABLED: %s\n", command.c_str());
+    } else if (command == "mode basic") {
+        chamber.set_mode(emu::ThermalMode::Basic); Serial.println("thermal BASIC");
+    } else if (command == "mode realistic") {
+        chamber.set_mode(emu::ThermalMode::Realistic); Serial.println("thermal REALISTIC");
+    } else if (command == "mode accelerated") {
+        chamber.set_mode(emu::ThermalMode::Accelerated); Serial.println("thermal ACCELERATED speed=10");
+    } else if (command.startsWith("inertia ") || command.startsWith("noise ")) {
+        const bool inertia = command.startsWith("inertia ");
+        String arg = command.substring(inertia ? 8 : 6);
+        char *end = nullptr;
+        double value = std::strtod(arg.c_str(), &end);
+        if (end == arg.c_str() || *end || !std::isfinite(value) ||
+            value < (inertia ? 1.0 : 0.0) || value > (inertia ? 300.0 : 1.0)) {
+            Serial.println("ERR inertia=1..300 s; noise=0..1 C"); return;
+        }
+        if (inertia) chamber.inertia_seconds = value;
+        else chamber.noise_amplitude = value;
+        Serial.printf("%s=%.3f\\n", inertia ? "inertia_s" : "noise_c", value);
     } else if (command.startsWith("speed ")) {
         String arg = command.substring(6);
         char *end = nullptr;

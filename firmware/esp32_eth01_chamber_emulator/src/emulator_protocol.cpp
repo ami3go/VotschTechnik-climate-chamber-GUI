@@ -43,6 +43,11 @@ bool Chamber::set_gradient(bool up, double value) {
     if (up) heating = value; else cooling = value;
     return true;
 }
+void Chamber::set_mode(ThermalMode value) {
+    mode = value;
+    velocity_c_per_min = 0;
+    speed = value == ThermalMode::Accelerated ? 10.0 : 1.0;
+}
 bool Chamber::set_speed(double factor) {
     if (!std::isfinite(factor) || factor < 0.1 || factor > 100.0) return false;
     speed = factor;
@@ -50,18 +55,39 @@ bool Chamber::set_speed(double factor) {
 }
 void Chamber::advance(double dt, const Faults &faults) {
     if (!std::isfinite(dt) || dt <= 0 || dt > 3600 || faults.freeze_temperature) return;
-    double destination = target;
-    double rate = actual < target ? heating : cooling;
-    double scale = speed;
-    if (!running) {
-        if (!passive_relaxation) return;
-        destination = ambient;
-        rate = 0.2; // passive only; no active heating/cooling when STOPPED
-        scale = 1.0;
+    if (running && (faults.runaway_heat || faults.runaway_cool)) {
+        const double runaway = faults.runaway_heat ? 15.0 : -15.0;
+        actual = std::max(min_temp - 20.0, std::min(max_temp + 20.0,
+                          actual + runaway * dt / 60.0));
+    } else {
+        double destination = target;
+        double rate = actual < target ? heating : cooling;
+        double scale = speed;
+        if (!running) {
+            velocity_c_per_min = 0.0;
+            if (!passive_relaxation) return;
+            destination = ambient;
+            rate = 0.2; scale = 1.0;
+        }
+        const double sign = actual <= destination ? 1.0 : -1.0;
+        double movement = rate * scale * dt / 60.0;
+        if (mode == ThermalMode::Realistic && running) {
+            const double alpha = 1.0 - std::exp(-dt / inertia_seconds);
+            velocity_c_per_min += (sign * rate * scale - velocity_c_per_min) * alpha;
+            movement = std::max(0.0, sign * velocity_c_per_min) * dt / 60.0;
+        }
+        if (actual < destination) actual = std::min(destination, actual + movement);
+        else actual = std::max(destination, actual - movement);
+        if (actual == destination) velocity_c_per_min = 0.0;
     }
-    double movement = rate * scale * dt / 60.0;
-    if (actual < destination) actual = std::min(destination, actual + movement);
-    else actual = std::max(destination, actual - movement);
+    // Deterministic xorshift noise affects readback only, never true temperature.
+    if (noise_amplitude > 0) {
+        noise_seed ^= noise_seed << 13;
+        noise_seed ^= noise_seed >> 17;
+        noise_seed ^= noise_seed << 5;
+        noise_offset = noise_amplitude *
+            (2.0 * (double(noise_seed) / 4294967295.0) - 1.0);
+    } else noise_offset = 0;
 }
 
 bool parse_request(const std::string &frame, Request &request) {
@@ -112,7 +138,7 @@ std::string handle_frame(const std::string &frame, Chamber &m, const Faults &fau
         case 11004:
             if (!index(r, 1)) return error("INDEX");
             if (faults.invalid_sensor) return error("SENSOR_UNAVAILABLE");
-            return ok(format(m.actual));
+            return ok(format(m.actual + m.noise_offset));
         case 11001:
             if (!index(r, 2) || !number(r.args[1], value) || !m.set_temperature(value))
                 return error("RANGE");
