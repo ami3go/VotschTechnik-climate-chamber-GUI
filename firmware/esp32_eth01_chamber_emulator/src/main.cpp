@@ -60,9 +60,9 @@ void close_session(Session &s) {
 }
 
 void diagnostics() {
-    Serial.printf("ESP-EMU %s reset=%d ETH link=%u ipReady=%u IP=%s MAC=%s heap=%u RUN=%u actual=%.2f target=%.2f\n",
+    Serial.printf("ESP-EMU %s reset=%d ETH link=%u ipReady=%u IP=%s MAC=%s SN=%s heap=%u RUN=%u actual=%.2f target=%.2f\n",
         VERSION, static_cast<int>(esp_reset_reason()), unsigned(has_link), unsigned(has_ip),
-        ETH.localIP().toString().c_str(), ETH.macAddress().c_str(),
+        ETH.localIP().toString().c_str(), ETH.macAddress().c_str(), chamber.serial.c_str(),
         ESP.getFreeHeap(), unsigned(chamber.running), chamber.actual, chamber.target);
 }
 
