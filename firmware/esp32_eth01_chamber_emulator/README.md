@@ -61,10 +61,14 @@ Fault injection is volatile and disabled on every reboot. Changing network mode
 reboots STOPPED. Static settings and serial are persistent in NVS; thermal state,
 profile state and fault flags are NOT. Admin UART must not be exposed remotely.
 
-The basic temperature model advances against monotonic `millis()`; speed
-changes only thermal progression, not GUI wall-clock dwell. Current firmware
-implements basic and accelerated modes; realistic inertia/noise are future scope.
-See documentation under `docs/ESP32_ETH01_EMULATOR_*.md`.
+The temperature model advances against monotonic `millis()`; speed
+changes only thermal progression, not GUI wall-clock dwell. Firmware includes
+`mode basic` (default), `mode realistic` (lag, bounded deterministic
+measurement noise), and `mode accelerated` (10x thermal speed).
+UART `inertia N` configures 1..300 s, `noise N` configures 0..1 °C.
+`fault runaway_heat` and `fault runaway_cool` add abnormal thermal faults.
+See [thermal model](../../docs/ESP32_ETH01_EMULATOR_THERMAL.md) and documentation
+under `docs/ESP32_ETH01_EMULATOR_*.md`.
 
 ## Optional hardware check (manual opt-in only)
 
