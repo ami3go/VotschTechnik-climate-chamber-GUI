@@ -27,7 +27,7 @@ vendor error codes.
 | 14007 | GET DIGITAL_OUT NUMBER_OF | none | 8 |
 | 14010 | GET DIGITAL_OUT NAME | 1/7/8 | Running/Compressed air/Dryer |
 | 14003 | GET DIGITAL_OUT VALUE | 1/7/8 | 0 or 1 |
-| 14001 | START MANUAL_MODE | 1, 0 or 1 | stop/start, immediate readback |
+| 14001 | START MANUAL_MODE / SET DIGITAL_OUT VALUE | 1/7/8, 0 or 1 | index 1 stop/start; index 7 compressed air; 8 dryer |
 | 11066, 11070 | GET GRADIENT_UP/DOWN VALUE | 1 | rates °C/min |
 | 11068, 11072 | SET GRADIENT_UP/DOWN VALUE | 1, float | finite 0.01..5/3.5 °C/min |
 
