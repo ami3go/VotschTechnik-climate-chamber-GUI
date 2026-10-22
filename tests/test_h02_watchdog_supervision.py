@@ -593,6 +593,42 @@ class SupervisionHostTests(unittest.TestCase):
         self.assertIn("LATCH_SET", events)
         run.disarm()
 
+    def test_the_latch_event_is_durable_before_the_latch_is_observable(self):
+        """The evidence event must be written before the latch is published.
+
+        The latch state used to be published before its evidence event was
+        written, so a reader could see the latched host and read a timeline
+        without the LATCH_SET event. The forensic trail has to be complete for
+        every observer of the latched state.
+        """
+        host = self._started()
+        observed = []
+        original = host.evidence
+
+        def spy(event, **fields):
+            if event == "LATCH_SET":
+                observed.append(host.latched)
+            original(event, **fields)
+
+        host.evidence = spy
+        host.set_latch("test latch")
+        self.assertEqual(observed, [False],
+                         "the latch must not be observable before its event")
+        self.assertTrue(host.latched)
+        events = evidence_events(read_jsonl(host.timeline_path))
+        self.assertIn("LATCH_SET", events)
+
+    def test_the_latch_event_is_present_when_the_latch_is_observed(self):
+        """End-to-end: an observer of the latch always finds the event."""
+        host = self._started()
+        run, notified = self._armed_run(host, state=OperationState.RUNNING,
+                                        temp_ok=False)
+        self.assertTrue(wait_for(lambda: notified, timeout=6.0), host.error)
+        self.assertTrue(wait_for(lambda: host.latched, timeout=6.0), host.error)
+        events = evidence_events(read_jsonl(host.timeline_path))
+        self.assertIn("LATCH_SET", events)
+        run.disarm()
+
     def test_arm_matrix_refuses_unhealthy_or_duplicate_bindings(self):
         host = self._started()
         with self.assertRaises(AdmissionDenied):

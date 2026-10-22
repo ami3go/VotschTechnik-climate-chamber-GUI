@@ -33,6 +33,24 @@ class ManualState(str, Enum):
     STOP_REQUESTED = "STOP_REQUESTED"
 
 
+_MAX_REASON_CHARS = 160
+
+
+def _bounded_reason(exc: Exception) -> str:
+    """A short, single-line refusal reason for operators, audit and CI.
+
+    The exception type alone ("ChamberSafetyError") tells an operator nothing
+    about *why* a command was refused and made a genuine refusal
+    indistinguishable from an unrelated fault in the evidence trail.
+    """
+    text = " ".join(str(exc).split())
+    if not text:
+        return ""
+    if len(text) > _MAX_REASON_CHARS:
+        text = text[:_MAX_REASON_CHARS - 1] + "…"
+    return text
+
+
 @dataclass(frozen=True)
 class CommandOutcome:
     action: str
@@ -368,15 +386,15 @@ class ManualControlService:
                 if health.stop_latched and health.state == "VERIFIED_STOPPED":
                     # The G04 lease is acquired before reconciliation. This
                     # refuses a competing manual operator or active G06 runner.
-                    self._authorized.ensure_manual_operator_lease(
+                    # The lease revision is read in the same critical section
+                    # as the claim: a concurrent page refresh must never make
+                    # an owned lease look unowned and strand the STOP fence.
+                    owner_revision = self._authorized.ensure_manual_operator_lease_revision(
                         session, csrf, chamber_id)
-                    owner_revision = self._authorized.owned_lease_revision_now(
-                        actor.user_id)
-                    if owner_revision is None or not (
-                            self._authorized.rearm_after_owned_verified_stop(
-                                session, csrf, chamber_id,
-                                expected_generation=health.generation,
-                                expected_lease_revision=owner_revision)):
+                    if not self._authorized.rearm_after_owned_verified_stop(
+                            session, csrf, chamber_id,
+                            expected_generation=health.generation,
+                            expected_lease_revision=owner_revision):
                         raise ChamberSafetyError(
                             "STOP recovery not verified; control remains locked")
                 # Every actual START/write must still pass independent fresh
@@ -441,11 +459,13 @@ class ManualControlService:
                 # An accepted write or lease transition can have occurred before
                 # a later status/readback/audit failure. Never call it refused.
                 state = ManualState.UNKNOWN
+            reason = _bounded_reason(exc)
             self._security.audit(actor, "manual." + action, state.value,
-                                 chamber_id, type(exc).__name__)
+                                 chamber_id, reason)
             return self._finish(
                 serial, action, state,
                 "Command refused or unverified: " + type(exc).__name__ +
+                (f" ({reason})" if reason else "") +
                 (". Device state is not guaranteed." if state in (
                     ManualState.UNKNOWN, ManualState.FAULT) else ""))
 

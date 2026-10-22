@@ -228,6 +228,110 @@ identified and corrected watchdog defects, attempt 3 completed all five steps,
 disarmed the independent watchdog cleanly and ended `GOOD · STOPPED` without a
 restart latch. The checksum-verified evidence is under
 [`hil-evidence/h02-v3-2026-10-20/`](../hil-evidence/h02-v3-2026-10-20/README.md).
+The same result was repeated on 2026-10-21 under a fresh permit
+(`H02-2026-10-21-01`) at GUI `74a816d`, preceded by an audited STOP
+reconciliation of the uncertain durable lease: run
+`5be68792-77f7-471b-946c-20558f1e6502`, 5/5 steps, 200/200 GOOD samples, clean
+`RUN_ARM`/`RUN_DISARM`, no latch, final `GOOD · STOPPED`. That evidence is under
+[`hil-evidence/h02-v4-2026-10-21/`](../hil-evidence/h02-v4-2026-10-21/README.md).
 This closes the engineering physical-execution evidence gap for the tested
-revision only. The prepared site/independent acceptance record is unsigned, so
-pilot approval and R01 remain **NO-GO**.
+revisions only. The prepared site/independent acceptance records are unsigned,
+so pilot approval and R01 remain **NO-GO**.
+## Stage 2 package status — 2026-10-21
+
+Stage 2 tracker: [STAGE_2_PILOT_READINESS_PLAN.md](STAGE_2_PILOT_READINESS_PLAN.md). This
+section records Stage 2 package deliveries only. It does **not** close any
+BLOCKER/HIGH above, does not change the R01 decision (**NO-GO**) and asserts
+no physical, HIL or site-signature evidence.
+
+| Package | Status | Evidence | Remaining |
+|---|---|---|---|
+| S2-01 HIL evidence closure | **NOT DELIVERED** — needs the site authority | No signed H01 acceptance form or controlled evidence index in the repository | Site signoff and raw H01 evidence ingest |
+| S2-02 Combined regression baseline | **DELIVERED — implemented + simulation-tested** | GUI PR [#73](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/73) merged `014456b` (branch head `ea14bc7`); combined simulation job on Ubuntu 3.12 + Windows 3.10/3.12 ([main run 39678456898](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39678456898)); restored NiceGUI job on Windows 3.10/3.12 ([main run 39678457039](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39678457039)); local combined suite 536 passed / 1 skipped / 196 subtests; controlled evidence record [test-evidence/s2-02/S2_02_REPORT.md](../test-evidence/s2-02/S2_02_REPORT.md) | Independent review, S2-03/S2-04 Windows VM evidence, S2-07 physical H02 acceptance |
+| S2-03 W02 offline signed bundle | **PARTIAL — complete air-gap dependency closure delivered** | GUI PR [#77](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/77) merged `bcdade3` and PR [#80](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/80) merged `747aee3`: `requirements-w02-runtime.lock` (**50** win_amd64/cp312 distributions, each pinned and hashed, including the vendored external Vötsch driver and its own dependency `colorama`), `w02-closure-manifest.json`, the runtime CycloneDX SBOM derived from that closure, a completeness proof that every requirement of every closure member is inside the closure, and a Windows CI job that reproduces the closure and installs it with `--no-index --require-hashes` ([closure job](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39690022261)); continuous gate on `main` added by PR [#78](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/78); PR [#82](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/82) merged `fcdc9f9` builds the frozen bundle **from the reviewed closure** with no index access and reports the runtime closure in the bundle SBOM, license inventory and provenance | Signed artifact with a site publisher key; license approval (every row still `REVIEW_REQUIRED`); unattested build provenance; the hash-locked **build backend** (PyInstaller is still installed from connected pip); the disconnected clean-Windows 10/11 acceptance (S2-04); the independent supply-chain review |
+| S2-04 Installation/upgrade/recovery | **NOT STARTED** | — | Clean air-gapped Win10/11 acceptance |
+| S2-05 G07 evidence and operations | **PARTIAL** — journal readers merged (#74) | GUI PR [#74](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/74) | Authorized, SHA-verified exports; corruption/ENOSPC recovery |
+| S2-06 G08 operational security acceptance | **NOT STARTED** | — | Independent deployment review |
+| S2-07 H02 physical-profile acceptance | **PARTIAL — engineering physical-profile PASS evidenced; independent/site acceptance OPEN** | Two witnessed physical runs reached `COMPLETED`: `60e8f4da-ea08-4806-9c5c-1c2124f89eb0` (2026-10-20, GUI `a0ecf17`) and `5be68792-77f7-471b-946c-20558f1e6502` (2026-10-21, GUI `74a816d`, permit `H02-2026-10-21-01`), each with a signed revision-bound permit, clean watchdog arm/disarm and final `GOOD · STOPPED` readback; evidence under [`hil-evidence/`](../hil-evidence/) | Signed site/independent acceptance record (prepared, unsigned) for each run; a new signed permit for any further run |
+| S2-08 Pilot usability and supervised soak | **NOT STARTED** | — | Depends on S2-03/04/05/06/07 |
+| S2-09 R01 release candidate decision | **NO-GO** | — | All applicable packages |
+
+### Findings closed by S2-02
+
+- **CI was blind on `main`.** `web-gui-demo.yml` carried a literal `\n` inside a
+  YAML scalar (introduced by #62 on 2026-10-19), so the workflow produced **zero
+  jobs** on every `main` push and reported failure without testing anything.
+  Repaired in #73; the job now runs its Windows 3.10/3.12 matrix.
+- **G05 refused a legitimate operator Start (product defect).** The Start-after-STOP
+  path learned the operator-lease revision through a *best-effort, non-blocking*
+  probe intended only for the priority STOP path. When the one-second dashboard
+  refresh held the same registry lock, the probe reported "unknown", which the
+  Start path could not distinguish from "no lease held": the Start was refused
+  with `STOP recovery not verified; control remains locked` and the STOP fence
+  stayed latched, stranding the operator. Reproduced deterministically before
+  the fix; `AuthorizedChamber.ensure_manual_operator_lease_revision()` now reads
+  the revision in the same critical section as the claim. The safety envelope is
+  unchanged: the rearm still requires the exact lease revision, the caller's
+  ownership, a latched `VERIFIED_STOPPED` controller and the exact G04
+  generation, and G04 still performs its own fresh STOPPED readback.
+- **Refusals were not diagnosable.** A refused manual command reported only the
+  exception type; the bounded reason is now reported to the operator, the audit
+  trail and CI.
+
+### Findings closed by the S2-03 increment
+
+- **The dependency closure was not hash-locked.** The W02 bundle recorded only
+  the build host's installed packages, with every license `REVIEW_REQUIRED` and
+  the scope property `unapproved-build-environment-not-runtime-closure`. The
+  frozen Windows runtime closure is now a reviewed repository artifact:
+  `requirements-w02-runtime.lock` pins 48 `win_amd64`/CPython 3.12
+  distributions by SHA-256 in pip `--require-hashes` format, and
+  `w02-closure-manifest.json` records every artifact's digest, source URL,
+  declared license and `Requires-Python`.
+- **The runtime SBOM was a build-host inventory.** It is now derived from the
+  locked closure, so build-only tools (PyInstaller, pip, setuptools) can no
+  longer be presented as shipped components.
+- **Nothing proved an air-gap install.** `scripts/w02_closure.py` installs with
+  `pip install --no-index --find-links <wheelhouse> --require-hashes`, so a
+  damaged or missing artifact breaks the installation instead of falling back
+  to the network. The Windows CI job reproduces the committed closure from the
+  pinned requirements and installs from it, on `main` as well as on pull
+  requests.
+- **The closure's own input digest was platform-dependent.** Git checks text
+  files out with CRLF on Windows and LF elsewhere, so the raw digest of the
+  same tracked requirements file differed per platform and could never be
+  reproduced on another host. The digest is now taken over the canonical (LF)
+  line endings, and the closure artifacts are pinned to LF in `.gitattributes`.
+- **The closure did not describe what is actually shipped.** The frozen bundle
+  also ships the external Vötsch driver, which is not an index distribution,
+  so pip never resolved it and neither did the closure. The driver is now
+  vendored from its pinned revision, built reproducibly (`SOURCE_DATE_EPOCH`
+  at the pinned commit timestamp, pinned build backend, no build isolation)
+  and recorded in the closure with its own SHA-256 and its
+  `git+<url>@<commit>` provenance. Its own dependency `colorama` entered the
+  closure with it.
+- **"Complete" now means something.** Every requirement every closure member
+  imposes — including the dependencies behind requested extras — must be
+  inside the closure with its version constraint satisfied, and every marker
+  is evaluated against the *target* environment, never the build host's.
+- **A metadata parser defect hid a dependency.** A folded metadata field (the
+  driver's multi-line license text) ended the header scan early and hid the
+  `Requires-Dist` fields that followed it, so the driver's own dependency was
+  invisible to the closure. The headers now end at the first *empty* line.
+
+**Still open inside S2-03:** the signed artifact still needs a site publisher
+key, every license row is still `REVIEW_REQUIRED`, the build provenance is
+still unattested, the frozen Windows package itself has not been rebuilt
+against this closure, and the disconnected clean-Windows 10/11 acceptance is
+Stage 2 S2-04.
+
+**Boundary:** S2-02 is simulation-only. `tests/hardware/` was **NOT RUN**, no
+chamber was connected, no physical command was issued, and no device
+authorization, H02 permit, W02 release, G08 operational acceptance or Stage 3
+pilot use is granted or implied by this delivery.
+
+**Boundary of the H02 physical evidence:** the two runs above are supervised
+engineering passes under site-signed permits, exercised with a real operator and
+witness present and the independent watchdog armed. They are **not** independent
+or site acceptance, not a W02 release and not R01 authorization; the prepared
+acceptance records remain unsigned.

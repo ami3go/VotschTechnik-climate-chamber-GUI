@@ -6,6 +6,11 @@ __pycache__/
 .coverage
 *.egg-info/
 
+# S2-02 raw watchdog evidence and JUnit output stay local; the tracked record
+# is the report, runner script and hash manifest under test-evidence/.
+/test-evidence/**/watchdog-*/
+/test-evidence/**/*.xml
+
 # Editor-local configuration
 .idea/
 
@@ -13,6 +18,14 @@ __pycache__/
 /build/
 /dist/
 *.zip
+
+# W02 air-gap wheelhouse: downloaded artifacts, never source-controlled. The
+# reviewed closure is the hash-locked lock file and its manifest.
+w02-wheelhouse/
+w02-closure-build/
+/wheelhouse/
+/offline-target/
+/offline-reviewed/
 
 # Retired standalone desktop prototypes
 /Archive/

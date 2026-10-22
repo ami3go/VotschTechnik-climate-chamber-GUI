@@ -116,16 +116,25 @@ class SupervisionHost:
             pass
 
     def set_latch(self, reason: str) -> None:
-        self._latched = True
-        self._error = reason
+        """Latch the host and record why.
+
+        The durable latch file is written first, so a restart is blocked even
+        if the process dies immediately afterwards. The evidence event is
+        written *before* the latched state is published: an observer that sees
+        the latch must always also see the event that explains it, otherwise
+        the forensic trail can be read in the gap between the two writes.
+        """
+        detail = reason
         try:
             self._evidence_dir.mkdir(parents=True, exist_ok=True)
             self._latch_path.write_text(json.dumps(
-                {"reason": reason, "at_utc": _utc_now()}, sort_keys=True),
+                {"reason": detail, "at_utc": _utc_now()}, sort_keys=True),
                 encoding="utf-8")
         except OSError as exc:
-            self._error = reason + " (latch write failed: " + type(exc).__name__ + ")"
-        self.evidence("LATCH_SET", reason=reason)
+            detail = reason + " (latch write failed: " + type(exc).__name__ + ")"
+        self.evidence("LATCH_SET", reason=detail)
+        self._error = detail
+        self._latched = True
 
     def start(self) -> None:
         """Spawn the watchdog process unless a restart latch is present."""
@@ -138,9 +147,12 @@ class SupervisionHost:
                 data = json.loads(self._latch_path.read_text(encoding="utf-8"))
             except Exception:
                 data = {"reason": "unreadable latch"}
+            detail = "watchdog restart latch: " + str(data.get("reason", ""))
+            # The evidence event is written before the latched state is
+            # published, for the same reason as in set_latch().
+            self.evidence("LATCH_BLOCKED", reason=detail)
+            self._error = detail
             self._latched = True
-            self._error = "watchdog restart latch: " + str(data.get("reason", ""))
-            self.evidence("LATCH_BLOCKED", reason=self._error)
             return
         try:
             self._evidence_dir.mkdir(parents=True, exist_ok=True)

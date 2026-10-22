@@ -942,6 +942,22 @@ class ProfileRunner:
     async def cancel_async(self, chamber_id: str) -> None:
         await asyncio.to_thread(self.cancel, chamber_id)
 
+    def request_shutdown_stop(self, chamber_id: str) -> None:
+        """Trusted server shutdown path with one durable STOP owner.
+
+        Browser cancellation remains authorized through ``cancel``. During
+        process shutdown there is no browser principal, but the active runner
+        must still own STOP intent and terminal evidence; issuing a second
+        direct controller STOP races its generation fence.
+        """
+        validate_chamber_id(chamber_id)
+        if chamber_id != self._id:
+            raise ChamberSafetyError("Wrong chamber for profile shutdown")
+        if not self._prepared or self._state is None or self._state in TERMINAL:
+            return
+        self._cancel_requested = True
+        self._begin_stop(RunState.CANCELLED, "Server shutdown")
+
     def close(self) -> None:
         """Only after terminal. Never detach a still-active STOP worker."""
         with self._mutex:

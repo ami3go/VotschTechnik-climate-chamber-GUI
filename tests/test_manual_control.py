@@ -262,6 +262,63 @@ class ManualControlTests(unittest.TestCase):
         self.assertEqual(self.send(service, self.admin, "reconcile").state,
                          ManualState.CONFIRMED)
 
+    def test_contended_lease_probe_never_refuses_an_operator_start(self):
+        """A contended best-effort lease probe must not strand the operator.
+
+        The dashboard refreshes the manual view once a second and reads the
+        same server-owned lease registry. When that reader held the registry
+        lock, the Start path used a *best-effort, non-blocking* probe that was
+        only ever safe on the priority STOP path. Its contention was
+        indistinguishable from "no lease held", so a legitimate operator Start
+        after a verified STOP was refused while the STOP fence stayed latched
+        and the operator had no way forward. The Start path must read the
+        lease revision atomically with the claim instead.
+        """
+        service, manager, _ = self.make_service()
+        cid = service.chamber_id
+        # STOP without a lease always latches the fence.
+        self.assertEqual(self.send(service, self.op, "stop").state,
+                         ManualState.CONFIRMED)
+        self.assertTrue(manager.health(cid).stop_latched)
+        facade = service._authorized
+        original = facade.owned_lease_revision_now
+        # Simulate the contention a concurrent registry reader can cause.
+        facade.owned_lease_revision_now = lambda user_id: None
+        try:
+            result = self.send(service, self.op, "start")
+        finally:
+            facade.owned_lease_revision_now = original
+        self.assertEqual(result.state, ManualState.CONFIRMED, result.message)
+        self.assertFalse(manager.health(cid).stop_latched)
+        self.assertTrue(service.view(self.op.session, cid).owned_by_actor)
+
+    def test_start_after_stop_survives_a_concurrent_registry_reader(self):
+        """The periodic dashboard read must never strand an operator Start."""
+        service, manager, _ = self.make_service()
+        cid = service.chamber_id
+        finished = threading.Event()
+
+        def reader():
+            """Mimic the one-second dashboard refresh reading the registry."""
+            while not finished.is_set():
+                try:
+                    service.view(self.op.session, cid)
+                except Exception:
+                    pass
+
+        thread = threading.Thread(target=reader, daemon=True)
+        thread.start()
+        try:
+            for _ in range(10):
+                self.assertEqual(self.send(service, self.op, "stop").state,
+                                 ManualState.CONFIRMED)
+                result = self.send(service, self.op, "start")
+                self.assertEqual(result.state, ManualState.CONFIRMED, result.message)
+                self.assertFalse(manager.health(cid).stop_latched)
+        finally:
+            finished.set()
+            thread.join(timeout=5)
+
     def test_rearm_is_not_exposed_to_viewer_or_revoked_session(self):
         service, manager, _ = self.make_service()
         cid = service.chamber_id
