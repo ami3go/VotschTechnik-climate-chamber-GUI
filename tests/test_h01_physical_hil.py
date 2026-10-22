@@ -103,6 +103,11 @@ class HilConfigurationTests(unittest.TestCase):
         self.assertEqual((hil.address, hil.expected_serial, hil.temperature_min_c,
                           hil.temperature_max_c), ("192.168.0.11", SERIAL, 18.0, 30.0))
 
+    def test_full_engineering_envelope_is_accepted(self):
+        hil = hil_authorization_from_env(
+            _env(CHAMBER_HIL_TEMP_MIN_C="-40", CHAMBER_HIL_TEMP_MAX_C="130"))
+        self.assertEqual((hil.temperature_min_c, hil.temperature_max_c), (-40.0, 130.0))
+
     def test_partial_or_invalid_configuration_fails_closed(self):
         bad = {
             "missing serial": _env(CHAMBER_HIL_EXPECTED_SERIAL=None),
@@ -113,7 +118,7 @@ class HilConfigurationTests(unittest.TestCase):
             "hostname": _env(CHAMBER_HIL_ADDRESS="chamber.local"),
             "ipv6": _env(CHAMBER_HIL_ADDRESS="fd00::1"),
             "inverted envelope": _env(CHAMBER_HIL_TEMP_MIN_C="30", CHAMBER_HIL_TEMP_MAX_C="18"),
-            "too wide": _env(CHAMBER_HIL_TEMP_MIN_C="-40", CHAMBER_HIL_TEMP_MAX_C="80"),
+            "beyond hard minimum": _env(CHAMBER_HIL_TEMP_MIN_C="-41", CHAMBER_HIL_TEMP_MAX_C="80"),
             "beyond hard limit": _env(CHAMBER_HIL_TEMP_MIN_C="120", CHAMBER_HIL_TEMP_MAX_C="140"),
             "not a number": _env(CHAMBER_HIL_TEMP_MAX_C="nan"),
             "text": _env(CHAMBER_HIL_TEMP_MIN_C="cold"),

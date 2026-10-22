@@ -353,6 +353,63 @@ class ChamberController:
             if self._stop_latched:
                 raise ChamberSafetyError("Setpoint result superseded by STOP/FAULT")
 
+    def _verified_ramp_write(self, operation: Callable, direction: str,
+                             expected: float) -> None:
+        operation()
+        snapshot = self._require_readback(self._backend.read_status())
+        actual = (snapshot.gradient_up_c_per_min if direction == "up"
+                  else snapshot.gradient_down_c_per_min)
+        if actual is None or not math.isfinite(actual) or abs(actual - expected) > 0.01:
+            raise ChamberSafetyError("Gradient readback did not confirm command")
+        with self._state_lock:
+            self._last_snapshot = snapshot
+
+    def _check_ramp(self, direction: str, rate_c_per_min: float) -> float:
+        caps = self._capabilities
+        supported = (caps is not None and
+                     getattr(caps, "supports_ramp_" + direction))
+        limits = (getattr(caps, "ramp_" + direction + "_range_c_per_min", None)
+                  if supported else None)
+        if not supported or not limits:
+            raise ChamberSafetyError(
+                "Gradients are not supported/verified by this backend")
+        if (isinstance(rate_c_per_min, bool) or
+                not isinstance(rate_c_per_min, (int, float)) or
+                not math.isfinite(rate_c_per_min)):
+            raise ChamberSafetyError("Invalid gradient rate")
+        low, high = limits
+        if not low <= float(rate_c_per_min) <= high:
+            raise ChamberSafetyError("Gradient outside supported range")
+        return float(rate_c_per_min)
+
+    def set_ramp_up(self, chamber_id: str, rate_c_per_min: float, *,
+                    operator_token: str | None = None) -> None:
+        self._check_id(chamber_id)
+        with self._state_lock:
+            self._check_operator(operator_token)
+            rate = self._check_ramp("up", rate_c_per_min)
+        self._submit("set_ramp_up",
+                     lambda: self._verified_ramp_write(
+                         lambda: self._backend.set_ramp_up(rate), "up", rate),
+                     mutation=True, operator_token=operator_token)
+        with self._state_lock:
+            if self._stop_latched:
+                raise ChamberSafetyError("Gradient result superseded by STOP/FAULT")
+
+    def set_ramp_down(self, chamber_id: str, rate_c_per_min: float, *,
+                      operator_token: str | None = None) -> None:
+        self._check_id(chamber_id)
+        with self._state_lock:
+            self._check_operator(operator_token)
+            rate = self._check_ramp("down", rate_c_per_min)
+        self._submit("set_ramp_down",
+                     lambda: self._verified_ramp_write(
+                         lambda: self._backend.set_ramp_down(rate), "down", rate),
+                     mutation=True, operator_token=operator_token)
+        with self._state_lock:
+            if self._stop_latched:
+                raise ChamberSafetyError("Gradient result superseded by STOP/FAULT")
+
     def start(self, chamber_id: str, *, operator_token: str | None = None) -> None:
         self._check_id(chamber_id)
         with self._state_lock:

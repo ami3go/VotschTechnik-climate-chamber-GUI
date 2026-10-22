@@ -89,7 +89,7 @@ class ChamberSettingsTests(unittest.TestCase):
             replace(PHYSICAL, address="8.8.8.8"),
             replace(PHYSICAL, address="127.0.0.1"),
             replace(PHYSICAL, expected_serial=""),
-            replace(PHYSICAL, temperature_min_c=0.0, temperature_max_c=60.0),
+            replace(PHYSICAL, temperature_min_c=-41.0, temperature_max_c=60.0),
             replace(PHYSICAL, temperature_max_c=10.0),
             replace(PHYSICAL, person_present_acknowledged=False),
             replace(PHYSICAL, chamber_id="bad id"),

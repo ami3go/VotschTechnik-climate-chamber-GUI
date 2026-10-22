@@ -100,7 +100,11 @@ class BackendContractTests(unittest.TestCase):
     def test_manager_does_not_expose_backend_bypass(self):
         manager = ChamberManager([ChamberConfig("ch1", "fake")], backend_factory=make_backend)
         self.assertIs(manager.get("ch1"), manager)
-        self.assertFalse(hasattr(manager.get("ch1"), "set_ramp_up"))
+        # Gradients, like every other mutation, go through the managed
+        # controller; no raw backend (or backend handle) is exposed.
+        self.assertFalse(hasattr(manager, "_backend"))
+        self.assertTrue(callable(manager.set_ramp_up))
+        self.assertTrue(callable(manager.set_ramp_down))
 
     def test_stop_latch_blocks_old_commands(self):
         manager = ChamberManager([ChamberConfig("ch1", "fake")], backend_factory=make_backend)

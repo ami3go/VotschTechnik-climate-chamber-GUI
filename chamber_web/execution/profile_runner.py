@@ -170,7 +170,24 @@ class SupervisedRun:
     supervisor_alive: Callable[[], bool] | None = None
 
 
-def step_budget(step: ProfileStep, params: RunParameters) -> float:
+def ramp_duration_s(step: ProfileStep, from_temperature_c: float | None) -> float:
+    """Worst-case declared device ramp time from the previous target."""
+    if from_temperature_c is None:
+        return 0.0
+    delta = float(step.target_temperature_c) - float(from_temperature_c)
+    if delta > 0:
+        rate = step.ramp_up_c_per_min
+    elif delta < 0:
+        rate = step.ramp_down_c_per_min
+    else:
+        return 0.0
+    if rate is None:
+        return 0.0
+    return abs(delta) / float(rate) * 60.0
+
+
+def step_budget(step: ProfileStep, params: RunParameters, *,
+                from_temperature_c: float | None = None) -> float:
     """Finite per-step schedule used for permit preflight and watchdogs."""
     reach = float(step.reach_timeout_s)
     if not math.isfinite(reach) or reach <= 0 or reach > 1_209_600:
@@ -181,7 +198,10 @@ def step_budget(step: ProfileStep, params: RunParameters) -> float:
         if not math.isfinite(number) or number < 0 or number > 1_209_600:
             raise ValueError("Invalid finite profile " + name)
         total += number
-    return total + params.step_margin_s
+    ramp = ramp_duration_s(step, from_temperature_c)
+    if ramp > reach:
+        raise ValueError("Reach timeout is shorter than the declared gradient")
+    return total + ramp + params.step_margin_s
 
 
 # Authorizer must resolve an authenticated server-side principal by itself.
@@ -260,6 +280,7 @@ class ProfileRunner:
         self._setpoint_best = math.inf
         self._setpoint_observed: float | None = None
         self._setpoint_frozen = 0
+        self._setpoint_progress_at: float | None = None
 
     @property
     def state(self) -> RunState | None:
@@ -311,8 +332,29 @@ class ProfileRunner:
             raise ValueError("Invalid finite profile " + name)
         return number
 
-    def _step_budget(self, step: ProfileStep, params: RunParameters) -> float:
-        return step_budget(step, params)
+    def _step_budget(self, step: ProfileStep, params: RunParameters, *,
+                     from_temperature_c: float | None = None) -> float:
+        return step_budget(step, params, from_temperature_c=from_temperature_c)
+
+    def _validate_gradients(self, step: ProfileStep,
+                            caps: ChamberCapabilities) -> None:
+        for direction, value in (("up", step.ramp_up_c_per_min),
+                                 ("down", step.ramp_down_c_per_min)):
+            if value is None:
+                continue
+            if self._supervised is not None:
+                raise ChamberSafetyError(
+                    "Supervised physical gradients require a signed H03 "
+                    "authorization; gradients unsupported for this permit")
+            if not getattr(caps, "supports_ramp_" + direction):
+                raise ChamberSafetyError(
+                    "Hardware gradients unsupported by the connected backend")
+            limits = getattr(caps, "ramp_" + direction + "_range_c_per_min")
+            rate = float(value)
+            if not limits or not math.isfinite(rate) or not (
+                    limits[0] <= rate <= limits[1]):
+                raise ValueError(
+                    direction.title() + " gradient outside supported range")
 
     def _emit(self, kind: str, detail: str = "", *,
               temperature: float | None = None,
@@ -387,6 +429,8 @@ class ProfileRunner:
             if not (caps.supports_start_stop and caps.supports_running_readback and
                     caps.supports_setpoint_readback):
                 raise ChamberSafetyError("Missing mandatory verified control/readback capability")
+            budgets: list[float] = []
+            previous_target: float | None = None
             for step in enabled:
                 try:
                     target = float(step.target_temperature_c)
@@ -394,10 +438,10 @@ class ProfileRunner:
                     raise ValueError("Invalid target") from exc
                 finite_temperature(target, caps.temperature_min_c, caps.temperature_max_c)
                 self._duration(step.tolerance_c, "tolerance", positive=True)
-                self._step_budget(step, params)
-                # G04 has NO verified gradient setter/readback/restore contract.
-                if step.ramp_up_c_per_min is not None or step.ramp_down_c_per_min is not None:
-                    raise ChamberSafetyError("Hardware gradients unsupported by G04; reject profile")
+                self._validate_gradients(step, caps)
+                budgets.append(self._step_budget(
+                    step, params, from_temperature_c=previous_target))
+                previous_target = target
                 if step.chamber_run not in ("UNCHANGED", "ON", "OFF") or any(
                     directive not in ("UNCHANGED", "ON", "OFF")
                     for directive in (step.compressed_air, step.dryer)
@@ -427,7 +471,7 @@ class ProfileRunner:
                     raise ChamberSafetyError(
                         "Supervised physical profiles run chamber_run=ON "
                         "steps without output or gradient mutations")
-            total = sum(self._step_budget(s, params) for s in enabled) * record.profile.repeat_count + 30
+            total = sum(budgets) * record.profile.repeat_count + 30
             if not math.isfinite(total) or total > 1_209_600:
                 raise ChamberSafetyError("Profile exceeds finite run watchdog limit")
             if params.max_run_s is not None:
@@ -523,10 +567,25 @@ class ProfileRunner:
         self._setpoint_best = math.inf
         self._setpoint_observed = None
         self._setpoint_frozen = 0
+        self._setpoint_progress_at = self._now()
         if self._step_index == 0:
             # START_INTENT fences the entire first mutating sequence,
             # including its setpoint, for G07 crash reconciliation.
             self._emit("START_INTENT", "First chamber mutation about to dispatch")
+        if step.ramp_up_c_per_min is not None:
+            self._emit("GRADIENT_INTENT", "Step " + str(step.step) + " upward")
+            if self._cancel_requested:
+                return
+            self._manager.set_ramp_up(
+                self._id, float(step.ramp_up_c_per_min),
+                operator_token=self._owner_token)
+        if step.ramp_down_c_per_min is not None:
+            self._emit("GRADIENT_INTENT", "Step " + str(step.step) + " downward")
+            if self._cancel_requested:
+                return
+            self._manager.set_ramp_down(
+                self._id, float(step.ramp_down_c_per_min),
+                operator_token=self._owner_token)
         self._emit("SETPOINT_INTENT", "Step " + str(step.step), temperature=target)
         if self._cancel_requested:
             return
@@ -664,17 +723,39 @@ class ProfileRunner:
             self._setpoint_best = 0.0
             self._setpoint_observed = observed
             self._setpoint_frozen = 0
+            self._setpoint_progress_at = self._now()
             return True
-        if (self._setpoint_observed is not None and
-                abs(observed - self._setpoint_observed) <= 0.02):
-            self._setpoint_frozen += 1
-        else:
+        assert self._snapshot is not None
+        step = self._step()
+        rate = (step.ramp_up_c_per_min if target > observed
+                else step.ramp_down_c_per_min)
+        # Scale the contraction threshold to how far the declared gradient
+        # moves the readback per poll; a fixed 0.02 °C would fault slow ramps.
+        per_poll = (float(rate) / 60.0 * self._snapshot.parameters.poll_s
+                    if rate is not None else 0.0)
+        noise = max(0.02, per_poll * 0.4)
+        away = max(0.2, per_poll * 2.5)
+        moved = (self._setpoint_observed is not None and
+                 abs(observed - self._setpoint_observed) > noise)
+        improved = distance < self._setpoint_best - noise
+        if moved or improved:
+            self._setpoint_progress_at = self._now()
             self._setpoint_frozen = 0
+        else:
+            self._setpoint_frozen += 1
         self._setpoint_observed = observed
-        if self._setpoint_frozen >= 3:
-            raise ChamberSafetyError("Setpoint readback frozen before target")
-        if distance > self._setpoint_best + 0.2:
+        if distance > self._setpoint_best + away:
             raise ChamberSafetyError("Setpoint readback moved away from target")
+        if rate is None:
+            # No declared gradient: an unchanged setpoint is frozen, as before.
+            if self._setpoint_frozen >= 3:
+                raise ChamberSafetyError("Setpoint readback frozen before target")
+        elif self._setpoint_frozen:
+            remaining_s = distance / (float(rate) / 60.0)
+            stall_s = max(30.0, min(600.0, remaining_s * 0.5 + 10.0))
+            if (self._setpoint_progress_at is not None and
+                    self._now() - self._setpoint_progress_at > stall_s):
+                raise ChamberSafetyError("Setpoint readback frozen before target")
         self._setpoint_best = min(self._setpoint_best, distance)
         return False
 

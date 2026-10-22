@@ -57,6 +57,14 @@ Logs and state: `%LOCALAPPDATA%\ClimateChamber\App\` (`app.log`, rotated at
   digital outputs, compressed air/dryer changes or gradients) until H03 has a
   verified setter/readback/restore contract. Simulation and legacy demo
   profiles are not evidence for hardware.
+- The profile engine supports declared gradients (`ramp_up_c_per_min`,
+  `ramp_down_c_per_min`) with capability/range preflight, verified gradient
+  readback, ramp-aware deadlines and convergence supervision. The bundled
+  simulation backend enables them only for validation with
+  `CHAMBER_SIM_RAMP_C_PER_MIN=0.1,10` (or `off`, the default); the Vötsch
+  adapter keeps physical gradients disabled until signed H03 authorization.
+- The software envelope now spans the full −40…130 °C engineering range; a
+  site permit and the chamber's own limits still narrow it.
 - LAN access is refused unless `CHAMBER_NETWORK_MODE=lan` plus a valid TLS
   certificate matching `CHAMBER_PUBLIC_ORIGIN`, a private client allowlist and
   safe key permissions are configured. The default is loopback only.

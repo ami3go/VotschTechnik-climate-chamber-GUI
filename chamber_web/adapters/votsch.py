@@ -19,6 +19,14 @@ from chamber_web.domain.chamber import (
 )
 
 
+def _optional_float(value) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 class VotschBackend:
     def __init__(self, chamber_id: str, ip: str, *, mock_driver_factory: Callable | None = None,
                  hil=None, hil_driver_factory: Callable | None = None):
@@ -122,6 +130,10 @@ class VotschBackend:
             float(driver.temperature_set_point),
             OperationState.RUNNING if driver.is_running else OperationState.STOPPED,
             ReadingQuality.GOOD, datetime.now(timezone.utc),
+            gradient_up_c_per_min=_optional_float(
+                getattr(driver, "gradient_up", None)),
+            gradient_down_c_per_min=_optional_float(
+                getattr(driver, "gradient_down", None)),
         )
 
     def set_temperature(self, target_c: float) -> None:

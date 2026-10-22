@@ -76,6 +76,18 @@ class ChamberManager:
         self._check_id(chamber_id)
         self._controller.set_temperature(chamber_id, target_c, operator_token=operator_token)
 
+    def set_ramp_up(self, chamber_id: str, rate_c_per_min: float, *,
+                    operator_token: str | None = None) -> None:
+        self._check_id(chamber_id)
+        self._controller.set_ramp_up(
+            chamber_id, rate_c_per_min, operator_token=operator_token)
+
+    def set_ramp_down(self, chamber_id: str, rate_c_per_min: float, *,
+                      operator_token: str | None = None) -> None:
+        self._check_id(chamber_id)
+        self._controller.set_ramp_down(
+            chamber_id, rate_c_per_min, operator_token=operator_token)
+
     def start(self, chamber_id: str, *, operator_token: str | None = None) -> None:
         self._check_id(chamber_id)
         self._controller.start(chamber_id, operator_token=operator_token)
