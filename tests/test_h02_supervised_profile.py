@@ -31,7 +31,9 @@ from chamber_web.hil.supervised_profile import (
     load_supervised_permit, supervised_runtime_from_env,
 )
 from chamber_web.persistence.profiles import ProfileStore
-from chamber_web.security.auth import SecurityStore
+from chamber_web.security.auth import (
+    AuthenticationError, AuthorizationError, SecurityStore,
+)
 from chamber_web.services.chamber_manager import ChamberManager
 from chamber_web.services.profile_execution import ProfileExecutionService
 
@@ -416,12 +418,15 @@ class SupervisedServiceTests(unittest.TestCase):
     def _permit(self, mutate=None):
         return self.fixture.load(self.root, mutate)
 
-    def _service(self, supervised):
+    def _service(self, supervised, *, confirm=True):
         service = ProfileExecutionService(
             self.manager, self.store, self.security, CHAMBER,
             simulation=False, supervised=supervised,
             parameters=RunParameters(poll_s=0.05, max_gap_s=1, max_age_s=1),
         )
+        if confirm and supervised is not None:
+            service.confirm_physical_stop_procedure(
+                self.operator.session, self.operator.csrf)
 
         def close_runner():
             runner = service.runner
@@ -444,6 +449,33 @@ class SupervisedServiceTests(unittest.TestCase):
             service.start(self.operator.session, self.operator.csrf,
                           self.fixture.profile_id, 1)
         self.assertIsNone(service.runner)
+
+    def test_unconfirmed_stop_procedure_blocks_physical_start(self):
+        """The launch-time HIL ack is not a human STOP-procedure confirmation."""
+        service = self._service(self._runtime(self._permit()), confirm=False)
+        view = service.view(self.operator.session)
+        self.assertTrue(view.supervised)
+        self.assertFalse(view.stop_procedure_confirmed)
+        self.assertFalse(view.can_start)
+        with self.assertRaises(AdmissionDenied):
+            service.start(self.operator.session, self.operator.csrf,
+                          self.fixture.profile_id, 1)
+        self.assertIsNone(service.runner)
+        self.assertEqual(self.backend.commands, [])
+        # An explicit, audited operator act admits the run.
+        service.confirm_physical_stop_procedure(
+            self.operator.session, self.operator.csrf)
+        self.assertTrue(service.view(self.operator.session).stop_procedure_confirmed)
+        snapshot = service.start(self.operator.session, self.operator.csrf,
+                                 self.fixture.profile_id, 1)
+        self.assertEqual(snapshot.chamber_id, CHAMBER)
+        self.assertEqual(self._drain(service.runner), RunState.COMPLETED)
+
+    def test_stop_confirmation_requires_profile_run_permission(self):
+        service = self._service(self._runtime(self._permit()), confirm=False)
+        with self.assertRaises((AuthenticationError, AuthorizationError)):
+            service.confirm_physical_stop_procedure(None, None)
+        self.assertFalse(service.stop_procedure_confirmed("test_admin"))
 
     def test_supervised_start_admits_preflights_and_completes(self):
         service = self._service(self._runtime(self._permit()))

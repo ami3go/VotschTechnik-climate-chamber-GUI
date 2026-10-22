@@ -426,9 +426,16 @@ def profiles_page() -> None:
         refresh_library()
 
     def render_run(view: RunView) -> None:
+        stop_confirm_button.set_visibility(view.supervised)
+        stop_confirm_label.set_visibility(view.supervised)
+        stop_confirm_label.set_text(
+            "STOP procedure confirmed for this shift" if view.stop_procedure_confirmed
+            else "Before a physical run: confirm you can perform the chamber's own "
+                 "STOP and emergency stop. Web STOP is not an emergency stop.")
         if not view.simulation:
             run_mode_label.set_text(
-                "Physical HIL: signed site permit and live supervision required"
+                "Physical HIL: signed site permit, live supervision and an explicit "
+                "STOP-procedure confirmation required"
                 if view.supervised else
                 "Profile execution disabled without supervised H02 site permit")
         elif view.stop_latched and view.controller_state == "VERIFIED_STOPPED":
@@ -619,6 +626,16 @@ def profiles_page() -> None:
                             "STOP requested", threaded(execution.cancel)),
                     ).props("no-caps color=negative")
             run_mode_label = ui.label("").classes("text-xs text-orange-9")
+            with ui.row().classes("items-center gap-2 flex-wrap"):
+                stop_confirm_button = ui.button(
+                    "Confirm STOP Procedure", icon="health_and_safety",
+                    on_click=lambda: run_action(
+                        "Physical STOP procedure confirmed",
+                        threaded(execution.confirm_physical_stop_procedure)),
+                ).props("outline no-caps")
+                stop_confirm_label = ui.label("").classes("text-xs text-grey-7")
+            stop_confirm_button.set_visibility(False)
+            stop_confirm_label.set_visibility(False)
             run_state_label = ui.label("").classes("text-sm")
             run_detail_label = ui.label("").classes("text-xs text-grey-7")
             ui.label("The run belongs to the server: closing this page does not stop it. "

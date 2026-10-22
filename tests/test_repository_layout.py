@@ -44,11 +44,18 @@ def test_nicegui_entrypoints_and_operational_scripts_are_retained() -> None:
 
     maintained = (
         "chamber_web/main.py",
+        "chamber_web/desktop_runtime.py",
+        "chamber_web/maintenance.py",
         "chamber_web/adapters/votsch.py",
         "scripts/build_windows_launcher.ps1",
         "scripts/build_windows_offline.ps1",
         "scripts/windows_server.py",
         "scripts/windows_launcher.py",
+        "scripts/windows_app_server.py",
+        "scripts/windows_app_launcher.py",
+        "scripts/build_revision.py",
+        "scripts/install_preproduction_task.ps1",
+        "scripts/uninstall_preproduction_task.ps1",
         "scripts/reset_credentials.py",
         "scripts/hil_soak.py",
         "setup_environment.py",

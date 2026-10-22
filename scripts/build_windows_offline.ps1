@@ -15,6 +15,13 @@
   artifacts, and its SBOM and license inventory describe that closure instead
   of the build environment. Without this switch the historical connected
   resolution is used and the build environment inventory is reported.
+.PARAMETER Variant
+  W01 (default): simulated, loopback-only feasibility bundle.
+  PreProduction: the FULL server with G08 authentication, G07 recording,
+  STOP fencing and the optional supervised H02 physical profile path. It
+  embeds an integrity-manifested build-revision.json so permit-bound profile
+  admission can identify the exact GUI/driver revisions without a git
+  checkout. NOT a certified release.
 #>
 [CmdletBinding()]
 param(
@@ -25,7 +32,8 @@ param(
     [string]$Python = "python",
     [switch]$SimulationOnly,
     [switch]$UseReviewedClosure,
-    [string]$WheelhouseDir = ""
+    [string]$WheelhouseDir = "",
+    [ValidateSet("W01", "PreProduction")][string]$Variant = "W01"
 )
 $ErrorActionPreference = "Stop"
 if ($env:OS -ne "Windows_NT") { throw "Build offline bundle natively on Windows." }
@@ -34,12 +42,20 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if ([IO.Path]::IsPathRooted($OutputDir)) { $output = [IO.Path]::GetFullPath($OutputDir) }
 else { $output = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $OutputDir)) }
 New-Item -Path $output -ItemType Directory -Force | Out-Null
-$name = "ClimateChamber-Web-Windows-x64-$Version-offline"
+$variantKey = if ($Variant -eq "PreProduction") { "preproduction" } else { "w01" }
+$preProduction = $Variant -eq "PreProduction"
+$name = if ($preProduction) {
+    "ClimateChamber-Web-Windows-x64-$Version-preproduction-offline"
+} else {
+    "ClimateChamber-Web-Windows-x64-$Version-offline"
+}
 $zip = Join-Path $output ($name + ".zip")
 $checksum = $zip + ".sha256"
 if ($Clean) { Remove-Item $zip, $checksum -Force -ErrorAction SilentlyContinue }
 if (Test-Path $zip) { throw "Output ZIP exists: $zip (use -Clean or a different version)" }
 $work = Join-Path $env:TEMP ("chamber-offline-" + [guid]::NewGuid().ToString("N"))
+$stampFile = Join-Path $repo "chamber_web/build-revision.json"
+$createdStamp = $false
 New-Item -ItemType Directory -Path $work | Out-Null
 function Native([string]$command, [string[]]$arguments) {
     & $command @arguments
@@ -98,6 +114,20 @@ try {
         }
     }
     Native $py @("-m", "pip", "install", "--disable-pip-version-check", "pyinstaller==6.16.0")
+    if ($preProduction) {
+        # H02 admission binds the exact GUI and driver revisions. A frozen
+        # bundle has no git checkout (and a hash-locked wheelhouse may lose the
+        # driver's direct_url.json), so record an integrity-manifested stamp
+        # from this clean build tree before freezing.
+        Native $py @((Join-Path $repo "scripts/build_revision.py"),
+                     "--out", $stampFile)
+        $createdStamp = $true
+    }
+    $serverEntry = if ($preProduction) {
+        Join-Path $repo "scripts/windows_app_server.py"
+    } else {
+        Join-Path $repo "scripts/windows_server.py"
+    }
     $freeze = @(
         "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir",
         "--name", "ClimateChamberServer", "--paths", $repo,
@@ -109,7 +139,7 @@ try {
         "--hidden-import", "chamber_web.adapters.registry"
     )
     if (-not $SimulationOnly) { $freeze += @("--collect-all", "VotschTechnikClimateChamber") }
-    $freeze += (Join-Path $repo "scripts/windows_server.py")
+    $freeze += $serverEntry
     Native $py $freeze
     Copy-Item (Join-Path $work "frozen/ClimateChamberServer/*") $server -Recurse -Force
     $serverExe = Join-Path $server "ClimateChamberServer.exe"
@@ -119,12 +149,18 @@ try {
     Native $serverExe $testFlags
 
     # Script A is a genuinely separate maintained thin-launcher build.
-    & (Join-Path $repo "scripts/build_windows_launcher.ps1") -Clean -OutputDir $bundle -Configuration $Configuration -Version $Version -Python $Python
+    & (Join-Path $repo "scripts/build_windows_launcher.ps1") -Clean -OutputDir $bundle -Configuration $Configuration -Version $Version -Python $Python -Entry $(if ($preProduction) { "scripts/windows_app_launcher.py" } else { "scripts/windows_launcher.py" }) -Variant $variantKey
     if (-not $?) { throw "Launcher build failed" }
-    Copy-Item (Join-Path $repo "README_OFFLINE_WINDOWS.md") $bundle
+    if ($preProduction) {
+        Copy-Item (Join-Path $repo "README_PREPRODUCTION_WINDOWS.md") $bundle
+        Copy-Item (Join-Path $repo "scripts/chamber.env.example") $bundle
+    } else {
+        Copy-Item (Join-Path $repo "README_OFFLINE_WINDOWS.md") $bundle
+    }
     Copy-Item (Join-Path $repo "scripts/create_windows_shortcuts.ps1") $bundle
     $manifestArgs = @((Join-Path $repo "scripts/windows_manifest.py"),
         "--bundle", $bundle, "--create", "--version", $Version,
+        "--variant", $variantKey,
         "--requirements-web", (Join-Path $repo "requirements-web.txt"),
         "--requirements-hardware", (Join-Path $repo "requirements-hardware.txt"))
     if (-not $SimulationOnly) { $manifestArgs += "--include-driver" }
@@ -144,8 +180,15 @@ try {
                  (Join-Path $scratch $name), "--verify")
     ((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant() +
       "  " + [IO.Path]::GetFileName($zip)) | Set-Content -Encoding ASCII $checksum
-    Write-Host "Simulation-only runtime: physical chamber I/O DISABLED"
-    Write-Host "Offline feasibility bundle: $zip"
+    if ($preProduction) {
+        Write-Host "Pre-production runtime: supervised physical capability included; NOT certified"
+    } else {
+        Write-Host "Simulation-only runtime: physical chamber I/O DISABLED"
+    }
+    Write-Host "Offline bundle: $zip"
     Write-Host "SHA256: $checksum"
 }
-finally { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
+finally {
+    if ($createdStamp) { Remove-Item $stampFile -Force -ErrorAction SilentlyContinue }
+    Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+}

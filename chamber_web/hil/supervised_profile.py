@@ -127,14 +127,15 @@ class SupervisedProfileRuntime:
 
     def live_checks(self, *, authenticated_authorized: bool,
                     connected: bool, verified_stopped: bool, no_stop_latch: bool,
-                    recording_healthy: bool):
+                    recording_healthy: bool,
+                    physical_stop_confirmed: bool):
         return H02LiveChecks(
             g04_exclusive_owner=connected,
             g04_verified_stopped=verified_stopped,
             no_stop_latch=no_stop_latch,
             g07_reconciled_writable=recording_healthy,
             g08_authenticated_authorized=authenticated_authorized,
-            physical_stop_procedure_confirmed=self.hil_acknowledged,
+            physical_stop_procedure_confirmed=bool(physical_stop_confirmed),
             operator_present=authenticated_authorized,
             witness_present=bool(self.witness.strip()),
             supervisor_alive=bool(self.supervisor_alive()),

@@ -34,6 +34,11 @@ from chamber_web.security.auth import Role, SecurityStore
 from chamber_web.security.guards import AuthorizedChamber, Permission, require_permission
 from chamber_web.services.chamber_manager import ChamberManager
 
+# One explicit physical STOP-procedure acknowledgement covers one operator
+# shift; a new server start or a role/credential change always requires a new
+# acknowledgement. It is process-local and never persisted or browser-supplied.
+STOP_CONFIRMATION_TTL_S = 12 * 60 * 60
+
 
 @dataclass(frozen=True)
 class RunEventRow:
@@ -69,6 +74,7 @@ class RunView:
     can_resume: bool
     events: tuple[RunEventRow, ...]
     supervised: bool = False
+    stop_procedure_confirmed: bool = False
 
 
 class ProfileExecutionService:
@@ -105,6 +111,10 @@ class ProfileExecutionService:
         self._runner: ProfileRunner | None = None
         self._started_at: float | None = None
         self._task: asyncio.Task | None = None
+        # Explicit operator acknowledgement of the physical STOP procedure,
+        # per authenticated username and bounded to one shift. This is a live
+        # admission input, never derived from the launch-time HIL ack.
+        self._stop_confirmed: dict[str, float] = {}
 
     @property
     def chamber_id(self) -> str:
@@ -150,11 +160,51 @@ class ProfileExecutionService:
         except Exception:
             return "Run journal unavailable"
 
+    def stop_procedure_confirmed(self, username: str) -> bool:
+        """True only for a live, unexpired explicit acknowledgement."""
+        if self._simulation or self._supervised is None or not username:
+            return False
+        with self._lock:
+            expiry = self._stop_confirmed.get(username)
+            if expiry is None:
+                return False
+            if time.monotonic() >= expiry:
+                self._stop_confirmed.pop(username, None)
+                return False
+            return True
+
+    def confirm_physical_stop_procedure(self, session: str | None,
+                                        csrf: str | None) -> None:
+        """Record that this operator has read and can perform the STOP procedure.
+
+        This is a separate, audited human act: the launch-time HIL
+        acknowledgement only admits physical I/O, it does not prove that the
+        person at the chamber knows how to stop it. Web STOP is not an
+        emergency stop; the chamber's own controls remain primary.
+        """
+        actor = self._guard.authorize(
+            session, csrf, Permission.PROFILE_RUN, chamber_id=self._chamber_id)
+        if self._simulation or self._supervised is None:
+            raise ChamberSafetyError(
+                "Physical STOP procedure confirmation applies only to a "
+                "supervised physical deployment")
+        with self._lock:
+            self._stop_confirmed[actor.username] = (
+                time.monotonic() + STOP_CONFIRMATION_TTL_S)
+        self._security.audit(
+            actor, "profile.stop_procedure", "SUCCESS", self._chamber_id)
+
     def _admit_supervised(self, actor, profile_id: str,
                           revision: int) -> SupervisedRun:
         """Fail-closed H02 admission against the server-owned signed permit."""
         supervised = self._supervised
         assert supervised is not None
+        if not self.stop_procedure_confirmed(actor.username):
+            self._security.audit(
+                actor, "profile.stop_procedure", "DENIED", self._chamber_id)
+            raise AdmissionDenied(
+                "Confirm the physical STOP procedure before starting a "
+                "supervised physical run")
         if supervised.supervision is None:
             raise AdmissionDenied(
                 "H02-C independent supervisor is not configured; "
@@ -182,6 +232,7 @@ class ProfileExecutionService:
             verified_stopped=health.state == "VERIFIED_STOPPED",
             no_stop_latch=not health.stop_latched,
             recording_healthy=not self._blocked_reason(),
+            physical_stop_confirmed=self.stop_procedure_confirmed(actor.username),
         )
         permit_sha = preflight_physical_profile(
             supervised.permit.envelope,
@@ -403,6 +454,7 @@ class ProfileExecutionService:
             if event.kind != "SAMPLE"
         )
         mine = snapshot is not None and snapshot.operator_id == actor.username
+        stop_confirmed = self.stop_procedure_confirmed(actor.username)
         return RunView(
             state.value if state is not None else None, active,
             snapshot.run_id if snapshot else None,
@@ -415,6 +467,7 @@ class ProfileExecutionService:
             blocker if blocker and not active else (runner.reason if runner is not None else ""),
             health.stop_latched, health.state, self._simulation,
             may_run and manual_available and (self._simulation or (
+                stop_confirmed and
                 self._supervised is not None and
                 self._supervised.supervision is not None and
                 self._supervised.supervision.alive())) and
@@ -427,6 +480,7 @@ class ProfileExecutionService:
             may_run and mine and state is RunState.PAUSED,
             events,
             self._supervised is not None,
+            stop_confirmed,
         )
 
     async def shutdown(self) -> None:

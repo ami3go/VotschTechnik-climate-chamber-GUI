@@ -1003,6 +1003,8 @@ class SupervisedServiceWatchdogTests(unittest.TestCase):
             simulation=False, supervised=runtime,
             parameters=RunParameters(poll_s=0.05, max_gap_s=1, max_age_s=1),
         )
+        service.confirm_physical_stop_procedure(
+            self.operator.session, self.operator.csrf)
 
         def close_runner():
             runner = service.runner
