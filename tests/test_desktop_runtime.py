@@ -163,10 +163,10 @@ class ProcessLockTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             os.environ["CHAMBER_STATE_DIR"] = tmp
-            with process_lock("server.lock", state_name="App"):
-                with self.assertRaises(RuntimeError):
-                    with process_lock("server.lock", state_name="App",
-                                      wait_seconds=0.1):
-                        pass
+            with process_lock("server.lock", state_name="App"), \
+                    self.assertRaises(RuntimeError), \
+                    process_lock("server.lock", state_name="App",
+                                 wait_seconds=0.1):
+                pass
             with process_lock("server.lock", state_name="App"):
                 pass
