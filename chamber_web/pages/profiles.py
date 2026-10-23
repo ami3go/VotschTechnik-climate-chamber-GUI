@@ -436,7 +436,10 @@ def profiles_page() -> None:
                  "STOP and emergency stop. Web STOP is not an emergency stop.")
         if view.lab:
             run_mode_label.set_text(
-                f"Physical chamber · isolated lab mode · controller {view.controller_state}")
+                f"Physical chamber · isolated lab mode · controller {view.controller_state}" +
+                (" · Run Loaded Revision re-verifies STOPPED and clears the "
+                 "restart lock"
+                 if view.stop_latched and view.controller_state == "UNKNOWN" else ""))
         elif not view.simulation:
             run_mode_label.set_text(
                 "Physical HIL: signed site permit, live supervision and an explicit "

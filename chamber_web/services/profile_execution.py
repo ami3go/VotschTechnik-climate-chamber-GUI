@@ -327,6 +327,20 @@ class ProfileExecutionService:
             runner.advance()
             time.sleep(0.02)
 
+    def _lab_restart_recoverable(self, health) -> bool:
+        """Lab mode may clear a restart fence on an explicit Run Profile.
+
+        A previous process leaves the durable lease uncertain, so a freshly
+        connected chamber is reported as UNKNOWN with the STOP fence latched.
+        Repeated physical restarts must not require a separate Admin click.
+        Recovery is still conditional on G04's independent fresh, GOOD,
+        STOPPED read; a FAULT, RUNNING or disconnected chamber never qualifies.
+        """
+        return (self._lab is not None and
+                health.connected and
+                health.state == "UNKNOWN" and
+                health.stop_latched)
+
     def _prepare_operator_profile_start(
         self, session: str | None, csrf: str | None, actor,
     ) -> None:
@@ -344,7 +358,9 @@ class ProfileExecutionService:
                 raise ChamberSafetyError(
                     "Chamber control is held by another operator")
         health = self._manager.health(self._chamber_id)
-        if (not health.connected or health.state != "VERIFIED_STOPPED"):
+        restart_recovery = self._lab_restart_recoverable(health)
+        if not health.connected or (
+                health.state != "VERIFIED_STOPPED" and not restart_recovery):
             raise ChamberSafetyError(
                 "Stop the chamber and verify STOPPED status before running a profile")
         if health.stop_latched:
@@ -361,6 +377,10 @@ class ProfileExecutionService:
                 raise
             self._security.audit(
                 actor, "profile.stop_rearm", "SUCCESS", self._chamber_id)
+            health = self._manager.health(self._chamber_id)
+            if health.state != "VERIFIED_STOPPED" or health.stop_latched:
+                raise ChamberSafetyError(
+                    "STOP reconciliation did not verify a fresh STOPPED chamber")
         if guard is not None:
             health = self._manager.health(self._chamber_id)
             guard.release_stopped_manual_lease_for_profile(
@@ -479,6 +499,7 @@ class ProfileExecutionService:
         )
         mine = snapshot is not None and snapshot.operator_id == actor.username
         stop_confirmed = self.stop_procedure_confirmed(actor.username)
+        lab_restart_ready = self._lab_restart_recoverable(health)
         return RunView(
             state.value if state is not None else None, active,
             snapshot.run_id if snapshot else None,
@@ -495,8 +516,8 @@ class ProfileExecutionService:
                 self._supervised is not None and
                 self._supervised.supervision is not None and
                 self._supervised.supervision.alive())) and
-            not blocker and not active and
-            health.connected and health.state == "VERIFIED_STOPPED",
+            not blocker and not active and health.connected and
+            (health.state == "VERIFIED_STOPPED" or lab_restart_ready),
             may_run and active and state is not RunState.STOP_REQUESTED,
             may_run and mine and state in (
                 RunState.REACHING, RunState.STABILIZING, RunState.DWELLING,

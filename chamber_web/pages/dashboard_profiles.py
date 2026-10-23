@@ -226,7 +226,9 @@ def _build():
         reload_button.disable() if view.active else reload_button.enable()
         if view.lab:
             mode_label.set_text(
-                "Physical chamber: isolated lab mode — no permit or watchdog required")
+                "Physical chamber: isolated lab mode — no permit or watchdog required" +
+                ("; Run re-verifies STOPPED and clears the restart lock"
+                 if view.stop_latched and view.controller_state == "UNKNOWN" else ""))
         elif not view.simulation:
             mode_label.set_text(
                 "Physical HIL: signed permit, witness and live watchdog required"

@@ -8,9 +8,11 @@ from __future__ import annotations
 import json
 import time
 import unittest
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from chamber_web.adapters.votsch import VotschBackend
 from chamber_web.bootstrap import create_demo_control_services
@@ -234,6 +236,39 @@ class LabProfileExecutionTests(unittest.TestCase):
         self.assertEqual(sum(call == ("start",) for call in stack.driver.calls), 1)
         # Recorded in the G07 journal like any other run.
         self.assertTrue(any(self.root.joinpath("runs").rglob("*")))
+
+    def test_lab_run_clears_restart_lock_after_fresh_stopped_read(self):
+        """A restart leaves UNKNOWN/latched; explicit Run may reconcile it."""
+        stack = self.stack()
+        actual_health = stack.manager.health
+        locked = replace(actual_health(stack.chamber_id),
+                         state="UNKNOWN", stop_latched=True,
+                         reason="restart uncertainty")
+        state = {"reconciled": False}
+        def health(chamber_id):
+            return actual_health(chamber_id) if state["reconciled"] else locked
+        def reconcile(_chamber_id):
+            state["reconciled"] = True
+        with (patch.object(stack.manager, "health", side_effect=health),
+              patch.object(stack.manager, "reconcile_stop", side_effect=reconcile)):
+            view = stack.service.view(stack.operator.session)
+            self.assertTrue(view.can_start)
+            self.assertEqual(view.controller_state, "UNKNOWN")
+            stack.start(stack.profile({"target": 23}))
+            self.assertTrue(state["reconciled"])
+            self.assertEqual(stack.drain(), RunState.COMPLETED,
+                             stack.service.runner.reason)
+
+    def test_lab_run_does_not_reconcile_a_faulted_chamber(self):
+        stack = self.stack()
+        faulted = replace(stack.manager.health(stack.chamber_id),
+                          state="FAULT", stop_latched=True, reason="backend fault")
+        with (patch.object(stack.manager, "health", return_value=faulted),
+              patch.object(stack.manager, "reconcile_stop") as reconcile):
+            self.assertFalse(stack.service.view(stack.operator.session).can_start)
+            with self.assertRaises(ChamberSafetyError):
+                stack.start(stack.profile({"target": 23}))
+            reconcile.assert_not_called()
 
     def test_without_lab_mode_physical_profiles_stay_disabled(self):
         stack = self.stack(lab=None)

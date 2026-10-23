@@ -22,6 +22,10 @@ layer. Set the chamber's own limiter to suit the specimen before an unattended r
   connection, stale or invalid telemetry, identity change, or missed step/run
   deadline stops the run.
 - The run journal (history, logs, samples). A broken journal refuses starts.
+- After a server restart the controller reports `UNKNOWN` until STOP is
+  reverified. In lab mode the first **Run** performs that independent fresh
+  `GOOD`/`STOPPED` read and clears the restart fence; a FAULT or a chamber that
+  is actually running is never cleared automatically.
 
 ## Configure
 
