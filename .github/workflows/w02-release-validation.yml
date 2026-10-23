@@ -4,6 +4,7 @@ on:
     paths:
       - "scripts/w02_release.py"
       - "scripts/w02_target_verifier.py"
+      - "scripts/w02_closure.py"
       - "scripts/verify_w02_release.ps1"
       - "tests/test_windows_packaging.py"
       - ".github/workflows/windows-packaging.yml"
@@ -12,6 +13,21 @@ on:
       - "docs/W02_SECURITY_REVIEW.md"
       - "scripts/windows_manifest.py"
       - "tests/test_w02_release.py"
+      - "tests/test_w02_closure.py"
+      - "requirements-w02-build.txt"
+      - "requirements-w02-runtime.lock"
+      - "requirements-hardware.txt"
+      - "w02-closure-manifest.json"
+      - ".github/workflows/w02-release-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/w02_closure.py"
+      - "tests/test_w02_closure.py"
+      - "requirements-w02-runtime.lock"
+      - "w02-closure-manifest.json"
+      - "requirements-web.txt"
+      - "requirements-hardware.txt"
       - "requirements-w02-build.txt"
       - ".github/workflows/w02-release-validation.yml"
   workflow_dispatch:
@@ -36,3 +52,96 @@ jobs:
         run: python -m pytest -q tests/test_w02_release.py tests/test_windows_packaging.py
       - name: Report gating
         run: echo "W02 release NO-GO - self-hosted offline clean-VM acceptance and trusted signature required"
+
+  # S2-03: the air-gap dependency closure of the frozen Windows runtime.
+  #
+  # The closure is resolved and downloaded on the *connected* Windows build
+  # host, which is where a Windows release is built. That proves the closure
+  # is complete and hash-verified and that the target can install it with no
+  # index access. It is NOT the disconnected clean-VM acceptance (Stage 2
+  # S2-04) and it is NOT a release approval.
+  airgap-closure:
+    name: Air-gap closure (win_amd64, Python 3.12)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+      - name: Lint the closure tooling
+        run: python -m pip install ruff==0.17.0
+      - name: Lint the closure tooling
+        run: python -m ruff check scripts/w02_closure.py tests/test_w02_closure.py --select E4,E7,E9,F
+      - name: Install the closure test prerequisites
+        # pytest.ini loads the NiceGUI pytest plugin, so the runtime web
+        # dependencies must be importable for the test session. The build
+        # requirements carry the pinned build backend for the vendored driver
+        # wheel, which has to be byte-reproducible.
+        run: python -m pip install -r requirements-web.txt -r requirements-w02-build.txt pytest==9.1.1
+      - name: Adversarial closure tests
+        run: python -m pytest -q tests/test_w02_closure.py
+      - name: Resolve and download the hash-locked closure
+        # The external Votsch driver is not on an index: it is vendored from
+        # the pinned revision in requirements-hardware.txt and built
+        # reproducibly, so its hash belongs in the closure too.
+        run: >
+          python -m scripts.w02_closure build
+          --requirements requirements-web.txt
+          --vcs-requirement requirements-hardware.txt
+          --wheelhouse w02-wheelhouse
+          --lock w02-closure-build/built.lock
+          --manifest w02-closure-build/built-manifest.json
+          --target win_amd64-cp312
+          --version 1.0.0
+      - name: Verify the freshly built wheelhouse
+        run: >
+          python -m scripts.w02_closure verify
+          --wheelhouse w02-wheelhouse
+          --lock w02-closure-build/built.lock
+          --manifest w02-closure-build/built-manifest.json
+          --target win_amd64-cp312
+      - name: Prove an offline installation with no index access
+        run: >
+          python -m scripts.w02_closure install
+          --wheelhouse w02-wheelhouse
+          --lock w02-closure-build/built.lock
+          --target-dir offline-target
+      - name: Reproduce the reviewed closure when it is committed
+        if: hashFiles('requirements-w02-runtime.lock') != ''
+        run: >
+          python -m scripts.w02_closure verify
+          --wheelhouse w02-wheelhouse
+          --lock requirements-w02-runtime.lock
+          --manifest w02-closure-manifest.json
+          --target win_amd64-cp312
+      - name: Install offline from the reviewed closure when it is committed
+        if: hashFiles('requirements-w02-runtime.lock') != ''
+        run: >
+          python -m scripts.w02_closure install
+          --wheelhouse w02-wheelhouse
+          --lock requirements-w02-runtime.lock
+          --target-dir offline-reviewed
+      - name: Emit the runtime SBOM and license inventory
+        run: >
+          python -m scripts.w02_closure sbom
+          --lock w02-closure-build/built.lock
+          --manifest w02-closure-build/built-manifest.json
+          --sbom-out w02-closure-build/sbom.cdx.json
+          --licenses-out w02-closure-build/THIRD_PARTY_LICENSES.csv
+          --target win_amd64-cp312
+          --version 1.0.0
+      - name: Publish the closure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w02-airgap-closure-win-amd64-cp312
+          path: |
+            w02-closure-build/built.lock
+            w02-closure-build/built-manifest.json
+            w02-closure-build/sbom.cdx.json
+            w02-closure-build/THIRD_PARTY_LICENSES.csv
+          if-no-files-found: error
+      - name: Report gating
+        run: echo "W02 release NO-GO - the closure is software evidence only; disconnected clean-VM acceptance, a site publisher key and independent review remain required"

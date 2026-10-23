@@ -6,8 +6,15 @@ G04 trusted server-only token-free compatibility calls to web requests.
 from __future__ import annotations
 
 import threading
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
+
+from chamber_web.domain.chamber import (
+    ChamberSafetyError,
+    OperationState,
+    ReadingQuality,
+)
 
 from .auth import Actor, AuthorizationError, Role, SecurityStore
 
@@ -66,6 +73,9 @@ class AuthorizedChamber:
         self._token_lock = threading.RLock()
         self._token_owner: dict[str, int] = {}
         self._token_names: dict[str, str] = {}
+        # Internal revision prevents rearming after lease release/handover/reclaim.
+        # It is not an ownership token and is never sent to the browser.
+        self._token_revision = 0
 
     def authorize(self, session: str | None, csrf: str | None,
                   permission: Permission, *, chamber_id: str | None = None) -> Actor:
@@ -115,16 +125,177 @@ class AuthorizedChamber:
             with self._token_lock:
                 self._token_owner[result] = actor.user_id
                 self._token_names[result] = actor.username
+                self._token_revision += 1
         elif command == "release_operator":
             with self._token_lock:
                 self._token_owner.pop(token, None)
                 self._token_names.pop(token, None)
+                self._token_revision += 1
         self._security.audit(actor, "chamber." + command, "SUCCESS", chamber_id)
         return result
 
     def stop(self, session: str | None, csrf: str | None, chamber_id: str) -> None:
         # Intentionally NO operator_token. STOP is role-checked but lease-independent.
         self.execute(session, csrf, chamber_id, "stop")
+
+    def ensure_manual_operator_lease(
+        self, session: str | None, csrf: str | None, chamber_id: str,
+    ) -> None:
+        """Acquire a free manual lease on an explicit operator action.
+
+        Never transfer an existing lease, including a G06 profile runner lease.
+        This operation cannot issue any device write or bypass G04 fencing.
+        The registry lock serializes competing browser claims; G04 remains the
+        final authority, including when a profile owns the controller.
+        """
+        self.ensure_manual_operator_lease_revision(session, csrf, chamber_id)
+
+    def ensure_manual_operator_lease_revision(
+        self, session: str | None, csrf: str | None, chamber_id: str,
+    ) -> int:
+        """Acquire a free manual lease and return its registry revision.
+
+        The revision is read inside the same critical section as the claim, so
+        a concurrent reader (for example the one-second dashboard refresh)
+        can never make an *owned* lease look unowned. The previous design used
+        a separate best-effort, non-blocking probe that was only ever safe on
+        the priority STOP path; on a Start path its contention was
+        indistinguishable from "no lease held" and refused a legitimate
+        operator Start while the STOP fence stayed latched.
+
+        Returns the current registry revision of the lease the caller holds.
+        """
+        actor = self.authorize(
+            session, csrf, Permission.CHAMBER_CONTROL, chamber_id=chamber_id)
+        self._manager.get(chamber_id)
+        with self._token_lock:
+            if actor.user_id in self._token_owner.values():
+                return self._token_revision
+            if self._token_owner:
+                raise AuthorizationError("Another operator owns chamber control")
+            # execute() audits INTENT/SUCCESS and registers the opaque token.
+            # The reentrant lock makes the check/claim/update atomic for manual
+            # browser requests while G04 blocks a parallel G06 owner.
+            self.execute(session, csrf, chamber_id, "claim_operator")
+            return self._token_revision
+
+    def release_stopped_manual_lease_for_profile(
+        self, session: str | None, csrf: str | None, chamber_id: str,
+        *, expected_generation: int,
+    ) -> bool:
+        """Hand an idle manual lease to G06 only on its owner's explicit Run.
+
+        No other user's lease can be transferred; a live chamber RUNNING,
+        UNKNOWN, or under a new STOP generation is never released. G04's
+        subsequent profile claim is independent and must pass full admission.
+        STOP remains lease-independent and never waits for this registry.
+        """
+        actor = self.authorize(
+            session, csrf, Permission.PROFILE_RUN, chamber_id=chamber_id)
+        self._manager.get(chamber_id)
+        with self._token_lock:
+            if not self._token_owner:
+                return False
+            if (len(self._token_owner) != 1 or
+                    actor.user_id not in self._token_owner.values()):
+                raise AuthorizationError(
+                    "Chamber manual control belongs to another operator")
+            health = self._manager.health(chamber_id)
+            if (not health.connected or health.stop_latched or
+                    health.state != "VERIFIED_STOPPED" or
+                    health.generation != expected_generation):
+                raise ChamberSafetyError(
+                    "Stop and verify the chamber before running a profile")
+            # A second authoritative status check is required before handing
+            # over the lease. The profile runner independently rechecks.
+            sample = self._manager.status(chamber_id)
+            sampled = sample.sampled_at_utc
+            if (sample.quality is not ReadingQuality.GOOD or
+                    sample.operation_state is not OperationState.STOPPED or
+                    sampled is None or sampled.tzinfo is None or
+                    not -1 <= (datetime.now(timezone.utc) -
+                               sampled.astimezone(timezone.utc)).total_seconds() <= 5):
+                raise ChamberSafetyError(
+                    "Fresh STOPPED chamber status required for profile handoff")
+            latest = self._manager.health(chamber_id)
+            if (latest.stop_latched or latest.state != "VERIFIED_STOPPED" or
+                    latest.generation != expected_generation):
+                raise ChamberSafetyError("Chamber state changed during profile handoff")
+            token = next(iter(self._token_owner))
+            self._security.audit(
+                actor, "chamber.manual_to_profile", "INTENT", chamber_id)
+            try:
+                self.execute(session, csrf, chamber_id, "release_operator", token)
+            except BaseException as exc:
+                self._security.audit(
+                    actor, "chamber.manual_to_profile", "FAILED",
+                    chamber_id, type(exc).__name__)
+                raise
+            self._security.audit(
+                actor, "chamber.manual_to_profile", "SUCCESS", chamber_id)
+            return True
+
+    def owned_lease_revision_now(self, user_id: int) -> int | None:
+        """Best-effort, nonblocking lease-owner snapshot for priority STOP.
+
+        Never wait for an admin handover or a token-registry lock before
+        dispatching STOP. Contention disables automatic rearm, not STOP.
+
+        Only the priority STOP path may use this probe: ``None`` means
+        "unknown", which is safe there (the rearm is merely skipped) but is
+        indistinguishable from "no lease held" on a Start path. A Start must
+        use ``ensure_manual_operator_lease_revision`` instead.
+        """
+        if not self._token_lock.acquire(blocking=False):
+            return None
+        try:
+            return (self._token_revision
+                    if user_id in self._token_owner.values() else None)
+        finally:
+            self._token_lock.release()
+
+    def rearm_after_owned_verified_stop(
+        self, session: str | None, csrf: str | None, chamber_id: str,
+        *, expected_generation: int, expected_lease_revision: int,
+    ) -> bool:
+        """Rearm a *verified* STOP for the authenticated current lease owner.
+
+        Called after STOP by its original owner, or on an explicit subsequent
+        Start/Set Target request. Never clears UNKNOWN/FAULT, never issues
+        START itself, and never accepts a browser-provided bearer token.
+        G04 independently checks fresh STOPPED readback and exact generation.
+        A concurrent STOP, changed lease, revoked session or G06-owned
+        controller cannot be recovered through this path.
+        """
+        actor = self.authorize(session, csrf, Permission.CHAMBER_CONTROL,
+                               chamber_id=chamber_id)
+        self._manager.get(chamber_id)
+        with self._token_lock:
+            if (self._token_revision != expected_lease_revision or
+                    not any(owner_id == actor.user_id
+                            for owner_id in self._token_owner.values())):
+                return False
+            health = self._manager.health(chamber_id)
+            if (not health.connected or not health.stop_latched or
+                    health.state != "VERIFIED_STOPPED" or
+                    health.generation != expected_generation):
+                return False
+            # Durable audit INTENT before changing the controller latch.
+            self._security.audit(
+                actor, "chamber.stop.auto_rearm", "INTENT", chamber_id)
+            try:
+                # G04 independently rechecks fresh, matching, GOOD STOPPED
+                # readback and the same generation before clearing the
+                # durable uncertainty fence. A newer STOP cannot be bypassed.
+                self._manager.reconcile_stop(chamber_id)
+            except BaseException as exc:
+                self._security.audit(
+                    actor, "chamber.stop.auto_rearm", "FAILED",
+                    chamber_id, type(exc).__name__)
+                raise
+            self._security.audit(
+                actor, "chamber.stop.auto_rearm", "SUCCESS", chamber_id)
+            return True
 
     def ownership_view(self, session: str | None, chamber_id: str) -> tuple[str | None, bool]:
         """Read-only, no owner tokens leave this server-owned facade."""
@@ -193,6 +364,7 @@ class AuthorizedChamber:
                 replacement = self._manager.claim_operator(chamber_id, actor.username)
                 self._token_owner[replacement] = actor.user_id
                 self._token_names[replacement] = actor.username
+                self._token_revision += 1
         except BaseException as exc:
             self._security.audit(actor, "chamber.handover", "FAILED",
                                  chamber_id, type(exc).__name__)

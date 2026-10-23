@@ -1,0 +1,52 @@
+name: Profile Run readiness and manual handoff (offline)
+on:
+  pull_request:
+    paths:
+      - 'chamber_web/services/profile_execution.py'
+      - 'chamber_web/security/guards.py'
+      - 'chamber_web/pages/profiles.py'
+      - 'chamber_web/pages/dashboard_profiles.py'
+      - 'chamber_web/main.py'
+      - 'tests/test_profile_execution_service.py'
+      - 'tests/test_dashboard_profile_ui.py'
+      - '.github/workflows/profile-run-readiness-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'chamber_web/services/profile_execution.py'
+      - 'chamber_web/security/guards.py'
+      - 'chamber_web/pages/profiles.py'
+      - 'chamber_web/pages/dashboard_profiles.py'
+      - 'chamber_web/main.py'
+      - 'tests/test_profile_execution_service.py'
+      - 'tests/test_dashboard_profile_ui.py'
+      - '.github/workflows/profile-run-readiness-ci.yml'
+permissions:
+  contents: read
+jobs:
+  profile-readiness:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.12'
+          - os: windows-latest
+            python: '3.10'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install web and offline test dependencies
+        run: |
+          python -m pip install -r requirements-web.txt
+          python -m pip install pytest==9.1.1 pytest-asyncio==1.4.0 cryptography==46.0.2
+      - name: Profile start/stop, manual lease and authorization regressions
+        run: python -m pytest -q tests/test_profile_execution_service.py tests/test_profile_security_integration.py tests/test_profile_runner.py
+      - name: Dashboard profile selector and repeat-run browser integration
+        run: python -m pytest -q tests/test_dashboard_profile_ui.py
+      - name: H02 supervised profile permit and unsafe-run prevention
+        run: python -m pytest -q tests/test_h02_supervised_profile.py

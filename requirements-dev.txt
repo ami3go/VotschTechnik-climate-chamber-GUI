@@ -3,3 +3,7 @@ pytest==9.1.1
 pytest-asyncio==1.4.0
 playwright==1.58.0
 ruff==0.17.0
+# Ed25519 permit signing for H02 supervised-profile tests and W02 release
+# signature verification; same pin as requirements-w02-build.txt so one dev
+# requirements file reproduces the CI test environment.
+cryptography==46.0.2

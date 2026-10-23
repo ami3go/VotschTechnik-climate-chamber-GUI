@@ -34,7 +34,7 @@ async def test_factory_admin_login_change_password_and_relogin(
 
     user = create_user()
     await user.open("/login")
-    await user.should_see("Factory credentials in use", retries=30)
+    await user.should_see("Factory administrator password and PIN are still active", retries=30)
     user.find("Username").type("admin")
     user.find("Password").type("admin")
     user.find("Sign in").click()
@@ -48,10 +48,20 @@ async def test_factory_admin_login_change_password_and_relogin(
     user.find("Repeat new administrator password").type("DifferentPassword#123")
     user.find("Change password").click()
     await user.should_see("sign in", retries=30)
+    # Emulate a server restart with a newly constructed persistent store, not
+    # merely a second browser interaction with the same in-memory instance.
+    restarted = SecurityStore(tmp_path / "security")
+    assert restarted.provision_factory_admin() is False
+    assert restarted.factory_credentials_active() == (False, True)
+    monkeypatch.setattr(security_ui, "_store", restarted)
+    monkeypatch.setattr(application._manual_service, "_security", restarted)
+    monkeypatch.setattr(application._manual_service._authorized, "_security", restarted)
     await user.open("/login")
+    await user.should_see("Administrator password has been changed", retries=30)
+    await user.should_see("Only the factory PIN is still active", retries=30)
     user.find("Username").type("admin")
     user.find("Password").type("DifferentPassword#123")
     user.find("Sign in").click()
     await user.should_see("Signed in: admin (ADMIN)", retries=30)
-    assert store.factory_credentials_active() == (False, True)
+    assert restarted.factory_credentials_active() == (False, True)
 

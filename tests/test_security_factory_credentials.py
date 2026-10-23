@@ -58,8 +58,8 @@ class FactoryCredentialTests(unittest.TestCase):
         self.assertFalse(restarted.provision_factory_admin())
         self.assertIsNotNone(restarted.login("admin", "12345678", use_pin=True).session)
 
-    def test_composition_refuses_lan_startup_while_factory_credentials_active(self):
-        """LAN must never be served while the factory password/PIN still work."""
+    def test_lan_factory_credentials_warn_without_blocking_startup(self):
+        """Warn about weak credentials without weakening normal LAN auth rules."""
         from chamber_web.security import nicegui as security_ui
         from chamber_web.security.deployment import DeploymentPolicy
 
@@ -71,8 +71,13 @@ class FactoryCredentialTests(unittest.TestCase):
         with patch.dict(os.environ, {"CHAMBER_SECURITY_DIR": str(self.path)}), \
                 patch.object(security_ui, "deployment_policy", policy), \
                 patch.object(security_ui, "_store", None):
-            with self.assertRaisesRegex(RuntimeError, "Factory administrator password"):
-                security_ui.get_security()
+            with self.assertLogs("chamber_web.security.nicegui", level="WARNING") as logs:
+                started = security_ui.get_security()
+            self.assertEqual(started.factory_credentials_active(), (True, True))
+            self.assertIn("factory administrator password and PIN",
+                          " ".join(logs.output))
+            self.assertIs(started.authenticate(
+                started.login("admin", "admin").session).role, Role.ADMIN)
 
     def test_admin_can_change_both_credentials_and_restart_does_not_reset(self):
         self.store.provision_factory_admin()
@@ -103,14 +108,46 @@ class FactoryCredentialTests(unittest.TestCase):
         with self.assertRaises(AuthenticationError):
             restarted.login("admin", "admin")
 
-    def test_default_password_cannot_select_large_network(self):
+    def test_password_only_change_survives_reopen_and_does_not_require_repeat(self):
+        self.store.provision_factory_admin()
+        first = self.store.login("admin", "admin")
+        self.store.change_password(
+            first.session, first.csrf, "admin", "DifferentPassword#123")
+        restarted = SecurityStore(self.path)
+        self.assertFalse(restarted.provision_factory_admin())
+        self.assertEqual(restarted.factory_credentials_active(), (False, True))
+        with self.assertRaises(AuthenticationError):
+            restarted.login("admin", "admin")
+        self.assertIsNotNone(
+            restarted.login("admin", "DifferentPassword#123").session)
+
+    def test_factory_banner_names_only_unmodified_credential(self):
+        from chamber_web.security.nicegui import factory_credential_warning
+
+        self.assertIsNone(factory_credential_warning(False, False))
+        combined = factory_credential_warning(True, True)
+        self.assertIn("password and PIN are still active", combined)
+        password_only = factory_credential_warning(True, False)
+        self.assertIn("password is still active", password_only)
+        pin_only = factory_credential_warning(False, True)
+        self.assertIn("password has been changed", pin_only)
+        self.assertIn("PIN is still active", pin_only)
+        self.assertIn("does not need to be changed again", pin_only)
+
+    def test_factory_password_does_not_block_large_network_profile(self):
         self.store.provision_factory_admin()
         login = self.store.login("admin", "admin")
         with self.assertRaises(AuthorizationError):
             self.store.set_security_profile(
-                login.session, login.csrf, "admin", SecurityProfile.LARGE_NETWORK
-            )
-        self.assertEqual(self.store.get_security_profile(), SecurityProfile.GENERAL)
+                login.session, login.csrf, "bad", SecurityProfile.LARGE_NETWORK)
+        self.store.set_security_profile(
+            login.session, login.csrf, "admin", SecurityProfile.LARGE_NETWORK)
+        self.assertEqual(self.store.get_security_profile(), SecurityProfile.LARGE_NETWORK)
+        with self.assertRaises(AuthenticationError):
+            self.store.authenticate(login.session)
+        restarted = SecurityStore(self.path)
+        self.assertEqual(restarted.get_security_profile(), SecurityProfile.LARGE_NETWORK)
+        self.assertIsNotNone(restarted.login("admin", "admin").session)
 
     def test_username_override_is_persistent_and_invalidates_sessions(self):
         self.store.provision_factory_admin()
@@ -137,10 +174,10 @@ class FactoryCredentialTests(unittest.TestCase):
         self.assertFalse(restarted.provision_factory_admin())
         self.assertIs(restarted.authenticate(
             restarted.login("new_admin", "admin").session).role, Role.ADMIN)
-        with self.assertRaises(AuthorizationError):
-            changed = restarted.login("new_admin", "admin")
-            restarted.set_security_profile(changed.session, changed.csrf, "admin",
-                                           SecurityProfile.LARGE_NETWORK)
+        changed = restarted.login("new_admin", "admin")
+        restarted.set_security_profile(changed.session, changed.csrf, "admin",
+                                       SecurityProfile.LARGE_NETWORK)
+        self.assertEqual(restarted.get_security_profile(), SecurityProfile.LARGE_NETWORK)
 
     def test_existing_provisioned_database_never_gets_factory_account(self):
         self.store.bootstrap_admin("custom_admin", "StrongCustomPassword#123")

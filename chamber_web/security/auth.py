@@ -329,6 +329,15 @@ class SecurityStore(AccountOperations):
             raise AuthorizationError("Current administrator password required")
         return row[0]
 
+    def reauthenticate_admin(self, admin_session: str | None, csrf: str | None,
+                             admin_password: str) -> Actor:
+        """Current administrator session plus fresh password for sensitive changes."""
+        admin = self.authenticate(admin_session, csrf=csrf, mutation=True)
+        if admin.role is not Role.ADMIN:
+            raise AuthorizationError("Administrator required")
+        self._confirm_admin_password(admin, admin_password)
+        return admin
+
     def configure_user_pin(self, admin_session: str, csrf: str,
                            admin_password: str, username: str, pin: str) -> None:
         """Explicit administrator-only enrollment of one account's hashed PIN."""
@@ -377,10 +386,9 @@ class SecurityStore(AccountOperations):
                                  (admin.user_id,)).fetchone()
             if current is None or current[0] != confirmed_hash:
                 raise AuthorizationError("Administrator credentials changed")
-            if profile is SecurityProfile.LARGE_NETWORK and _verify_password(
-                    "admin", current[0]):
-                raise AuthorizationError(
-                    "Change factory administrator password before Large Network mode")
+            # Password and PIN defaults are advisory; do not deny a profile
+            # switch solely because the operator has not rotated them.
+            # Authorization, session revocation and audit remain mandatory.
             if profile is SecurityProfile.ISOLATED_LAN:
                 # Never lock out every administrator when PIN-only login is enabled.
                 enrolled = db.execute(

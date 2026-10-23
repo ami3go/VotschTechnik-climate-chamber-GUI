@@ -4,6 +4,15 @@ NiceGUI browser-based interface for a single Vötsch environmental chamber. The 
 
 The application includes a dashboard, manual chamber controls, persistent temperature profiles, profile execution, run recording and operator authorization. Simulation is the default. **Physical HIL is explicitly opt-in, not certified production use**; signed site safety authorization and outstanding hardware/offline release gates remain required. See the [detailed remaining development and release plan](docs/REMAINING_DEVELOPMENT_TASKS.md), [web setup and operating limitations](README_WEB.md), [development sequence](docs/DEVELOPMENT_SEQUENCE.md), [hardware safety acceptance](docs/H01_HARDWARE_ACCEPTANCE_CHECKLIST.md), the [canonical readiness findings and release blockers](docs/READINESS_FINDINGS.md) and the [W02 offline release gates](docs/W02_OFFLINE_RELEASE.md).
 
+## Current engineering phase — Stage 2 (2026-10-19)
+
+The recorded supervised physical **H01** test suite passed 8/8 on 19 October
+2026 ([evidence entry](docs/DEVELOPMENT_SEQUENCE.md)). The project has
+advanced its **design and engineering work queue** to
+[Stage 2 — Pre-production hardening and controlled pilot readiness](docs/STAGE_2_PILOT_READINESS_PLAN.md).
+This does not assert signed site acceptance, independently accepted H02
+physical profile runs, W02 air-gap certification, or R01 release approval.
+
 ## Install and run (Windows / Linux)
 
 Install Python 3.10+ (CI-tested with 3.10 and 3.12) and Git.

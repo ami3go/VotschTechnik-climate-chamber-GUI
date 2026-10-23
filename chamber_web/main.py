@@ -21,29 +21,43 @@ configure_nicegui_storage()
 from nicegui import app, ui  # noqa: E402
 
 from .bootstrap import create_demo_control_services
+from .adapters.votsch import discover_votsch_chambers
+from .hil.chamber_settings import effective_hil_environment
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
 from .hil.supervised_profile import SupervisedProfileRuntime, supervised_runtime_from_env
 from .hil.supervision import SupervisionHost
 from .security.nicegui import (active_tokens, cookie_secret, current_actor, deployment_policy,
                                get_security, logout, require_authenticated_page)
 from .security.auth import AuthenticationError, AuthorizationError, Role, SecurityProfile
+from .services.run_readers import RunStoreReader
 from .ui_pages import (NavigationContext, install_navigation_resolver,
                        register_pages, render_navigation)
-from .ui_state import project_capabilities, project_telemetry, safe_view
+from .ui_state import (project_capabilities, project_chamber_identity,
+                       project_telemetry, safe_view)
 
 from .model import MAX_TEMP, MIN_TEMP
 
 
 # One process-level device service, independent of any client/browser lifecycle.
-# Physical I/O only via an explicit, complete launch-time HIL authorization.
-_HIL = hil_authorization_from_env(os.environ)
+# Physical I/O only via an explicit, complete launch-time HIL authorization,
+# from CHAMBER_HIL_* variables or the administrator-saved Chambers settings.
+_HIL_ENV, _HIL_SOURCE = effective_hil_environment(os.environ)
+_HIL = hil_authorization_from_env(_HIL_ENV)
 check_hil_deployment(_HIL, deployment_policy, os.environ)
 _security = get_security()
-# Published factory credentials must not authorize physical chamber operation.
-if _HIL is not None and any(_security.factory_credentials_active()):
-    raise RuntimeError(
-        "Physical HIL requires changing both factory credentials in Admin "
-        "under local simulation before hardware authorization")
+# A factory credential is reported as a security warning, not a hardware
+# admission rule. Physical access still requires explicit HIL authorization,
+# identity pinning, controller safety and supervised-operation permits.
+if _HIL is not None:
+    _factory_password, _factory_pin = _security.factory_credentials_active()
+    if _factory_password or _factory_pin:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Physical HIL security warning: factory administrator %s remain "
+            "active. Change them under Admin to reduce unauthorized access.",
+            "password and PIN" if _factory_password and _factory_pin
+            else "password" if _factory_password else "PIN",
+        )
 _dashboard_service, _manual_service = create_demo_control_services(
     _security, _HIL, simulated_slew_c_per_s=0.25,
 )
@@ -127,8 +141,18 @@ app.on_shutdown(_shutdown_supervision)
 app.on_shutdown(_dashboard_service.close)
 
 
+def get_profile_manual_guard():
+    """Composition-owned G05 guard for safe operator-to-profile lease handoff."""
+    return _manual_service._authorized
+
+
 def get_dashboard_service():
     return _dashboard_service
+
+
+def active_chamber_authorization():
+    """Launch-time HIL authorization of this process and where it came from."""
+    return _HIL, _HIL_SOURCE
 
 
 # Role-driven navigation is presentation only; all service mutations are guarded.
@@ -149,8 +173,25 @@ def _server_navigation_context() -> NavigationContext:
 
 install_navigation_resolver(_server_navigation_context)
 
-# G07 readers are injected when the recording service is implemented.
-register_pages(get_dashboard_service)
+def _run_journal_store():
+    """Composition-owned G07 journal for read-only history/log projection.
+
+    Resolved lazily so an unavailable journal (fail-closed start) yields an
+    unavailable page rather than a second, uncoordinated store handle.
+    """
+    from .pages.profiles import get_profile_runtime
+    return get_profile_runtime().store
+
+
+# G07-C read-only readers project the one owned run journal into /history and
+# /logs; authorization stays at the page boundary and reads are offloaded off
+# the event loop. No reader is fabricated when the journal is unavailable.
+register_pages(
+    get_dashboard_service,
+    history_reader=RunStoreReader(_run_journal_store),
+    event_reader=RunStoreReader(_run_journal_store),
+    discovery_provider=lambda network: discover_votsch_chambers(network),
+)
 
 
 CSS = (Path(__file__).parent / "assets" / "style.css").read_text(encoding="utf-8")
@@ -310,6 +351,32 @@ def dashboard() -> None:
                                     on_click=lambda: execute_manual("stop")).props(
                                         "color=deep-orange no-caps").disable().classes("toolbar-button")
                         ui.separator()
+                        # The top of the chamber card always identifies the
+                        # configured device; a separate line distinguishes
+                        # configured identity from live verified readback.
+                        with ui.element("div").classes("chamber-identity-grid"):
+                            with ui.column().classes("chamber-identity-field gap-1"):
+                                ui.label("Chamber").classes("chamber-identity-caption")
+                                chamber_name_label = ui.label(
+                                    f"Simulator · {service.chamber_id}" if _HIL is None
+                                    else f"Vötsch chamber · {service.chamber_id}"
+                                ).classes("chamber-identity-value")
+                            with ui.column().classes("chamber-identity-field gap-1"):
+                                ui.label("IP address").classes("chamber-identity-caption")
+                                chamber_ip_label = ui.label(
+                                    "Not applicable (simulation)" if _HIL is None
+                                    else _HIL.address
+                                ).classes("chamber-identity-value")
+                            with ui.column().classes("chamber-identity-field gap-1"):
+                                ui.label("Serial number").classes("chamber-identity-caption")
+                                chamber_serial_label = ui.label(
+                                    "Not applicable (simulation)" if _HIL is None
+                                    else _HIL.expected_serial
+                                ).classes("chamber-identity-value")
+                        chamber_identity_status_label = ui.label(
+                            "Simulation — no physical chamber connected" if _HIL is None
+                            else "Configured identity — not yet verified"
+                        ).classes("chamber-identity-status")
                         with ui.element("div").classes("metric-row"):
                             with ui.column().classes("metric gap-1"):
                                 ui.label("Measured").classes("metric-caption")
@@ -454,6 +521,14 @@ def dashboard() -> None:
         display = project_telemetry(view)
         capability = project_capabilities(view)
         identity = view.identity
+        chamber_details = project_chamber_identity(
+            view, configured_address=_HIL.address if _HIL is not None else None,
+            expected_serial=_HIL.expected_serial if _HIL is not None else None,
+        )
+        chamber_name_label.set_text(chamber_details.chamber)
+        chamber_ip_label.set_text(chamber_details.ip_address)
+        chamber_serial_label.set_text(chamber_details.serial_number)
+        chamber_identity_status_label.set_text(chamber_details.identity_status)
         backend_label.set_text(f"● {display.mode} · {display.quality} · {display.operation}")
         backend_id_label.set_text(
             f"Backend: {identity.backend_id} · {view.chamber_id}" if identity
@@ -564,7 +639,7 @@ def admin_page() -> None:
             f"Controller: {data.controller_state} · "
             f"{'connected' if data.connected else 'disconnected'} · "
             f"generation {data.controller_generation} · "
-            f"{'STOP/reconciliation required' if data.stop_latched else 'fence clear'}")
+            f"{'verified STOP — Start can recheck and rearm' if data.stop_latched and data.controller_state == 'VERIFIED_STOPPED' else 'STOP/reconciliation required' if data.stop_latched else 'fence clear'}")
         claim_ready = (
             data.can_stop and data.owner is None and data.connected and
             not data.stop_latched and
@@ -669,8 +744,11 @@ def admin_page() -> None:
 
             with ui.column().classes("dashboard gap-3"):
                 ui.label(
-                    "The chamber starts with its operator lease released. "
-                    "Acquire it here before issuing Start or Set Target commands."
+                    "Dashboard Start and Set Target automatically claim an available "
+                    "operator lease. A verified normal STOP can be followed by "
+                    "another Start without Admin reconciliation. "
+                    "This page is for lease handover and recovery from uncertain "
+                    "or faulted chamber states."
                 ).classes("demo-banner w-full")
                 with ui.column().classes("panel gap-3"):
                     _panel_title("admin_panel_settings", "Operator Lease")
@@ -732,13 +810,34 @@ def admin_page() -> None:
                         _panel_title("manage_accounts", "Administrator Credentials")
                         ui.label(
                             "Factory setup uses admin / admin and PIN 12345678. "
-                            "Change both before LAN use. Changes are permanent, "
+                            "Changing both is strongly recommended, but factory "
+                            "credential warnings do not block saving or control. "
+                            "Changes are permanent, "
                             "hashed in the security database, and revoke active sessions."
                         ).classes("text-sm text-orange-9")
                         weak_pw, weak_pin = get_security().factory_credentials_active()
-                        if weak_pw or weak_pin:
-                            ui.label("Factory password or PIN is still active.").classes(
-                                "text-negative font-bold")
+                        ui.label(
+                            "Administrator password: " +
+                            ("Factory default — change required" if weak_pw
+                             else "Changed — retained across server restarts")
+                        ).classes("font-bold text-negative" if weak_pw
+                                  else "text-sm")
+                        ui.label(
+                            "Administrator PIN: " +
+                            ("Factory default — change required" if weak_pin
+                             else "Changed — retained across server restarts")
+                        ).classes("font-bold text-negative" if weak_pin
+                                  else "text-sm")
+                        ui.label(
+                            "Credentials database on this server: " +
+                            str(get_security().database)
+                        ).classes("text-xs text-grey-7")
+                        ui.label(
+                            "If a different password works after a restart, check "
+                            "whether the server is running under another OS account "
+                            "or with a different CHAMBER_SECURITY_DIR. Preserve "
+                            "this database when updating or reinstalling."
+                        ).classes("text-xs text-grey-7")
                         old_password = ui.input(
                             "Current administrator password", password=True).props(
                                 "autocomplete=current-password").classes("w-full")

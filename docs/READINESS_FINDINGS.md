@@ -1,5 +1,7 @@
 # Migration readiness findings — canonical closure ledger
 
+**Current stage (2026-10-19):** [Stage 2 — pre-production hardening and controlled pilot preparation](STAGE_2_PILOT_READINESS_PLAN.md). H01 engineering verification has recorded physical 8/8 PASS on 2026-10-19 ([PR #60](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/60)); raw evidence is local and site acceptance signatures are not recorded. H02-B/C software is merged (#55/#56/#58), but physical H02 profile acceptance, independent safety/security review, W02 offline release and R01 remain OPEN. The dated ledger below is a preserved historical 2026-10-18 snapshot and must not be mistaken for the current source revision.
+
 Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status rechecked 2026-10-18 against GUI `9e6c892` (main after PRs #24–#52 merged, including G05 #28, G07-A #27, G08-full #29, W02 foundation #30, H01 #34/#36/#37, H02 #39, factory admin #49/#51 and CI de-flake #50) and driver `9323e3701f3befedcc23b45170a851fd327f0bcc`. **Original review SHAs are historical, not the current implementation.** `B`/`H`/`M` are the only valid IDs for the 2026-10-12 readiness review. Older unidentified `BLOCKER-01`–`HIGH-10` tags in previous plans have been retired rather than guessed into equivalence. Dated sections remain historical records; current consolidated status is in the [2026-10-18 ledger](#consolidated-blockerhigh-ledger--2026-10-18). See [P00 contracts](P00_DECISION_CONTRACTS.md). Main advanced 2026-10-18 to `36e25a1` with PRs #53–#58 (DOC-01 #53, T01 #54, H02-B #55/#56 `2f63d58`/`4f9eaf0`, execution plan #57 `c669f2956f2a5ddd3911f6de38b06dbb7b98b4ab`, H02-C watchdog #58 `36e25a1`).
 
 ## Consolidated BLOCKER/HIGH ledger — 2026-10-18
@@ -16,7 +18,7 @@ Release-state definitions used here and in the reconciled reviews: **implemented
 | H4 | HIGH | Loopback hardware auth gate too late | G08 | — | #25/#29 merged; G05/G07/G08 endpoints guard every mutation | None | Software merged; physical use gated by HIL/site policy |
 | H7 | HIGH | SQLite/filesystem crash gap | G07 | Windows volume testing | #27 merged with journal/recovery/fault tests (mock) | Independent durability review absent | Software merged, mock-tested; **Windows power-cut certification OPEN** |
 | H8 | HIGH | CI/dependency/driver pin insufficient | Release/W02 | Wheelhouse/hash lock | Direct pins + driver commit pin; W02 foundation #30 merged (connected CI only) | Independent supply-chain review absent | **OPEN — W02 certification gates** |
-| H01-OPEN | RELEASE | Site safety signoff, signed HIL acceptance, hardware profiles/gradients/long soak | Site + GUI | H02 plan | 2026-10-15 supervised sessions (8/8 hardware tests, soak PASS) | Signatures absent | **OPEN** |
+| H01-OPEN | RELEASE | Site safety signoff, signed HIL acceptance, hardware profiles/gradients/long soak | Site + GUI | H02 plan | 2026-10-15 supervised sessions (8/8 hardware tests, soak PASS); 2026-10-19 re-run on main `5680adb` — `tests/hardware` **8/8 PASS** | Signatures absent | **OPEN** |
 | H02-WD | BLOCKER (physical) | Runtime composition and separate physical watchdog absent | GUI (H02-B/C) | Signed H02 permit | Preflight validator + test watchdog merged (#39 `1dae5ad`); supervised permit admission merged (#55 `2f63d58`, #56 `4f9eaf0`); independent watchdog merged (#58 `36e25a1`) | Independent safety review absent | Runtime composition + watchdog software merged; physical **OPEN** |
 | G07-R items | HIGH (release) | Power-cut durability, measured-setpoint evidence, authenticated export anchoring, independent review | G07/G06/G08 | Windows volume + review | #27 merged ([merge-gate audit](G07_A_MERGE_GATE_AUDIT.md)) | None | **OPEN** as itemized in the audit |
 | G08 review | HIGH (review) | Off-device audit anchoring, backup rollback, NTFS ACLs, LAN penetration | Security | External reviewer | #29 merged; adversarial tests green at merge | Independent reviewer absent | Software merged; **independent approval OPEN** |
@@ -220,5 +222,98 @@ Hardware blockers B1/B2/B3/B4 and H2/H4/H7/H8 must not be treated as closed by s
 **Update 2026-10-18:** the H02 software foundation merged as PR #39 `1dae5ade00f67318f01c763e395f0e85f5310c6a` with all PR checks green (preflight validator and test watchdog only — no physical connection). Runtime composition (H02-B), the separate physical watchdog (H02-C) and site permits remain OPEN per [REMAINING_DEVELOPMENT_TASKS.md](REMAINING_DEVELOPMENT_TASKS.md). **GO/NO-GO unchanged: NO-GO. Hardware test result: NOT RUN.**
 
 **Update 2026-10-18 (later):** H02-B runtime composition merged (#55 `2f63d58`, #56 `4f9eaf0`, 16/16 checks green) and the current execution plan was published as PR #57 `c669f2956f2a5ddd3911f6de38b06dbb7b98b4ab`. The H02-C independent watchdog implementation (separate OS process, authenticated loopback IPC with mutually verified heartbeats, one prioritized G04 STOP request with bounded fresh STOP verification, restart latch and `scripts/h02_watchdog_reset.py` review path) merged as PR #58 `36e25a1`. Site permit signature and independent safety review remain ABSENT. **GO/NO-GO unchanged: NO-GO. Hardware test result: NOT RUN.**
+
+## Stage 2 package status — 2026-10-21
+
+Stage 2 tracker: [STAGE_2_PILOT_READINESS_PLAN.md](STAGE_2_PILOT_READINESS_PLAN.md). This
+section records Stage 2 package deliveries only. It does **not** close any
+BLOCKER/HIGH above, does not change the R01 decision (**NO-GO**) and asserts
+no physical, HIL or site-signature evidence.
+
+| Package | Status | Evidence | Remaining |
+|---|---|---|---|
+| S2-01 HIL evidence closure | **NOT DELIVERED** — needs the site authority | No signed H01 acceptance form or controlled evidence index in the repository | Site signoff and raw H01 evidence ingest |
+| S2-02 Combined regression baseline | **DELIVERED — implemented + simulation-tested** | GUI PR [#73](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/73) merged `014456b` (branch head `ea14bc7`); combined simulation job on Ubuntu 3.12 + Windows 3.10/3.12 ([main run 39678456898](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39678456898)); restored NiceGUI job on Windows 3.10/3.12 ([main run 39678457039](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39678457039)); local combined suite 536 passed / 1 skipped / 196 subtests; controlled evidence record [test-evidence/s2-02/S2_02_REPORT.md](../test-evidence/s2-02/S2_02_REPORT.md) | Independent review, S2-03/S2-04 Windows VM evidence, S2-07 physical H02 acceptance |
+| S2-03 W02 offline signed bundle | **PARTIAL — complete air-gap dependency closure delivered** | GUI PR [#77](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/77) merged `bcdade3` and PR [#80](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/80) merged `747aee3`: `requirements-w02-runtime.lock` (**50** win_amd64/cp312 distributions, each pinned and hashed, including the vendored external Vötsch driver and its own dependency `colorama`), `w02-closure-manifest.json`, the runtime CycloneDX SBOM derived from that closure, a completeness proof that every requirement of every closure member is inside the closure, and a Windows CI job that reproduces the closure and installs it with `--no-index --require-hashes` ([closure job](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39690022261)); continuous gate on `main` added by PR [#78](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/78); PR [#82](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/82) merged `fcdc9f9` builds the frozen bundle **from the reviewed closure** with no index access and reports the runtime closure in the bundle SBOM, license inventory and provenance | Signed artifact with a site publisher key; license approval (every row still `REVIEW_REQUIRED`); unattested build provenance; the hash-locked **build backend** (PyInstaller is still installed from connected pip); the disconnected clean-Windows 10/11 acceptance (S2-04); the independent supply-chain review |
+| S2-04 Installation/upgrade/recovery | **NOT STARTED** | — | Clean air-gapped Win10/11 acceptance |
+| S2-05 G07 evidence and operations | **PARTIAL** — journal readers merged (#74) | GUI PR [#74](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/74) | Authorized, SHA-verified exports; corruption/ENOSPC recovery |
+| S2-06 G08 operational security acceptance | **NOT STARTED** | — | Independent deployment review |
+| S2-07 H02 physical-profile acceptance | **NOT RUN — NO-GO** | No physical H02 result in the repository | New, separately signed H02 permit; witnessed run |
+| S2-08 Pilot usability and supervised soak | **NOT STARTED** | — | Depends on S2-03/04/05/06/07 |
+| S2-09 R01 release candidate decision | **NO-GO** | — | All applicable packages |
+
+### Findings closed by S2-02
+
+- **CI was blind on `main`.** `web-gui-demo.yml` carried a literal `\n` inside a
+  YAML scalar (introduced by #62 on 2026-10-19), so the workflow produced **zero
+  jobs** on every `main` push and reported failure without testing anything.
+  Repaired in #73; the job now runs its Windows 3.10/3.12 matrix.
+- **G05 refused a legitimate operator Start (product defect).** The Start-after-STOP
+  path learned the operator-lease revision through a *best-effort, non-blocking*
+  probe intended only for the priority STOP path. When the one-second dashboard
+  refresh held the same registry lock, the probe reported "unknown", which the
+  Start path could not distinguish from "no lease held": the Start was refused
+  with `STOP recovery not verified; control remains locked` and the STOP fence
+  stayed latched, stranding the operator. Reproduced deterministically before
+  the fix; `AuthorizedChamber.ensure_manual_operator_lease_revision()` now reads
+  the revision in the same critical section as the claim. The safety envelope is
+  unchanged: the rearm still requires the exact lease revision, the caller's
+  ownership, a latched `VERIFIED_STOPPED` controller and the exact G04
+  generation, and G04 still performs its own fresh STOPPED readback.
+- **Refusals were not diagnosable.** A refused manual command reported only the
+  exception type; the bounded reason is now reported to the operator, the audit
+  trail and CI.
+
+### Findings closed by the S2-03 increment
+
+- **The dependency closure was not hash-locked.** The W02 bundle recorded only
+  the build host's installed packages, with every license `REVIEW_REQUIRED` and
+  the scope property `unapproved-build-environment-not-runtime-closure`. The
+  frozen Windows runtime closure is now a reviewed repository artifact:
+  `requirements-w02-runtime.lock` pins 48 `win_amd64`/CPython 3.12
+  distributions by SHA-256 in pip `--require-hashes` format, and
+  `w02-closure-manifest.json` records every artifact's digest, source URL,
+  declared license and `Requires-Python`.
+- **The runtime SBOM was a build-host inventory.** It is now derived from the
+  locked closure, so build-only tools (PyInstaller, pip, setuptools) can no
+  longer be presented as shipped components.
+- **Nothing proved an air-gap install.** `scripts/w02_closure.py` installs with
+  `pip install --no-index --find-links <wheelhouse> --require-hashes`, so a
+  damaged or missing artifact breaks the installation instead of falling back
+  to the network. The Windows CI job reproduces the committed closure from the
+  pinned requirements and installs from it, on `main` as well as on pull
+  requests.
+- **The closure's own input digest was platform-dependent.** Git checks text
+  files out with CRLF on Windows and LF elsewhere, so the raw digest of the
+  same tracked requirements file differed per platform and could never be
+  reproduced on another host. The digest is now taken over the canonical (LF)
+  line endings, and the closure artifacts are pinned to LF in `.gitattributes`.
+- **The closure did not describe what is actually shipped.** The frozen bundle
+  also ships the external Vötsch driver, which is not an index distribution,
+  so pip never resolved it and neither did the closure. The driver is now
+  vendored from its pinned revision, built reproducibly (`SOURCE_DATE_EPOCH`
+  at the pinned commit timestamp, pinned build backend, no build isolation)
+  and recorded in the closure with its own SHA-256 and its
+  `git+<url>@<commit>` provenance. Its own dependency `colorama` entered the
+  closure with it.
+- **"Complete" now means something.** Every requirement every closure member
+  imposes — including the dependencies behind requested extras — must be
+  inside the closure with its version constraint satisfied, and every marker
+  is evaluated against the *target* environment, never the build host's.
+- **A metadata parser defect hid a dependency.** A folded metadata field (the
+  driver's multi-line license text) ended the header scan early and hid the
+  `Requires-Dist` fields that followed it, so the driver's own dependency was
+  invisible to the closure. The headers now end at the first *empty* line.
+
+**Still open inside S2-03:** the signed artifact still needs a site publisher
+key, every license row is still `REVIEW_REQUIRED`, the build provenance is
+still unattested, the frozen Windows package itself has not been rebuilt
+against this closure, and the disconnected clean-Windows 10/11 acceptance is
+Stage 2 S2-04.
+
+**Boundary:** S2-02 is simulation-only. `tests/hardware/` was **NOT RUN**, no
+chamber was connected, no physical command was issued, and no device
+authorization, H02 permit, W02 release, G08 operational acceptance or Stage 3
+pilot use is granted or implied by this delivery.
 
 **Update 2026-10-23 (H03-A):** driver PR #6 merged as `d22dc05687cac4c5cdef440fb52b05965ed3d146` with typed/validated numbered-output APIs (`number_of_digital_outputs`, `digital_output_name`, `read_digital_output`, `set_digital_output`) and read-only gradient range metadata; mocked transport tests only. The GUI adapter replaces raw manufacturer query strings with this API, enumerates device-reported outputs at HIL connect (never assumes 1–64) and keeps programmable ramp setters disabled as `UnsupportedCapability`. Physical capability/unit verification and H03-B restoration policy remain OPEN. **GO/NO-GO unchanged: NO-GO. Hardware test result: NOT RUN.**

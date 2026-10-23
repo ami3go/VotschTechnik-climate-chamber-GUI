@@ -28,11 +28,19 @@ def get_security() -> SecurityStore:
         if _store is None:
             store = SecurityStore.from_environment(security_directory())
             store.provision_factory_admin()
-            # A known factory password or PIN must never be offered over LAN.
-            if deployment_policy.is_lan and any(store.factory_credentials_active()):
-                raise RuntimeError(
-                    "Factory administrator password/PIN active; change both via "
-                    "localhost Admin panel before enabling LAN access")
+            # Factory credentials are advisory for startup. Authentication,
+            # TLS, strict origins, client ACL and permissions remain enforced.
+            # A publicly known factory credential is unsafe on shared LANs:
+            # report it clearly, but never prevent server initialization.
+            weak_password, weak_pin = store.factory_credentials_active()
+            if deployment_policy.is_lan and (weak_password or weak_pin):
+                import logging
+                logging.getLogger(__name__).warning(
+                    "LAN security warning: factory administrator %s remain active. "
+                    "Replace them under Admin > Security Profiles / Credentials.",
+                    "password and PIN" if weak_password and weak_pin
+                    else "password" if weak_password else "PIN",
+                )
             _store = store
         return _store
 
@@ -97,6 +105,36 @@ def logout() -> None:
     ui.navigate.to("/login")
 
 
+def factory_credential_warning(weak_password: bool, weak_pin: bool) -> str | None:
+    """State exactly which factory credential is still active.
+
+    The default PIN is separately enrolled and can remain unchanged after a
+    successful administrator password update; do not tell users to change
+    the password again in that case. No secrets or hashes are returned.
+    """
+    if weak_password and weak_pin:
+        return (
+            "Factory administrator password and PIN are still active. "
+            "Strongly recommended: change the password in Admin > Administrator "
+            "Credentials and the PIN in Admin > Security Profiles. "
+            "Configuration and operations are not blocked by this warning."
+        )
+    if weak_password:
+        return (
+            "Factory administrator password is still active; the factory PIN "
+            "has been replaced. Change the password in Admin > "
+            "Administrator Credentials for safer operation."
+        )
+    if weak_pin:
+        return (
+            "Administrator password has been changed. Only the factory PIN "
+            "is still active. Change the PIN in Admin > Security Profiles "
+            "(Enroll account PIN) for safer operation; the password does not "
+            "need to be changed again."
+        )
+    return None
+
+
 @ui.page("/login")
 def login_page() -> None:
     if current_actor() is not None:
@@ -132,11 +170,9 @@ def login_page() -> None:
         ui.label("Isolated workstation · PIN sign-in · no automatic logout"
                  if isolated else "Offline local account · password sign-in").classes(
                      "text-caption")
-        if any(get_security().factory_credentials_active()):
-            ui.label(
-                "Factory credentials in use. Change password and PIN from Admin "
-                "before connecting this server to a network."
-            ).classes("text-caption text-orange-9")
+        warning = factory_credential_warning(*get_security().factory_credentials_active())
+        if warning:
+            ui.label(warning).classes("text-caption text-orange-9")
         username = ui.input("Username").props("autocomplete=username")
         password = ui.input("PIN (6–12 digits)" if isolated else "Password",
                             password=True).props(

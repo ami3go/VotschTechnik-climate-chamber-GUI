@@ -8,6 +8,13 @@
 .PARAMETER SimulationOnly
   Exclude the external vendor driver for a smaller, NON-RELEASE test artifact.
   Default includes pinned Vötsch dependency but DOES NOT enable hardware I/O.
+.PARAMETER UseReviewedClosure
+  Install the runtime from the REVIEWED, hash-locked dependency closure
+  (requirements-w02-runtime.lock) out of a verified wheelhouse, with no index
+  access at all. The frozen bundle then contains exactly the reviewed
+  artifacts, and its SBOM and license inventory describe that closure instead
+  of the build environment. Without this switch the historical connected
+  resolution is used and the build environment inventory is reported.
 #>
 [CmdletBinding()]
 param(
@@ -16,7 +23,9 @@ param(
     [ValidateSet("Portable")][string]$Configuration = "Portable",
     [ValidatePattern('^[0-9A-Za-z][0-9A-Za-z.+-]{0,48}$')][string]$Version = "0.1.0-w01",
     [string]$Python = "python",
-    [switch]$SimulationOnly
+    [switch]$SimulationOnly,
+    [switch]$UseReviewedClosure,
+    [string]$WheelhouseDir = ""
 )
 $ErrorActionPreference = "Stop"
 if ($env:OS -ne "Windows_NT") { throw "Build offline bundle natively on Windows." }
@@ -42,12 +51,51 @@ try {
     New-Item -Path $server -ItemType Directory -Force | Out-Null
     Native $Python @("-m", "venv", (Join-Path $work "venv"))
     $py = Join-Path $work "venv/Scripts/python.exe"
-    Native $py @("-m", "pip", "install", "--disable-pip-version-check", "-r",
-                 (Join-Path $repo "requirements-web.txt"))
-    if (-not $SimulationOnly) {
-        # Fails closed if native Git or the exact pinned driver revision is unavailable.
+    $closureLock = Join-Path $repo "requirements-w02-runtime.lock"
+    $closureManifest = Join-Path $repo "w02-closure-manifest.json"
+    $wheelhouse = if ($WheelhouseDir) { $WheelhouseDir } else { Join-Path $work "wheelhouse" }
+    if ($UseReviewedClosure) {
+        # The reviewed closure: hash-locked, complete, and installed with NO
+        # index access. The frozen bundle then contains exactly the artifacts
+        # that were reviewed, and the build fails closed if the closure can no
+        # longer be reproduced from the pinned requirements.
+        if (-not (Test-Path $closureLock)) { throw "The reviewed closure lock is missing" }
+        if (-not (Test-Path $closureManifest)) { throw "The reviewed closure manifest is missing" }
+        New-Item -Path $wheelhouse -ItemType Directory -Force | Out-Null
+        # A separate tool environment keeps the build requirements (the pinned
+        # build backend, the marker parser) out of the runtime environment that
+        # is frozen into the bundle.
+        Native $Python @("-m", "venv", (Join-Path $work "closure-venv"))
+        $closurePy = Join-Path $work "closure-venv/Scripts/python.exe"
+        Native $closurePy @("-m", "pip", "install", "--disable-pip-version-check",
+                            "-r", (Join-Path $repo "requirements-w02-build.txt"))
+        Push-Location $repo
+        try {
+            Native $closurePy @("-m", "scripts.w02_closure", "build",
+                                "--requirements", (Join-Path $repo "requirements-web.txt"),
+                                "--vcs-requirement", (Join-Path $repo "requirements-hardware.txt"),
+                                "--wheelhouse", $wheelhouse,
+                                "--lock", (Join-Path $work "closure.lock"),
+                                "--manifest", (Join-Path $work "closure-manifest.json"),
+                                "--target", "win_amd64-cp312", "--version", $Version)
+            # Fail closed unless the rebuilt closure IS the reviewed one.
+            Native $closurePy @("-m", "scripts.w02_closure", "verify",
+                                "--wheelhouse", $wheelhouse, "--lock", $closureLock,
+                                "--manifest", $closureManifest, "--target", "win_amd64-cp312")
+        }
+        finally { Pop-Location }
+        Native $py @("-m", "pip", "install", "--disable-pip-version-check",
+                     "--no-index", "--find-links", $wheelhouse, "--require-hashes",
+                     "-r", $closureLock)
+    }
+    else {
         Native $py @("-m", "pip", "install", "--disable-pip-version-check", "-r",
-                     (Join-Path $repo "requirements-hardware.txt"))
+                     (Join-Path $repo "requirements-web.txt"))
+        if (-not $SimulationOnly) {
+            # Fails closed if native Git or the exact pinned driver revision is unavailable.
+            Native $py @("-m", "pip", "install", "--disable-pip-version-check", "-r",
+                         (Join-Path $repo "requirements-hardware.txt"))
+        }
     }
     Native $py @("-m", "pip", "install", "--disable-pip-version-check", "pyinstaller==6.16.0")
     $freeze = @(
@@ -80,6 +128,13 @@ try {
         "--requirements-web", (Join-Path $repo "requirements-web.txt"),
         "--requirements-hardware", (Join-Path $repo "requirements-hardware.txt"))
     if (-not $SimulationOnly) { $manifestArgs += "--include-driver" }
+    if ($UseReviewedClosure) {
+        # The SBOM and the license inventory describe the reviewed runtime
+        # closure, not the build environment, and the closure digest is
+        # recorded with the manifest.
+        $manifestArgs += @("--closure-manifest", $closureManifest,
+                            "--closure-lock", $closureLock)
+    }
     Native $py $manifestArgs
     # Fresh extraction and integrity verification before accepting the archive.
     Compress-Archive -Path $bundle -DestinationPath $zip -CompressionLevel Optimal

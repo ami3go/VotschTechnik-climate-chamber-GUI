@@ -24,10 +24,42 @@ existing sessions; PIN enrollment revokes the target account's sessions.
 Credentials are salted-hashed in the existing local SQLite security store, not
 persisted as plaintext. A normal restart does not restore the initial values.
 
+### Password changed but factory warning appears after restart
+
+The factory **password** and **PIN** are separate credentials. Changing the
+administrator password does not replace the factory PIN `12345678`. If
+the PIN is still unchanged, the login screen now states specifically
+that **the password has already been changed** and only the **PIN** needs
+replacement in **Admin → Security Profiles → Enroll account PIN**. The
+factory-credential warning is advisory; it does **not** prevent saving chamber
+settings, applying profiles, starting the server or controlling an otherwise
+authorized device. A warning
+about the PIN does not mean your new password was forgotten.
+
+In **Admin → Administrator Credentials**, the interface independently shows
+whether the default password or default PIN is still active and displays the
+absolute path to the currently used security database
+(`security.sqlite3`). Changes are retained in that database across restarts.
+If a previous password works again after restarting, confirm that the server
+runs as the same OS account and resolves the same `CHAMBER_SECURITY_DIR`
+(default `~/.chamber_web/security` for the server account). Running as a
+different Windows account, as a service, or with a different environment
+variable can select a *different* security database. Never delete or reset
+a security database to diagnose this; preserve its keys, audit chain and
+backups.
+
+
 **Security limitation:** the publicly known factory credentials are for initial
-loopback-local setup/testing, not network operation. LAN startup is refused
-until both the default password and default PIN have been changed. Switching
-to Large Network security profile requires changing the factory password.
+commissioning and are **unsafe on any accessible network**. The server now
+**warns but does not block** saving chamber settings, starting the configured
+physical HIL server, LAN startup or switching to the Large Network security
+profile solely because one or both factory credentials remain. This is an
+explicit operator-controlled risk, not a safety endorsement. Replace both
+factory credentials promptly, even on an isolated network. Keep strict TLS,
+Host/Origin validation, client allowlists, login, audit and role authorization
+enabled. Signed site authorization, identity pinning, safe temperature
+envelopes, supervision and HIL profile-execution permits are separate
+mandatory gates and are unchanged.
 Do not connect the application or physical chamber to an untrusted network
 with factory credentials. Existing installations keep their credentials on normal restart. A separate,
 explicit host-console maintenance script can restore these factory credentials

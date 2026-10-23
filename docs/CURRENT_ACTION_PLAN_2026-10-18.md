@@ -1,7 +1,9 @@
 # Chamber GUI — Current Status and Detailed Execution Action Plan
 
-**Revision:** 1.0  
+**Revision:** 1.0 (historical snapshot; superseded for day-to-day execution by Stage 2)  
 **Snapshot:** 2026-10-18, 16:04 Europe/Sofia (repository rechecked during preparation)  
+**Superseded as active work queue:** [Stage 2 — pilot/release readiness](STAGE_2_PILOT_READINESS_PLAN.md) as of 2026-10-19. This older snapshot retains the original H02-B/C PR state and should not be used to infer that merged work is still open.  
+
 **State:** Core software merged; physical profiles and production deployment **NO-GO**  
 **Primary plan:** [REMAINING_DEVELOPMENT_TASKS.md](REMAINING_DEVELOPMENT_TASKS.md)  
 **Canonical release blockers:** [READINESS_FINDINGS.md](READINESS_FINDINGS.md)  
@@ -26,7 +28,7 @@
 | G07-B evidence/history security and fidelity | Recorder merged and browser/history foundation present | **FOLLOW-UP**; operational review open |
 | W02 offline Windows certified release | W02 foundation [PR #30](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/30) merged | **RELEASE NO-GO** |
 | G08 independent operational security approval | G08-full #29 merged; site review not evidenced | **OPEN** |
-| H01 site-authorized physical certification | Existing supervised 2026-10-15 manual HIL evidence only | **OPEN / site signatures absent** |
+| H01 site-authorized physical certification | Supervised 2026-10-15 manual HIL evidence; 2026-10-19 `tests/hardware` re-run on main `5680adb` **8/8 PASS** (not site-signed) | **OPEN / site signatures absent** |
 | R01 production cutover | None | **NO-GO** |
 
 At snapshot, GUI main's three check runs were successful: Windows Python 3.10 and 3.12 model/import and Windows x64 PyInstaller simulated launch ([Windows web CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39125033574), [frozen simulator](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39125033575)). These are **not** physical-profile acceptance checks. The GUI had one open PR (#56) and no open issues. The external driver had no new milestone PR (old unrelated PR #1 remained open).

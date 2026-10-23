@@ -137,10 +137,11 @@ def test_browser_authenticated_dashboard_profiles_and_independent_clients(live_a
             sign_in(admin, "browser_admin", "StrongAdminPassword#1")
             expect(admin.locator("body")).to_contain_text("Signed in: browser_admin (ADMIN)")
             expect(admin.locator("body")).to_contain_text("Backend: fake")
-            # G05 preserves claim-based START; authenticated STOP is
-            # independently available even when no operator lease is held.
-            expect(admin.get_by_role("button", name="Start", exact=True)).to_be_disabled()
+            # Operators may Start directly when the chamber is ready. A
+            # previous uncertain restart latch can still require reconciliation.
             expect(admin.get_by_role("button", name="Stop", exact=True)).to_be_enabled()
+            if "UNKNOWN" not in admin.locator("body").inner_text():
+                expect(admin.get_by_role("button", name="Start", exact=True)).to_be_enabled()
 
             admin.goto(URL + "/profiles")
             expect(admin.locator("body")).to_contain_text("Persistent Profiles / Revisions")
@@ -180,36 +181,52 @@ def test_browser_g05_actual_manual_start_stop_and_viewer_denial(live_app):
             admin = admin_context.new_page()
             viewer = viewer_context.new_page()
             sign_in(admin, "browser_admin", "StrongAdminPassword#1")
-            expect(admin.get_by_role("button", name="Start", exact=True)).to_be_disabled()
             expect(admin.get_by_role("button", name="Stop", exact=True)).to_be_enabled()
             admin.goto(URL + "/admin")
             expect(admin.locator("body")).to_contain_text("Lease state: RELEASED")
-            claim = admin.get_by_role("button", name="Claim", exact=True)
-            # The prior NiceGUI tests share the runner's OS home directory.
-            # G04 correctly carries STOP uncertainty across server restarts.
-            # Exercise explicit, audited ADMIN reconciliation rather than
-            # clearing the lock, mutating SQLite or bypassing safety code.
+            # A restart with uncertain state is a genuine safety exception:
+            # preserve signed, fresh-readback Admin recovery for that case.
             if "STOP/reconciliation required" in admin.locator("body").inner_text():
                 admin.get_by_role("button", name="Admin reconcile STOP").click()
                 admin.get_by_role("button", name="Confirm reconcile").click()
-            expect(claim).to_be_enabled(timeout=15000)
-            claim.click()
-            expect(admin.locator("body")).to_contain_text("you hold control", timeout=15000)
+                expect(admin.locator("body")).to_contain_text("fence clear", timeout=15000)
             admin.goto(URL + "/")
+            # Routine STOP works without a claim, and a fresh START acquires
+            # the lease and re-arms a verified stop without visiting Admin.
+            expect(admin.get_by_role("button", name="Start", exact=True)).to_be_enabled()
+            admin.get_by_role("button", name="Stop", exact=True).click()
+            expect(admin.locator("body")).to_contain_text(
+                "CONFIRMED · stop", timeout=15000)
             expect(admin.get_by_role("button", name="Start", exact=True)).to_be_enabled()
             admin.get_by_label("Target °C").fill("25")
             admin.get_by_role("button", name="Set Target").click()
             expect(admin.locator("body")).to_contain_text("CONFIRMED · set_temperature", timeout=15000)
             admin.get_by_role("button", name="Start", exact=True).click()
             expect(admin.locator("body")).to_contain_text("CONFIRMED · start", timeout=15000)
+            admin.goto(URL + "/admin")
+            expect(admin.locator("body")).to_contain_text(
+                "Lease state: CLAIMED", timeout=15000)
+            admin.goto(URL + "/")
             sign_in(viewer, "browser_viewer", "StrongViewerPassword#2")
             expect(viewer.get_by_role("button", name="Start", exact=True)).to_be_disabled()
             expect(viewer.get_by_role("button", name="Stop", exact=True)).to_be_disabled()
             admin.get_by_role("button", name="Stop", exact=True).click()
-            expect(admin.locator("body")).to_contain_text("CONFIRMED · stop", timeout=15000)
-            admin.goto(URL + "/admin")
             expect(admin.locator("body")).to_contain_text(
-                "STOP/reconciliation required", timeout=15000)
+                "STOP verified; controls ready", timeout=15000)
+            # Normal owner STOP automatically rearms only after independent
+            # verified STOPPED readback; ownership remains unchanged.
+            expect(admin.get_by_role("button", name="Start", exact=True)).to_be_enabled(
+                timeout=15000)
+            admin.get_by_role("button", name="Start", exact=True).click()
+            expect(admin.locator("body")).to_contain_text(
+                "CONFIRMED · start", timeout=15000)
+            admin.get_by_role("button", name="Stop", exact=True).click()
+            expect(admin.locator("body")).to_contain_text(
+                "STOP verified; controls ready", timeout=15000)
+            admin.goto(URL + "/admin")
+            expect(admin.locator("body")).to_contain_text("fence clear", timeout=15000)
+            expect(admin.locator("body")).to_contain_text(
+                "Lease state: CLAIMED", timeout=15000)
             admin.get_by_role("button", name="Release", exact=True).click()
             expect(admin.locator("body")).to_contain_text(
                 "Lease state: RELEASED", timeout=15000)

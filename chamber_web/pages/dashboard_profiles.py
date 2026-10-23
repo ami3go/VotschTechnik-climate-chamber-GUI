@@ -76,7 +76,7 @@ def _build():
             ui.navigate.to("/login")
             return
         except (OSError, ValueError, ProfileSchemaError):
-            library_info.set_text("Saved profiles unavailable; run disabled")
+            library_info.set_text("Saved profiles unavailable; check profile storage")
             run_button.disable()
             return
         options = {
@@ -153,8 +153,11 @@ def _build():
         try:
             if action == "start":
                 await execution.start_async(session, csrf, profile_id, revision)
-                ui.notify(f"Started saved revision {revision} in simulation",
-                          color="positive")
+                ui.notify(
+                    f"Started saved revision {revision} " +
+                    ("in simulation" if execution.view(session).simulation
+                     else "under supervised physical HIL permit"),
+                    color="positive")
             else:
                 method = {
                     "stop": execution.cancel,
@@ -178,7 +181,7 @@ def _build():
         refresh_run()
 
     def refresh_run() -> None:
-        nonlocal shown, shown_key, rendered_progress, current_view
+        nonlocal selected, shown, shown_key, rendered_progress, current_view
         if not require_authenticated_page(touch=False):
             return
         try:
@@ -196,6 +199,19 @@ def _build():
             stop_button.disable()
             return
         current_view = view
+        # A page navigation destroys this page's selection closure. Restore
+        # only the precise immutable revision from the last server-owned run
+        # when the operator hasn't made a new choice. This is read-only:
+        # never start a profile from selection or passive refresh.
+        if selected is None and view.profile_id and view.revision:
+            try:
+                previous = editor.store.get_revision(
+                    editor.chamber_id, view.profile_id, revision=view.revision)
+                selected = previous
+                if profile_select.value != view.profile_id:
+                    profile_select.value = view.profile_id
+            except (ValueError, ProfileNotFoundError, ProfileSchemaError, OSError):
+                pass
         for button, enabled_flag in (
             (run_button, view.can_start and selected is not None),
             (pause_button, view.can_pause),
@@ -207,13 +223,17 @@ def _build():
         reload_button.disable() if view.active else reload_button.enable()
         if not view.simulation:
             mode_label.set_text(
-                "Physical HIL: supervised runs require a signed site permit "
-                "and witness" if view.supervised
-                else "Physical HIL: profile execution disabled")
+                "Physical HIL: signed permit, witness and live watchdog required"
+                if view.supervised else
+                "Physical HIL: profile execution disabled without site permit")
+        elif view.stop_latched and view.controller_state == "VERIFIED_STOPPED":
+            mode_label.set_text(
+                "Verified STOP — Run Profile rechecks STOPPED before a new run")
         elif view.stop_latched:
-            mode_label.set_text("STOP latch active — reconcile from Operator Lease")
+            mode_label.set_text(
+                "Unknown/faulted STOP — Admin reconciliation required")
         else:
-            mode_label.set_text("Simulation only · shared server-side runner")
+            mode_label.set_text("Simulation · saved profiles run on the server")
         if view.state:
             status_label.set_text(
                 f"{view.state} · {view.profile_name} rev {view.revision} "
