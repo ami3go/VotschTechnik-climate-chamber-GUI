@@ -12,13 +12,18 @@ revisions, supervisor liveness). Admission runs the full signed-permit
 preflight against fresh G04 identity/health before any runner exists, and the
 runner revalidates the permit before every dispatch tick; without a
 supervised runtime, physical profile starts stay disabled.
+
+Isolated-lab mode (``chamber_web.hil.lab_mode``) is the alternative physical
+admission for a closed lab network: G08 authorization, G04 verified STOPPED
+state, the run journal and every G06 runtime check still apply, but no signed
+permit, witness, STOP-procedure confirmation or watchdog process is needed.
 """
 from __future__ import annotations
 
 import asyncio
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -27,6 +32,7 @@ from chamber_web.execution.profile_runner import (
     TERMINAL, Clock, EventSink, ExecutionSnapshot, ProfileRunner, RunParameters, RunState,
     SupervisedRun, step_budget,
 )
+from chamber_web.hil.lab_mode import LAB_RUN_BINDING, LabMode
 from chamber_web.hil.profile_admission import AdmissionDenied, preflight_physical_profile
 from chamber_web.hil.supervised_profile import SupervisedProfileRuntime
 from chamber_web.persistence.profiles import ProfileStore
@@ -75,6 +81,7 @@ class RunView:
     events: tuple[RunEventRow, ...]
     supervised: bool = False
     stop_procedure_confirmed: bool = False
+    lab: bool = False
 
 
 class ProfileExecutionService:
@@ -85,14 +92,18 @@ class ProfileExecutionService:
                  clock: Clock | None = None,
                  start_blocker: Callable[[], str] | None = None,
                  supervised: SupervisedProfileRuntime | None = None,
-                 manual_guard: AuthorizedChamber | None = None):
+                 manual_guard: AuthorizedChamber | None = None,
+                 lab: LabMode | None = None):
         if chamber_id not in manager.configured_ids():
             raise ChamberSafetyError("Profile execution chamber is not configured")
         if type(simulation) is not bool:
             raise ValueError("Trusted simulation mode must be boolean")
         if supervised is not None and simulation:
             raise ValueError("Supervised physical configuration requires physical mode")
+        if lab is not None and (simulation or supervised is not None):
+            raise ValueError("Lab mode requires physical mode without an H02 permit")
         self._supervised = supervised
+        self._lab = lab
         self._manager = manager
         self._store = store
         self._security = security
@@ -104,6 +115,9 @@ class ProfileExecutionService:
         self._manual_guard = manual_guard
         self._sink_factory = sink_factory
         self._parameters = parameters or RunParameters()
+        if lab is not None:
+            self._parameters = replace(
+                self._parameters, measured_margin_c=lab.measured_margin_c)
         self._clock = clock
         self._start_blocker = start_blocker
         self._lock = threading.RLock()
@@ -253,6 +267,15 @@ class ProfileExecutionService:
             supervisor_alive=supervised.supervision.alive,
         )
 
+    def _admit_lab(self, actor) -> SupervisedRun:
+        """Isolated-lab physical admission: the G08 actor is the run operator."""
+        assert self._lab is not None
+        self._security.audit(actor, "profile.lab_admission", "SUCCESS", self._chamber_id)
+        return SupervisedRun(
+            permit_sha256=LAB_RUN_BINDING, operator=actor.username,
+            revalidate=lambda: None, allow_gradients=self._lab.gradients,
+        )
+
     def _supervision_state(self, runner: ProfileRunner) -> dict:
         """Live heartbeat snapshot for the H02-C watchdog (server-derived)."""
         supervised = self._supervised
@@ -348,7 +371,7 @@ class ProfileExecutionService:
               profile_id: str, revision: int) -> ExecutionSnapshot:
         """Authorize and prepare an exact saved revision; call off the event loop."""
         actor = self._preauthorize(session, csrf)
-        if not self._simulation and self._supervised is None:
+        if not self._simulation and self._supervised is None and self._lab is None:
             raise ChamberSafetyError("Profile execution is disabled outside simulation")
         blocker = self._blocked_reason()
         if blocker:
@@ -368,6 +391,7 @@ class ProfileExecutionService:
             # Physical admission still enforces signed, revision-bound H02
             # permit, live independent watchdog, witness and site envelopes.
             supervised = (None if self._simulation else
+                          self._admit_lab(actor) if self._lab is not None else
                           self._admit_supervised(actor, profile_id, revision))
             runner = ProfileRunner(
                 self._manager, self._store, authorize=self._authorize,
@@ -379,7 +403,7 @@ class ProfileExecutionService:
                     self._chamber_id, profile_id, revision=revision,
                     parameters=self._parameters,
                 ))
-                if supervised is not None:
+                if supervised is not None and self._lab is None:
                     try:
                         self._arm_supervision(runner, snapshot)
                     except Exception:
@@ -466,7 +490,7 @@ class ProfileExecutionService:
             (time.monotonic() - started_at) if started_at is not None and snapshot else None,
             blocker if blocker and not active else (runner.reason if runner is not None else ""),
             health.stop_latched, health.state, self._simulation,
-            may_run and manual_available and (self._simulation or (
+            may_run and manual_available and (self._simulation or self._lab is not None or (
                 stop_confirmed and
                 self._supervised is not None and
                 self._supervised.supervision is not None and
@@ -481,6 +505,7 @@ class ProfileExecutionService:
             events,
             self._supervised is not None,
             stop_confirmed,
+            self._lab is not None,
         )
 
     async def shutdown(self) -> None:

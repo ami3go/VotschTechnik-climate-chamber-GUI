@@ -24,9 +24,13 @@ This runbook still governs **every subsequent** supervised run. It needs the sit
    — read the printed permit and type `SIGN` only if you approve it.
 
 ## 2. Configure (administrator)
-Settings > Chamber Connection > *Supervised profile runs (H02)*: permit path, site public
-key, witness name (exactly as in the permit). Save — the permit is verified on save —
-then restart the server. The independent watchdog starts with the server.
+The permit fields are no longer in the Settings UI. Set the permit path, site public
+key and witness name (exactly as in the permit) in the server environment as
+`CHAMBER_H02_PERMIT_FILE`, `CHAMBER_H02_TRUSTED_KEY` and `CHAMBER_H02_WITNESS`, then
+restart the server. The independent watchdog starts with the server. For unattended
+operation without a permit, enable *Settings > Physical profile runs > isolated lab
+mode* instead; see `README_LAB.md`. Do not set H02 variables and lab mode together —
+the server refuses to start.
 
 ## 3. Run (operator + witness present)
 1. Confirm the chamber is stopped and inside the permitted range.
@@ -56,12 +60,13 @@ against the verified installed revision at server start
   is revalidated before each tick, so an expiry stops further commands instead of
   letting a run continue.
 
-**Expiry locks the application out, not just the run.** The saved chamber settings
-keep pointing at the permit file, and the permit is verified while the server starts.
-Once the window has closed, a restart raises `AdmissionDenied: H02 site permit
-expired, premature or overlong` and the physical server no longer starts. Before an
-expiry, either renew the permit, or set Settings > Chamber Connection back to
-`simulator` and restart, so the software stays usable.
+**Expiry locks the application out, not just the run.** The `CHAMBER_H02_*`
+environment keeps pointing at the permit file, and the permit is verified while the
+server starts. Once the window has closed, a restart raises `AdmissionDenied: H02
+site permit expired, premature or overlong` and the physical server no longer starts.
+Before an expiry, either renew the permit, or remove the `CHAMBER_H02_*` variables
+(or save the simulator in Settings, which clears saved H02 fields) and restart, so
+the software stays usable.
 
 **Renewal sequence.**
 
@@ -80,9 +85,10 @@ expiry, either renew the permit, or set Settings > Chamber Connection back to
    — read the printed permit and type `SIGN` only if you approve it. The tool refuses
    unfilled placeholders, refuses to sign without an interactive terminal, and
    re-verifies the result with the same verifier the server uses.
-5. Install the new permit, update Settings > Chamber Connection (permit path, site
-   public key, witness), save, restart the server and confirm the dashboard shows
-   `PHYSICAL HIL` rather than `SIMULATION`.
+5. Install the new permit, update `CHAMBER_H02_PERMIT_FILE`,
+   `CHAMBER_H02_TRUSTED_KEY` and `CHAMBER_H02_WITNESS` in the server environment,
+   restart the server and confirm the dashboard shows `PHYSICAL HIL` rather than
+   `SIMULATION`.
 
 ## Abort and recovery
 A watchdog fault latches the host and refuses further starts until an on-site review

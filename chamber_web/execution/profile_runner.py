@@ -84,6 +84,9 @@ class RunParameters:
     max_age_s: float = 5.0
     step_margin_s: float = 15.0
     max_run_s: float | None = None
+    # Measured air temperature may exceed the capability envelope by this much
+    # (overshoot while holding an envelope edge); setpoints never may.
+    measured_margin_c: float = 0.0
 
     def __post_init__(self) -> None:
         for key in ("poll_s", "max_gap_s", "max_age_s", "step_margin_s"):
@@ -101,6 +104,10 @@ class RunParameters:
             not 0 < self.max_run_s <= 1_209_600
         ):
             raise ValueError("Run watchdog must be finite, <= 14 days")
+        margin = self.measured_margin_c
+        if (isinstance(margin, bool) or not isinstance(margin, (int, float)) or
+                not math.isfinite(margin) or not 0 <= margin <= 10):
+            raise ValueError("Measured margin must be finite, 0..10 °C")
 
 
 @dataclass(frozen=True)
@@ -168,6 +175,9 @@ class SupervisedRun:
     operator: str
     revalidate: Callable[[], None]
     supervisor_alive: Callable[[], bool] | None = None
+    # Isolated-lab runs may write declared gradients (verified by readback)
+    # and must size every reach timeout for the chamber's setpoint ramp.
+    allow_gradients: bool = False
 
 
 def ramp_duration_s(step: ProfileStep, from_temperature_c: float | None) -> float:
@@ -184,6 +194,12 @@ def ramp_duration_s(step: ProfileStep, from_temperature_c: float | None) -> floa
     if rate is None:
         return 0.0
     return abs(delta) / float(rate) * 60.0
+
+
+def _device_ramp(sample) -> tuple[float | None, float | None]:
+    """Live (up, down) gradient readback from a snapshot, when the backend has one."""
+    return (getattr(sample, "gradient_up_c_per_min", None),
+            getattr(sample, "gradient_down_c_per_min", None))
 
 
 def step_budget(step: ProfileStep, params: RunParameters, *,
@@ -234,6 +250,7 @@ class ProfileRunner:
                 not isinstance(supervised.operator, str) or
                 not supervised.operator.strip() or
                 not callable(supervised.revalidate) or
+                type(supervised.allow_gradients) is not bool or
                 (supervised.supervisor_alive is not None and
                  not callable(supervised.supervisor_alive))):
             raise ChamberSafetyError("Invalid supervised run context")
@@ -342,7 +359,7 @@ class ProfileRunner:
                                  ("down", step.ramp_down_c_per_min)):
             if value is None:
                 continue
-            if self._supervised is not None:
+            if self._supervised is not None and not self._supervised.allow_gradients:
                 raise ChamberSafetyError(
                     "Supervised physical gradients require a signed H03 "
                     "authorization; gradients unsupported for this permit")
@@ -355,6 +372,40 @@ class ProfileRunner:
                     limits[0] <= rate <= limits[1]):
                 raise ValueError(
                     direction.title() + " gradient outside supported range")
+
+    @staticmethod
+    def _check_reach_covers_ramp(step: ProfileStep, from_temperature_c: float | None,
+                                 caps: ChamberCapabilities) -> None:
+        """Refuse at start a reach timeout the chamber's setpoint ramp cannot meet.
+
+        A physical setpoint readback ramps at the declared gradient, or else at
+        the chamber's own gradient; a full-range step can take an hour.
+        """
+        if from_temperature_c is None or not math.isfinite(from_temperature_c):
+            return
+        delta = float(step.target_temperature_c) - float(from_temperature_c)
+        if delta == 0:
+            return
+        declared = step.ramp_up_c_per_min if delta > 0 else step.ramp_down_c_per_min
+        device = caps.setpoint_readback_ramp_c_per_min
+        rate = (float(declared) if declared is not None else
+                device[0 if delta > 0 else 1] if device else None)
+        if rate is None or rate <= 0:
+            return
+        needed = abs(delta) / rate * 60.0
+        if float(step.reach_timeout_s) < needed:
+            raise ChamberSafetyError(
+                f"Step {step.step}: reach timeout {float(step.reach_timeout_s):g} s is "
+                f"shorter than the {rate:g} °C/min setpoint ramp from "
+                f"{from_temperature_c:g} °C (needs at least {math.ceil(needed)} s)")
+
+    def _check_measured(self, measured: float) -> None:
+        """Measured temperature inside the envelope plus the run's overshoot margin."""
+        assert self._snapshot is not None
+        caps = self._snapshot.capabilities
+        margin = float(self._snapshot.parameters.measured_margin_c)
+        finite_temperature(measured, caps.temperature_min_c - margin,
+                           caps.temperature_max_c + margin)
 
     def _emit(self, kind: str, detail: str = "", *,
               temperature: float | None = None,
@@ -431,6 +482,9 @@ class ProfileRunner:
                 raise ChamberSafetyError("Missing mandatory verified control/readback capability")
             budgets: list[float] = []
             previous_target: float | None = None
+            lab = self._supervised is not None and self._supervised.allow_gradients
+            # Where the chamber's setpoint readback starts ramping from.
+            ramp_from = status.setpoint_temperature_c
             for step in enabled:
                 try:
                     target = float(step.target_temperature_c)
@@ -442,6 +496,9 @@ class ProfileRunner:
                 budgets.append(self._step_budget(
                     step, params, from_temperature_c=previous_target))
                 previous_target = target
+                if lab:
+                    self._check_reach_covers_ramp(step, ramp_from, caps)
+                    ramp_from = target
                 if step.chamber_run not in ("UNCHANGED", "ON", "OFF") or any(
                     directive not in ("UNCHANGED", "ON", "OFF")
                     for directive in (step.compressed_air, step.dryer)
@@ -466,8 +523,9 @@ class ProfileRunner:
                         step.chamber_run != "ON" or step.digital_outputs or
                         step.compressed_air != "UNCHANGED" or
                         step.dryer != "UNCHANGED" or
-                        step.ramp_up_c_per_min is not None or
-                        step.ramp_down_c_per_min is not None):
+                        (not self._supervised.allow_gradients and (
+                            step.ramp_up_c_per_min is not None or
+                            step.ramp_down_c_per_min is not None))):
                     raise ChamberSafetyError(
                         "Supervised physical profiles run chamber_run=ON "
                         "steps without output or gradient mutations")
@@ -705,7 +763,9 @@ class ProfileRunner:
         assert self._snapshot is not None
         return -1 <= age <= self._snapshot.parameters.max_age_s
 
-    def _accept_setpoint(self, observed: float | None, target: float) -> bool:
+    def _accept_setpoint(self, observed: float | None, target: float,
+                         device_ramp: tuple[float | None, float | None] = (None, None),
+                         ) -> bool:
         """Supervise independently observed setpoint readback during a ramp.
 
         A physical chamber may report an intermediate setpoint while it ramps
@@ -727,8 +787,16 @@ class ProfileRunner:
             return True
         assert self._snapshot is not None
         step = self._step()
-        rate = (step.ramp_up_c_per_min if target > observed
-                else step.ramp_down_c_per_min)
+        rising = target > observed
+        rate = step.ramp_up_c_per_min if rising else step.ramp_down_c_per_min
+        if rate is None:
+            # No declared gradient: a chamber whose readback ramps (Vötsch
+            # 11002) still moves at its own gradient; slow device gradients
+            # must not look frozen.
+            live = device_ramp[0 if rising else 1]
+            readback = self._snapshot.capabilities.setpoint_readback_ramp_c_per_min
+            rate = (live if live is not None and math.isfinite(live) and live > 0
+                    else readback[0 if rising else 1] if readback else None)
         # Scale the contraction threshold to how far the declared gradient
         # moves the readback per poll; a fixed 0.02 °C would fault slow ramps.
         per_poll = (float(rate) / 60.0 * self._snapshot.parameters.poll_s
@@ -780,10 +848,9 @@ class ProfileRunner:
             raise ChamberSafetyError("Telemetry quality/identity/state invalid")
         step = self._step()
         target = float(step.target_temperature_c)
-        setpoint_settled = self._accept_setpoint(sample.setpoint_temperature_c, target)
-        finite_temperature(sample.measured_temperature_c,
-                           self._snapshot.capabilities.temperature_min_c,
-                           self._snapshot.capabilities.temperature_max_c)
+        setpoint_settled = self._accept_setpoint(
+            sample.setpoint_temperature_c, target, _device_ramp(sample))
+        self._check_measured(sample.measured_temperature_c)
         self._emit("SAMPLE", temperature=sample.measured_temperature_c,
                    quality=sample.quality,
                    source_sampled_at_utc=sample.sampled_at_utc,
@@ -931,12 +998,9 @@ class ProfileRunner:
                     self._accept_setpoint(
                         sample.setpoint_temperature_c,
                         float(self._step().target_temperature_c),
+                        _device_ramp(sample),
                     )
-                    finite_temperature(
-                        sample.measured_temperature_c,
-                        self._snapshot.capabilities.temperature_min_c,
-                        self._snapshot.capabilities.temperature_max_c,
-                    )
+                    self._check_measured(sample.measured_temperature_c)
                 elif self._state in (RunState.REACHING, RunState.STABILIZING, RunState.DWELLING):
                     self._observe()
                     if (self._state in (RunState.REACHING, RunState.STABILIZING)

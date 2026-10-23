@@ -22,10 +22,11 @@ from pathlib import Path
 from typing import Mapping
 
 from chamber_web.domain.chamber import ChamberSafetyError, validate_chamber_id
+from chamber_web.hil.commits import detect_driver_commit, detect_gui_commit
+from chamber_web.hil.lab_mode import LAB_ACKNOWLEDGEMENT
 from chamber_web.hil.physical import (
     ACKNOWLEDGEMENT, HilAuthorization, hil_authorization_from_env,
 )
-from chamber_web.hil.commits import detect_driver_commit, detect_gui_commit
 from chamber_web.security.paths import security_directory
 
 CHAMBER_TYPES = {
@@ -48,7 +49,12 @@ class ChamberSettings:
     temperature_min_c: float = 15.0
     temperature_max_c: float = 35.0
     person_present_acknowledged: bool = False
-    # Optional H02 supervised-profile configuration. The permit itself is signed
+    # Isolated-lab unattended profile execution. When enabled, the saved
+    # settings launch CHAMBER_LAB_MODE at the next server start instead of the
+    # signed H02 permit workflow. Physical limits, roles, G04 STOP fencing and
+    # the run journal still apply.
+    lab_mode: bool = False
+    # Legacy H02 supervised-profile configuration. The permit itself is signed
     # by the site and only referenced here; empty keeps profile runs disabled.
     h02_permit_file: str = ""
     h02_trusted_key: str = ""
@@ -60,7 +66,7 @@ class ChamberSettings:
 
     def h02_environment(self) -> dict[str, str]:
         """``CHAMBER_H02_*`` mapping; empty when no permit is configured."""
-        if self.chamber_type == "simulator" or not (
+        if self.chamber_type == "simulator" or self.lab_mode or not (
                 self.h02_permit_file or self.h02_trusted_key):
             return {}
         return {
@@ -81,19 +87,33 @@ class ChamberSettings:
             "CHAMBER_HIL_EXPECTED_SERIAL": self.expected_serial,
             "CHAMBER_HIL_TEMP_MIN_C": repr(float(self.temperature_min_c)),
             "CHAMBER_HIL_TEMP_MAX_C": repr(float(self.temperature_max_c)),
-            "CHAMBER_HIL_ACK": ACKNOWLEDGEMENT if self.person_present_acknowledged else "",
+            # Lab mode is unattended, so the person-present acknowledgement is
+            # not required; the HIL authorization token itself still is.
+            "CHAMBER_HIL_ACK": (ACKNOWLEDGEMENT if
+                                self.person_present_acknowledged or self.lab_mode
+                                else ""),
         }
+
+    def lab_environment(self) -> dict[str, str]:
+        """``CHAMBER_LAB_MODE`` mapping for unattended physical profiles."""
+        if self.chamber_type == "simulator" or not self.lab_mode:
+            return {}
+        return {"CHAMBER_LAB_MODE": LAB_ACKNOWLEDGEMENT}
 
     def validate(self) -> HilAuthorization | None:
         """Apply exactly the launch-time HIL rules; None for the simulator."""
         if self.chamber_type not in CHAMBER_TYPES:
             raise ChamberSafetyError("Unsupported chamber type")
         if self.chamber_type == "simulator":
+            if self.lab_mode:
+                raise ChamberSafetyError(
+                    "Isolated lab mode requires a physical chamber, not the simulator")
             return None
         validate_chamber_id(self.chamber_id)
-        if not self.person_present_acknowledged:
+        if not (self.person_present_acknowledged or self.lab_mode):
             raise ChamberSafetyError(
-                "Physical chamber requires acknowledging that a person is present")
+                "Physical chamber requires acknowledging that a person is present, "
+                "or enabling isolated lab mode")
         authorization = hil_authorization_from_env(self.hil_environment())
         self._validate_h02(authorization)
         return authorization
@@ -161,6 +181,7 @@ def load_settings(path: Path | None = None) -> ChamberSettings | None:
             temperature_min_c=float(data["temperature_min_c"]),
             temperature_max_c=float(data["temperature_max_c"]),
             person_present_acknowledged=data["person_present_acknowledged"] is True,
+            lab_mode=data.get("lab_mode", False) is True,
             h02_permit_file=str(data.get("h02_permit_file", "")),
             h02_trusted_key=str(data.get("h02_trusted_key", "")),
             h02_witness=str(data.get("h02_witness", "")),
@@ -230,7 +251,10 @@ def effective_hil_environment(env: Mapping[str, str],
     settings = load_settings(path)
     if settings is None or settings.chamber_type == "simulator":
         return env, "default"
-    # Explicit CHAMBER_H02_* / commit variables in the process still win.
+    # Explicit CHAMBER_H02_* / CHAMBER_LAB_* variables in the process still win.
     saved_h02 = {key: value for key, value in settings.h02_environment().items()
                  if not env.get(key, "").strip()}
-    return {**env, **settings.hil_environment(), **saved_h02}, "chamber settings"
+    saved_lab = {key: value for key, value in settings.lab_environment().items()
+                 if not env.get(key, "").strip()}
+    return {**env, **settings.hil_environment(), **saved_h02,
+            **saved_lab}, "chamber settings"

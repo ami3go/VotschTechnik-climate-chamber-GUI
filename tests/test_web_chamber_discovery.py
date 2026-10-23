@@ -222,3 +222,45 @@ async def test_physical_chamber_settings_save_with_factory_pin_warning(
     assert load_settings(target).address == "192.168.10.20"
     assert store.factory_credentials_active() == (
         (False, True) if changed_password else (True, True))
+
+
+async def test_settings_toggle_lab_mode_and_clear_legacy_h02(
+        create_user: Callable[[], User], monkeypatch, tmp_path):
+    """The H02 form is gone; one checkbox enables unattended physical profiles."""
+    from chamber_web import main as application
+    from chamber_web.hil.chamber_settings import ChamberSettings, load_settings
+    from chamber_web.pages import chamber_config
+    from chamber_web.security import nicegui as security_ui
+    from chamber_web.security.auth import SecurityStore
+
+    store = SecurityStore(tmp_path / "security")
+    store.provision_factory_admin()
+    monkeypatch.setattr(security_ui, "_store", store)
+    monkeypatch.setattr(application._manual_service, "_security", store)
+    monkeypatch.setattr(application._manual_service._authorized, "_security", store)
+    monkeypatch.setenv("CHAMBER_SECURITY_DIR", str(tmp_path / "storage"))
+    monkeypatch.setattr(chamber_config, "load_settings", lambda: ChamberSettings(
+        chamber_type="votsch", chamber_id="lab-1", address="192.168.10.20",
+        expected_serial="ABC123", temperature_min_c=15.0, temperature_max_c=35.0,
+        h02_permit_file="/old/permit.json", h02_witness="old-witness"))
+
+    user = create_user()
+    await user.open("/login")
+    user.find("Username").type("admin")
+    user.find("Password").type("admin")
+    user.find("Sign in").click()
+    await user.should_see("Signed in: admin (ADMIN)", retries=30)
+    await user.open("/settings")
+    user.find("Enable unattended profile runs on this chamber "
+              "(isolated lab mode)").click()
+    user.find("Current administrator password (required to save)").type("admin")
+    user.find("Save chamber settings").click()
+    await user.should_see("Saved (applies after restart): Vötsch", retries=30)
+    target = tmp_path / "storage" / "chamber_settings.json"
+    for _ in range(30):
+        if target.exists():
+            break
+        await asyncio.sleep(0.05)
+    stored = load_settings(target)
+    assert stored is not None and stored.lab_mode is True
+    assert stored.h02_permit_file == "" and stored.h02_witness == ""

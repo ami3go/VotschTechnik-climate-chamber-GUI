@@ -23,6 +23,7 @@ from nicegui import app, ui  # noqa: E402
 from .bootstrap import create_demo_control_services
 from .adapters.votsch import discover_votsch_chambers
 from .hil.chamber_settings import effective_hil_environment
+from .hil.lab_mode import LabMode, lab_mode_from_env
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
 from .hil.supervised_profile import SupervisedProfileRuntime, supervised_runtime_from_env
 from .hil.supervision import SupervisionHost
@@ -44,6 +45,9 @@ from .model import MAX_TEMP, MIN_TEMP
 _HIL_ENV, _HIL_SOURCE = effective_hil_environment(os.environ)
 _HIL = hil_authorization_from_env(_HIL_ENV)
 check_hil_deployment(_HIL, deployment_policy, os.environ)
+# Isolated-lab unattended mode: physical profile runs without the H02 permit
+# workflow. Launch-time only; misconfiguration refuses to start.
+_LAB = lab_mode_from_env(_HIL_ENV, hil_present=_HIL is not None)
 _security = get_security()
 # A factory credential is reported as a security warning, not a hardware
 # admission rule. Physical access still requires explicit HIL authorization,
@@ -60,8 +64,10 @@ if _HIL is not None:
         )
 _dashboard_service, _manual_service = create_demo_control_services(
     _security, _HIL, simulated_slew_c_per_s=0.25,
+    gradient_writes=_LAB is not None and _LAB.gradients,
 )
-_MODE = "Simulation" if _HIL is None else "Physical HIL"
+_MODE = ("Simulation" if _HIL is None else
+         "Physical lab" if _LAB is not None else "Physical HIL")
 # Server-side supervised physical admission. A site-signed H02 permit enables
 # supervised profile runs; a partial or broken permit configuration refuses to
 # start (fail closed), and an unconfigured physical launch keeps profile
@@ -85,6 +91,11 @@ def profile_execution_is_simulation() -> bool:
 def profile_execution_supervision() -> SupervisedProfileRuntime | None:
     """Trusted composition context for H02 supervised physical runs."""
     return _SUPERVISED
+
+
+def profile_execution_lab() -> LabMode | None:
+    """Trusted isolated-lab context for unattended physical profile runs."""
+    return _LAB
 
 
 def get_supervision_host() -> SupervisionHost | None:
@@ -1007,6 +1018,7 @@ def run() -> None:
         options = {"ssl_certfile": str(deployment_policy.certfile),
                    "ssl_keyfile": str(deployment_policy.keyfile)}
     ui.run(title="Climate Chamber — server simulation" if _HIL is None
+           else "Climate Chamber — PHYSICAL (isolated lab mode)" if _LAB is not None
            else "Climate Chamber — SUPERVISED PHYSICAL HIL",
            host=deployment_policy.bind_host, port=deployment_policy.port,
            reload=False, show=False, storage_secret=cookie_secret(),

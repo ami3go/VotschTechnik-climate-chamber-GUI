@@ -13,6 +13,17 @@ advanced its **design and engineering work queue** to
 This does not assert signed site acceptance, independently accepted H02
 physical profile runs, W02 air-gap certification, or R01 release approval.
 
+## Isolated lab: full-range unattended operation
+
+On a closed lab network, administrators can enable **Settings → Physical
+profile runs → isolated lab mode**, which launches the server with
+`CHAMBER_LAB_MODE=ISOLATED-LAB-UNATTENDED` and lets the physical chamber run
+profiles across the full envelope without the H02 permit workflow. The same
+variable can be set directly in the server environment. Separately,
+`CHAMBER_NETWORK_MODE=lab` serves the UI to the lab laptop over plain HTTP. `scripts/hil_lab_acceptance.py` is the unattended full-range HIL
+acceptance run (`--simulate` validates it without hardware). See
+[README_LAB.md](README_LAB.md).
+
 ## Install and run (Windows / Linux)
 
 Install Python 3.10+ (CI-tested with 3.10 and 3.12) and Git.

@@ -256,7 +256,7 @@ def self_test(*, required_modules: tuple[str, ...] = ()) -> int:
         os.environ["CHAMBER_STATE_DIR"] = scratch
         os.environ["CHAMBER_SECURITY_DIR"] = scratch
         for key in list(os.environ):
-            if key.startswith(("CHAMBER_HIL_", "CHAMBER_H02_")):
+            if key.startswith(("CHAMBER_HIL_", "CHAMBER_H02_", "CHAMBER_LAB_")):
                 os.environ.pop(key, None)
         values = parse_config(
             "# comment\nCHAMBER_PORT=8091\nCHAMBER_NETWORK_MODE=\"localhost\"\n")
