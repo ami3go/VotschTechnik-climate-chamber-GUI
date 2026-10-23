@@ -1,5 +1,7 @@
 name: Temporary W02 closure regeneration
 on:
+  push:
+    branches: [feat/h03-a-typed-driver-adapter]
   workflow_dispatch:
 permissions:
   contents: read
