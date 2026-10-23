@@ -424,6 +424,22 @@ class ControllerTests(unittest.TestCase):
         recovered.reconcile_stop("device-1")
         recovered.start("device-1")
 
+    def test_admin_override_clears_stop_latch_and_forces_ownership(self):
+        backend = CountingBackend("device-1")
+        manager = self.manager(backend)
+        old = manager.claim_operator("device-1", "operator-a")
+        manager.stop("device-1")
+        self.assertTrue(manager.health("device-1").stop_latched)
+        manager.admin_override("device-1")
+        health = manager.health("device-1")
+        self.assertFalse(health.stop_latched)
+        self.assertEqual(health.state, "VERIFIED_STOPPED")
+        with self.assertRaises(ChamberSafetyError):
+            manager.set_temperature("device-1", 30, operator_token=old)
+        replacement = manager.force_claim_operator("device-1", "admin")
+        manager.set_temperature("device-1", 31, operator_token=replacement)
+        self.assertEqual(backend.log[-1], ("set", 31.0))
+
     def test_operator_conflict_does_not_block_stop(self):
         backend = CountingBackend("device-1")
         manager = self.manager(backend)

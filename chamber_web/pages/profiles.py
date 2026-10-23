@@ -434,7 +434,11 @@ def profiles_page() -> None:
             "STOP procedure confirmed for this shift" if view.stop_procedure_confirmed
             else "Before a physical run: confirm you can perform the chamber's own "
                  "STOP and emergency stop. Web STOP is not an emergency stop.")
-        if view.lab:
+        if view.admin_override:
+            run_mode_label.set_text(
+                "ADMIN OVERRIDE · isolated lab mode · ownership and STOP/restart "
+                f"checks bypassed · controller {view.controller_state}")
+        elif view.lab:
             run_mode_label.set_text(
                 f"Physical chamber · isolated lab mode · controller {view.controller_state}" +
                 (" · Run Loaded Revision re-verifies STOPPED and clears the "

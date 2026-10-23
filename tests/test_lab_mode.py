@@ -259,6 +259,50 @@ class LabProfileExecutionTests(unittest.TestCase):
             self.assertEqual(stack.drain(), RunState.COMPLETED,
                              stack.service.runner.reason)
 
+    def test_admin_override_bypasses_foreign_lease_and_stop_latch(self):
+        stack = self.stack()
+        claimed = stack.manual.command(
+            stack.operator.session, stack.operator.csrf, stack.chamber_id, "claim")
+        self.assertEqual(claimed.state, ManualState.CONFIRMED)
+        stack.manager.stop(stack.chamber_id)
+        self.assertTrue(stack.manager.health(stack.chamber_id).stop_latched)
+        view = stack.service.view(stack.admin.session)
+        self.assertTrue(view.admin_override)
+        self.assertTrue(view.can_start)
+        stack.service.start(
+            stack.admin.session, stack.admin.csrf,
+            stack.profile({"target": 23}), 1)
+        self.assertFalse(stack.manager.health(stack.chamber_id).stop_latched)
+        self.assertEqual(stack.drain(), RunState.COMPLETED,
+                         stack.service.runner.reason)
+
+    def test_admin_override_can_take_over_an_already_running_chamber(self):
+        stack = self.stack()
+        token = stack.manager.claim_operator(stack.chamber_id, "pre-admin")
+        stack.manager.start(stack.chamber_id, operator_token=token)
+        stack.manager.release_operator(stack.chamber_id, token)
+        self.assertEqual(stack.manager.health(stack.chamber_id).state, "RUNNING")
+        self.assertTrue(stack.service.view(stack.admin.session).can_start)
+        stack.service.start(
+            stack.admin.session, stack.admin.csrf,
+            stack.profile({"target": 23}), 1)
+        self.assertEqual(stack.drain(), RunState.COMPLETED,
+                         stack.service.runner.reason)
+
+    def test_operator_cannot_bypass_a_foreign_manual_lease(self):
+        stack = self.stack()
+        security = stack.service._security
+        security.create_user(
+            stack.admin.session, stack.admin.csrf, "other_operator",
+            PASSWORD, Role.OPERATOR)
+        other = security.login("other_operator", PASSWORD)
+        claimed = stack.manual.command(
+            other.session, other.csrf, stack.chamber_id, "claim")
+        self.assertEqual(claimed.state, ManualState.CONFIRMED)
+        self.assertFalse(stack.service.view(stack.operator.session).can_start)
+        with self.assertRaises(ChamberSafetyError):
+            stack.start(stack.profile({"target": 23}))
+
     def test_lab_run_does_not_reconcile_a_faulted_chamber(self):
         stack = self.stack()
         faulted = replace(stack.manager.health(stack.chamber_id),

@@ -122,6 +122,14 @@ class ChamberManager:
         self._check_id(chamber_id)
         self._controller.release_operator(chamber_id, token)
 
+    def force_claim_operator(self, chamber_id: str, owner: str) -> str:
+        self._check_id(chamber_id)
+        return self._controller.force_claim_operator(chamber_id, owner)
+
+    def admin_override(self, chamber_id: str) -> None:
+        self._check_id(chamber_id)
+        self._controller.admin_override(chamber_id)
+
     def start_polling(self, chamber_id: str, *, interval_s: float = 2.0) -> None:
         self._check_id(chamber_id)
         self._controller.start_polling(chamber_id, interval_s=interval_s)

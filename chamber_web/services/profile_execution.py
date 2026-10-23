@@ -82,6 +82,7 @@ class RunView:
     supervised: bool = False
     stop_procedure_confirmed: bool = False
     lab: bool = False
+    admin_override: bool = False
 
 
 class ProfileExecutionService:
@@ -274,6 +275,7 @@ class ProfileExecutionService:
         return SupervisedRun(
             permit_sha256=LAB_RUN_BINDING, operator=actor.username,
             revalidate=lambda: None, allow_gradients=self._lab.gradients,
+            admin_override=actor.role is Role.ADMIN,
         )
 
     def _supervision_state(self, runner: ProfileRunner) -> dict:
@@ -351,6 +353,28 @@ class ProfileExecutionService:
         An unverified/FAULT stop is never cleared; all admission checks in
         G06 and the optional H02 signed preflight still apply separately.
         """
+        admin_override = (
+            self._lab is not None and actor.role is Role.ADMIN)
+        if admin_override:
+            # Explicit ADMIN-only lab override: discard any manual owner and
+            # clear the controller STOP/restart fence without a fresh STOPPED
+            # precondition. Telemetry, identity and mid-run STOP supervision
+            # remain enforced by G04/G06.
+            self._security.audit(
+                actor, "profile.admin_override", "INTENT", self._chamber_id)
+            try:
+                if self._manual_guard is not None:
+                    self._manual_guard.admin_forget_manual_lease(
+                        session, csrf, self._chamber_id)
+                self._manager.admin_override(self._chamber_id)
+            except BaseException as exc:
+                self._security.audit(
+                    actor, "profile.admin_override", "FAILED",
+                    self._chamber_id, type(exc).__name__)
+                raise
+            self._security.audit(
+                actor, "profile.admin_override", "SUCCESS", self._chamber_id)
+            return
         guard = self._manual_guard
         if guard is not None:
             owner, mine = guard.ownership_view(session, self._chamber_id)
@@ -476,8 +500,9 @@ class ProfileExecutionService:
         with self._lock:
             runner, started_at = self._runner, self._started_at
         may_run = actor.role in (Role.ADMIN, Role.OPERATOR)
+        admin_override = self._lab is not None and actor.role is Role.ADMIN
         manual_available = True
-        if self._manual_guard is not None:
+        if self._manual_guard is not None and not admin_override:
             manual_owner, mine = self._manual_guard.ownership_view(
                 session, self._chamber_id)
             manual_available = manual_owner is None or mine
@@ -511,13 +536,15 @@ class ProfileExecutionService:
             (time.monotonic() - started_at) if started_at is not None and snapshot else None,
             blocker if blocker and not active else (runner.reason if runner is not None else ""),
             health.stop_latched, health.state, self._simulation,
-            may_run and manual_available and (self._simulation or self._lab is not None or (
-                stop_confirmed and
-                self._supervised is not None and
-                self._supervised.supervision is not None and
-                self._supervised.supervision.alive())) and
+            may_run and (admin_override or manual_available) and (
+                self._simulation or self._lab is not None or (
+                    stop_confirmed and
+                    self._supervised is not None and
+                    self._supervised.supervision is not None and
+                    self._supervised.supervision.alive())) and
             not blocker and not active and health.connected and
-            (health.state == "VERIFIED_STOPPED" or lab_restart_ready),
+            (admin_override or health.state == "VERIFIED_STOPPED" or
+             lab_restart_ready),
             may_run and active and state is not RunState.STOP_REQUESTED,
             may_run and mine and state in (
                 RunState.REACHING, RunState.STABILIZING, RunState.DWELLING,
@@ -527,6 +554,7 @@ class ProfileExecutionService:
             self._supervised is not None,
             stop_confirmed,
             self._lab is not None,
+            admin_override,
         )
 
     async def shutdown(self) -> None:

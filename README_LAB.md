@@ -26,6 +26,12 @@ layer. Set the chamber's own limiter to suit the specimen before an unattended r
   reverified. In lab mode the first **Run** performs that independent fresh
   `GOOD`/`STOPPED` read and clears the restart fence; a FAULT or a chamber that
   is actually running is never cleared automatically.
+- **Administrator override:** an ADMIN lab profile start bypasses manual-lease
+  ownership and the pre-run STOP/restart gate, including a latched restart
+  fence or an already-running chamber. It still requires connected, `GOOD`,
+  identity-pinned telemetry, capabilities, the envelope and the run journal.
+  Mid-run supervision and the final verified STOP remain active. Every override
+  is audited as `profile.admin_override`.
 
 ## Configure
 

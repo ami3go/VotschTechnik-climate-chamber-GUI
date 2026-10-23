@@ -224,7 +224,11 @@ def _build():
             button.enable() if enabled_flag else button.disable()
         profile_select.disable() if view.active else profile_select.enable()
         reload_button.disable() if view.active else reload_button.enable()
-        if view.lab:
+        if view.admin_override:
+            mode_label.set_text(
+                "ADMIN OVERRIDE: ownership and STOP/restart checks bypassed for "
+                "isolated lab runs")
+        elif view.lab:
             mode_label.set_text(
                 "Physical chamber: isolated lab mode — no permit or watchdog required" +
                 ("; Run re-verifies STOPPED and clears the restart lock"
