@@ -457,7 +457,7 @@
   "python_tag": "cp312",
   "release_version": "1.0.0",
   "requirements": "requirements-web.txt",
-  "requirements_sha256": "9c7905fe3d7aab482f1b5c3e48fff4b63b2bbf0a3f93bb38743a2cbc3058fb71",
+  "requirements_sha256": "433f9ff9c8d977124b9b5a90bc1e8eefa406c22fee6e21b8f706b360e5da4fab",
   "schema": 1,
   "target": "win_amd64-cp312"
 }

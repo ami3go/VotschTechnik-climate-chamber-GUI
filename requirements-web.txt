@@ -4,6 +4,6 @@ nicegui==3.18.0
 # Transitive runtime pins mirrored from requirements-w02-runtime.lock so the
 # air-gap wheelhouse stays reproducible instead of tracking new PyPI releases.
 fastapi==0.161.1
-starlette==1.9.0
+starlette==1.9.0; python_version >= "3.11"
 certifi==2026.10.19
 multidict==7.1.0
