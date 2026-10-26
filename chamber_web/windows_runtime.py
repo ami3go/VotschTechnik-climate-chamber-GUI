@@ -89,8 +89,10 @@ def process_lock(name: str, *, wait_seconds: float = 0,
             return
         import msvcrt  # Windows only
 
-        handle.seek(0)
-        if handle.read(1) == b"":
+        # Ensure the locked byte exists without reading it: another handle may
+        # already hold a byte-range lock, which makes even a read fail with
+        # PermissionError on Windows. File size is metadata, not locked I/O.
+        if os.fstat(handle.fileno()).st_size == 0:
             handle.write(b"0")
             handle.flush()
         end = time.monotonic() + wait_seconds

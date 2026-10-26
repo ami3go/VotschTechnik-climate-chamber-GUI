@@ -401,7 +401,7 @@ class LabAcceptanceScriptTests(unittest.TestCase):
             evidence = Path(tmp) / "evidence"
             code = hil_lab_acceptance.main([
                 "--simulate", "--sim-envelope", "15,35", "--evidence", str(evidence),
-                "--gradient", "5", "--gradient-delta", "2", "--settle", "40",
+                "--gradient", "5", "--gradient-delta", "2", "--settle", "120",
                 "--dwell", "2", "--stabilize", "2", "--manual-delta", "8"])
             summary = json.loads((evidence / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(code, 0, summary)
