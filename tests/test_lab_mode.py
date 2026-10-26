@@ -1,4 +1,4 @@
-"""Isolated-lab unattended mode: physical profile runs without the H02 permit.
+"""Isolated-lab unattended mode for physical profile runs.
 
 No real chamber: the real Vötsch adapter, G04 controller, G05 manual control,
 G06 runner and G07 journal run against scripts/vt4011_simulator.py.
@@ -58,7 +58,6 @@ class LabModeConfigurationTests(unittest.TestCase):
         bad = {
             "wrong acknowledgement": ({"CHAMBER_LAB_MODE": "yes"}, True),
             "no chamber authorization": (ack, False),
-            "with an H02 permit": ({**ack, "CHAMBER_H02_PERMIT_FILE": "p.json"}, True),
             "margin too large": ({**ack, "CHAMBER_LAB_MEASURED_MARGIN_C": "50"}, True),
             "margin not numeric": ({**ack, "CHAMBER_LAB_MEASURED_MARGIN_C": "lots"}, True),
             "bad gradient switch": ({**ack, "CHAMBER_LAB_GRADIENTS": "maybe"}, True),
@@ -76,8 +75,6 @@ class LabNetworkModeTests(unittest.TestCase):
     def test_specific_bind_is_plain_http_with_derived_origin(self):
         policy = self.policy(CHAMBER_BIND_HOST="192.168.10.5", CHAMBER_PORT="8090")
         self.assertTrue(policy.is_lab)
-        self.assertFalse(policy.is_lan)  # no TLS, no https-only cookie
-        self.assertIsNone(policy.certfile)
         self.assertIn("http://192.168.10.5:8090", policy.allowed_origins)
         self.assertIn("http://127.0.0.1:8090", policy.allowed_origins)
         self.assertTrue(policy.allows_client("192.168.10.77"))
@@ -226,7 +223,7 @@ class LabProfileExecutionTests(unittest.TestCase):
         stack = self.stack()
         view = stack.service.view(stack.operator.session)
         self.assertTrue(view.lab and view.can_start)
-        self.assertFalse(view.simulation or view.supervised)
+        self.assertFalse(view.simulation)
         profile_id = stack.profile({"target": 35}, {"target": 15}, {"target": 23})
         stack.start(profile_id)
         self.assertEqual(stack.drain(), RunState.COMPLETED, stack.service.runner.reason)
@@ -259,7 +256,7 @@ class LabProfileExecutionTests(unittest.TestCase):
             self.assertEqual(stack.drain(), RunState.COMPLETED,
                              stack.service.runner.reason)
 
-    def test_admin_override_bypasses_foreign_lease_and_stop_latch(self):
+    def test_admin_cannot_bypass_manual_lease_or_stop_latch(self):
         stack = self.stack()
         claimed = stack.manual.command(
             stack.operator.session, stack.operator.csrf, stack.chamber_id, "claim")
@@ -267,27 +264,24 @@ class LabProfileExecutionTests(unittest.TestCase):
         stack.manager.stop(stack.chamber_id)
         self.assertTrue(stack.manager.health(stack.chamber_id).stop_latched)
         view = stack.service.view(stack.admin.session)
-        self.assertTrue(view.admin_override)
-        self.assertTrue(view.can_start)
-        stack.service.start(
-            stack.admin.session, stack.admin.csrf,
-            stack.profile({"target": 23}), 1)
-        self.assertFalse(stack.manager.health(stack.chamber_id).stop_latched)
-        self.assertEqual(stack.drain(), RunState.COMPLETED,
-                         stack.service.runner.reason)
+        self.assertFalse(view.can_start)
+        with self.assertRaises(ChamberSafetyError):
+            stack.service.start(
+                stack.admin.session, stack.admin.csrf,
+                stack.profile({"target": 23}), 1)
+        self.assertTrue(stack.manager.health(stack.chamber_id).stop_latched)
 
-    def test_admin_override_can_take_over_an_already_running_chamber(self):
+    def test_admin_cannot_take_over_an_already_running_chamber(self):
         stack = self.stack()
         token = stack.manager.claim_operator(stack.chamber_id, "pre-admin")
         stack.manager.start(stack.chamber_id, operator_token=token)
         stack.manager.release_operator(stack.chamber_id, token)
         self.assertEqual(stack.manager.health(stack.chamber_id).state, "RUNNING")
-        self.assertTrue(stack.service.view(stack.admin.session).can_start)
-        stack.service.start(
-            stack.admin.session, stack.admin.csrf,
-            stack.profile({"target": 23}), 1)
-        self.assertEqual(stack.drain(), RunState.COMPLETED,
-                         stack.service.runner.reason)
+        self.assertFalse(stack.service.view(stack.admin.session).can_start)
+        with self.assertRaises(ChamberSafetyError):
+            stack.service.start(
+                stack.admin.session, stack.admin.csrf,
+                stack.profile({"target": 23}), 1)
 
     def test_operator_cannot_bypass_a_foreign_manual_lease(self):
         stack = self.stack()

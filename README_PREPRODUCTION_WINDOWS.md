@@ -1,11 +1,10 @@
 # Climate Chamber — pre-production Windows bundle (NOT CERTIFIED)
 
 This bundle contains the **full** Climate Chamber server: sign-in and roles,
-STOP fencing, run recording/history, manual control, profile execution and the
-optional supervised physical H02 path (signed permit, pinned revisions,
-independent watchdog). It is a pre-production engineering build, not a
-certified or released product. Site acceptance, W02 release signing and the
-H01/H02 records remain outstanding where not explicitly signed.
+STOP fencing, run recording/history, manual control, profile execution and
+isolated-lab physical operation. It is a pre-production engineering build, not
+a certified or released product. Site acceptance, W02 release signing and the
+H01 records remain outstanding where not explicitly signed.
 
 The older `W01` bundle is different: it is simulated, loopback-only and has no
 authentication/STOP/HIL gates. Do not use it for chamber operation.
@@ -37,17 +36,9 @@ Logs and state: `%LOCALAPPDATA%\ClimateChamber\App\` (`app.log`, rotated at
 - **Manual control** on real hardware requires all `CHAMBER_HIL_*` values,
   including `CHAMBER_HIL_ACK=SUPERVISED-PHYSICAL-HIL`, a private non-loopback
   chamber IPv4 address and a matching serial/envelope.
-- **Physical profile runs** additionally require a site-signed H02 permit
-  (`CHAMBER_H02_PERMIT_FILE`, `CHAMBER_H02_TRUSTED_KEY`, `CHAMBER_H02_WITNESS`,
-  `CHAMBER_GUI_COMMIT`, `CHAMBER_DRIVER_COMMIT`). The permit binds the exact
-  GUI/driver revisions, the operator's account name, the witness, the profile
-  checksum, temperature targets and the watchdog budgets. The frozen bundle
-  carries an integrity-manifested `build-revision.json` so those revisions are
-  readable without a git checkout.
-- Before the first physical run in a shift, the operator presses **Confirm
-  STOP Procedure** on the Profiles page. That act is audited
-  (`profile.stop_procedure`), lasts 12 hours for that account, and is required
-  in addition to the launch-time HIL acknowledgement. Web STOP is not an
+- **Physical profile runs** additionally require isolated lab mode
+  (`CHAMBER_LAB_MODE=ISOLATED-LAB-UNATTENDED`, normally enabled in Settings).
+  There is no separate permit or watchdog process. Web STOP is not an
   emergency stop; the chamber's own controls and emergency stop remain
   primary.
 
@@ -60,31 +51,31 @@ Logs and state: `%LOCALAPPDATA%\ClimateChamber\App\` (`app.log`, rotated at
 - The profile engine supports declared gradients (`ramp_up_c_per_min`,
   `ramp_down_c_per_min`) with capability/range preflight, verified gradient
   readback, ramp-aware deadlines and convergence supervision. The bundled
-  simulation backend enables them only for validation with
-  `CHAMBER_SIM_RAMP_C_PER_MIN=0.1,10` (or `off`, the default); the Vötsch
-  adapter keeps physical gradients disabled until signed H03 authorization.
-- The software envelope now spans the full −40…130 °C engineering range; a
-  site permit and the chamber's own limits still narrow it.
-- LAN access is refused unless `CHAMBER_NETWORK_MODE=lan` plus a valid TLS
-  certificate matching `CHAMBER_PUBLIC_ORIGIN`, a private client allowlist and
-  safe key permissions are configured. The default is loopback only.
+  simulation backend enables them only for validation in isolated lab mode.
+- The software envelope now spans the full −40…130 °C engineering range; the
+  chamber's own limits still narrow it.
+- LAN access requires `CHAMBER_NETWORK_MODE=lab`, a specific bind address (or
+  an explicit public origin), a private client allowlist and plain HTTP on a
+  dedicated closed network. The default is loopback only.
 - No Authenticode publisher signature and no certified release artefact is
   produced by this build.
 
 ## Security maintenance (offline, no HTTP endpoints)
 
-Back up the security database with its signed manifest:
+Back up the security database with its SHA-256 manifest, and export the audit
+log daily:
 
 ```
 server\ClimateChamberServer.exe --backup-security D:\backup\security-2026-10-22.sqlite3
 server\ClimateChamberServer.exe --verify-security D:\backup\security-2026-10-22.sqlite3
+server\ClimateChamberServer.exe --export-audit D:\backup\audit-2026-10-22.csv
 ```
 
 Backups refuse an existing destination. Set `CHAMBER_UNATTENDED_MAINTENANCE=1`
 to allow a scheduled task to run backup/verify without a terminal; credential
-bootstrap/recovery and restore staging always require a local console. The
-backup-signing key stays in the security directory and must be escrowed
-separately. Staged restore never overwrites a live database.
+bootstrap/recovery and restore staging always require a local console. Protect
+the backup and CSV copies with filesystem ACLs and keep them on isolated
+media. Staged restore never overwrites a live database.
 
 ## Run from a source checkout (validation, not a release)
 

@@ -1,3 +1,5 @@
+> **HISTORICAL SECURITY BASELINE — SUPERSEDED (2026-10-26).** This document describes the former PIN/security-profile/TLS design. Use `G08_FULL_SECURITY.md` for the current lab-only model.
+
 # G08-min — offline authentication and authorization (mock-only)
 
 Status: **G08-min simulation-only software merged via PR #25** (`61d8aefaadcdb6f5035b6683410bee0abf76e9d1`; exact-head Windows NiceGUI/security run [38438666305](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38438666305), W01 [38438666518](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38438666518)); full G08 and live physical certification remain OPEN.

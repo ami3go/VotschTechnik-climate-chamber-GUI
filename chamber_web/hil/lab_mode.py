@@ -1,9 +1,8 @@
 """Isolated-lab unattended mode for ONE physical Vötsch chamber.
 
-For a closed lab network (server, laptop and chamber only) the signed H02
-permit, named witness, pinned revisions, per-shift STOP-procedure
-confirmation and independent watchdog are replaced by a single launch-time
-acknowledgement: ``CHAMBER_LAB_MODE=ISOLATED-LAB-UNATTENDED``.
+For a closed lab network (server, laptop and chamber only) a single
+launch-time acknowledgement enables physical profile execution:
+``CHAMBER_LAB_MODE=ISOLATED-LAB-UNATTENDED``.
 
 What still applies in lab mode:
 
@@ -33,7 +32,7 @@ ENV_LAB_MODE = "CHAMBER_LAB_MODE"
 ENV_MEASURED_MARGIN = "CHAMBER_LAB_MEASURED_MARGIN_C"
 ENV_GRADIENTS = "CHAMBER_LAB_GRADIENTS"
 LAB_ACKNOWLEDGEMENT = "ISOLATED-LAB-UNATTENDED"
-# Stable 64-hex run binding recorded where a permit SHA would otherwise be.
+# Stable 64-hex binding recorded for the admitted lab run.
 LAB_RUN_BINDING = hashlib.sha256(LAB_ACKNOWLEDGEMENT.encode("ascii")).hexdigest()
 DEFAULT_MEASURED_MARGIN_C = 5.0
 MAX_MEASURED_MARGIN_C = 10.0
@@ -71,10 +70,6 @@ def lab_mode_from_env(env: Mapping[str, str], *, hil_present: bool) -> LabMode |
     if not hil_present:
         raise ChamberSafetyError(
             f"{ENV_LAB_MODE} requires a complete CHAMBER_HIL_* chamber authorization")
-    if env.get("CHAMBER_H02_PERMIT_FILE", "").strip() or env.get(
-            "CHAMBER_H02_TRUSTED_KEY", "").strip():
-        raise ChamberSafetyError(
-            "Choose either lab mode or a signed H02 permit, not both")
     margin_raw = env.get(ENV_MEASURED_MARGIN, "").strip()
     try:
         margin = float(margin_raw) if margin_raw else DEFAULT_MEASURED_MARGIN_C

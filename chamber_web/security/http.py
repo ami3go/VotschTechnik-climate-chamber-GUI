@@ -107,8 +107,6 @@ class OriginMiddleware:
                     (b"content-security-policy", b"frame-ancestors 'none'"),
                 )
                 extra = [(key, val) for key, val in safe if key not in existing]
-                if self.deployment is not None and self.deployment.is_lan:
-                    extra.append((b"strict-transport-security", b"max-age=31536000"))
                 event["headers"] = list(event.get("headers", [])) + extra
             await send(event)
 

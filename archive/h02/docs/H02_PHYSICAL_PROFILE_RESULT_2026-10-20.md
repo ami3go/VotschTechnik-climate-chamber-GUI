@@ -27,7 +27,7 @@ setpoint. No watchdog restart latch remained.
 
 The checksum-verified raw journal, watchdog logs, signed permit and public key
 are indexed in
-[`hil-evidence/h02-v3-2026-10-20/`](../hil-evidence/h02-v3-2026-10-20/README.md).
+[`hil-evidence/h02-v3-2026-10-20/`](../../../hil-evidence/h02-v3-2026-10-20/README.md).
 The prepared human acceptance record remains unsigned:
 [`H02_SITE_ACCEPTANCE_2026-10-20.md`](H02_SITE_ACCEPTANCE_2026-10-20.md).
 

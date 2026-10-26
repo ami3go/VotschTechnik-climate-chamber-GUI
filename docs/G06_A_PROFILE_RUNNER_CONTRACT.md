@@ -1,3 +1,5 @@
+> **HISTORICAL CONTRACT — H02 EXTENSION ARCHIVED (2026-10-26).** The H02 permit/watchdog extension is archived under `../archive/h02/`. Physical profiles now require isolated lab mode and the G06/G07/G04/G08 controls.
+
 # G06-A — Server-side profile runner contract (simulation only)
 
 Status: **G06-A simulation-only software merged in PR #24** (`28377a4eb0c7f651063c87ad5789810b036380fe`; final-head Windows 3.10/3.12 run [38289290272](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38289290272)); **not hardware-certified**. This file specifies software semantics, not an approval for physical chamber operation. Normative sources: [P00_DECISION_CONTRACTS.md](P00_DECISION_CONTRACTS.md), [G04_A_CONTROLLER_CONTRACT.md](G04_A_CONTROLLER_CONTRACT.md), [CHAMBER_ABSTRACTION_CONTRACT.md](CHAMBER_ABSTRACTION_CONTRACT.md).
@@ -116,6 +118,6 @@ permit safety tests.
 **Release blockers:** G08-min real authenticated policy/audit/CSRF integration; G07 durable run journal and interruption reconciliation; approved physical safety envelope and signed STOP/fault policy; G04 gradient contract/HIL for gradients; driver/backend version capture; actual chamber-in-the-loop tests; final offline W02 certification. Real physical operations remain disabled by G04.
 
 
-## H02 physical-profile admission extension (not yet authorized)
+## H02 physical-profile admission extension — archived 2026-10-26
 
-The G06 simulation-only identity check is intentionally retained. H02 adds a standalone signature/identity/envelope preflight helper in chamber_web/hil/profile_admission.py, but it is NOT connected to G06 or a server profile-execution endpoint. A later safety-reviewed integration must validate its signed permit, fresh G04 status and verified STOP, G08 role/CSRF/lease, G07 reconciled durable storage, supervisor mutual liveness, and profile revision on each physical dispatch. Null gradients, physical auxiliary outputs and chamber-state controls are restricted until separate site approval. No physical execution is currently supported; STOP uncertainty remains UNKNOWN.
+The H02 permit/watchdog extension is archived under `archive/h02/` and is not imported. Current physical-profile execution requires isolated lab mode, fresh G04 status and verified STOP, G08 role/CSRF/lease, a reconciled G07 journal and the G06 runtime checks. Null gradients, physical auxiliary outputs and chamber-state controls remain restricted until separate site approval.

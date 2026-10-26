@@ -1,3 +1,5 @@
+> **HISTORICAL WORK LIST — SUPERSEDED IN PART (2026-10-26).** Recovery-token, HMAC-audit and signed-backup items are complete and removed; see `G08_FULL_SECURITY.md`.
+
 # G08 — Remaining security and deployment work
 
 **Snapshot:** 2026-10-13 (implementation handoff). **Status reconciled 2026-10-18: [G08 PR #29](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/29) merged 2026-10-15 as `2fdd143cb743fe52b30223f65ce7fe88cb4ff5e7`; this remains the acceptance checklist for the OPEN release gates, not evidence of release approval.**

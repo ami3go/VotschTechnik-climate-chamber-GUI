@@ -3,12 +3,11 @@
 Unlike the W01 demo runtime (``chamber_web.windows_runtime``, loopback-only and
 simulated with HIL/auth deliberately out of scope), this entry point starts the
 real application: G08 authentication, G07 recording, STOP fencing, G05/G06
-control and the optional supervised H02 physical profile path with its signed
-permit and independent watchdog.
+control and isolated-lab physical profile execution.
 
 Launch-time configuration comes from an allowlisted ``chamber.env`` file (see
 ``load_environment``) so a frozen bundle has no Python or shell dependency.
-Browser input can never select the backend, certificate or permit files.
+Browser input can never select the backend or configuration files.
 """
 from __future__ import annotations
 
@@ -190,19 +189,6 @@ def launcher_url() -> str:
 
 
 def launch(*, open_browser: bool = True, check_only: bool = False) -> int:
-    if os.environ.get("CHAMBER_NETWORK_MODE", "localhost").strip().lower() == "lan":
-        # A LAN server is TLS-only and is started by the scheduled task, not by
-        # a launcher child process; open the exact configured origin instead.
-        origin = os.environ.get("CHAMBER_PUBLIC_ORIGIN", "").strip()
-        if not origin:
-            raise RuntimeError("LAN mode requires CHAMBER_PUBLIC_ORIGIN")
-        if check_only:
-            print("LAN deployment: open " + origin, flush=True)
-            return 0
-        import webbrowser
-        if not webbrowser.open(origin.rstrip("/") + "/"):
-            raise RuntimeError("No default browser could be opened")
-        return 0
     executable = None
     command = None
     env = None
@@ -256,7 +242,7 @@ def self_test(*, required_modules: tuple[str, ...] = ()) -> int:
         os.environ["CHAMBER_STATE_DIR"] = scratch
         os.environ["CHAMBER_SECURITY_DIR"] = scratch
         for key in list(os.environ):
-            if key.startswith(("CHAMBER_HIL_", "CHAMBER_H02_", "CHAMBER_LAB_")):
+            if key.startswith(("CHAMBER_HIL_", "CHAMBER_LAB_")):
                 os.environ.pop(key, None)
         values = parse_config(
             "# comment\nCHAMBER_PORT=8091\nCHAMBER_NETWORK_MODE=\"localhost\"\n")

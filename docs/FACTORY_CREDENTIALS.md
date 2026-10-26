@@ -7,66 +7,45 @@ The NiceGUI server automatically provisions an administrator on first startup
 | --- | --- |
 | Username | `admin` |
 | Password | `admin` |
-| PIN | `12345678` |
-| Active security profile | General (password sign-in) |
 
-The default PIN is stored from the start but is used for browser sign-in only
-after an administrator explicitly selects **Isolated LAN** in Admin > Security
-Profiles. General and Large Network profiles use passwords. PIN-only mode has
-no server-side session expiry, as before.
+There is one password login policy: 12–128 UTF-8 bytes after provisioning.
+PINs, selectable security profiles and recovery tokens no longer exist.
 
-After logging in, open **Admin > Administrator Credentials** to change the
-administrator username or password, and **Admin > Security Profiles** to replace
-the PIN. Password changes must comply with the configured minimum (12 UTF-8
-bytes by default); the weak `admin` password is accepted *only* during factory
-provisioning. Password changes and username changes revoke the account's
-existing sessions; PIN enrollment revokes the target account's sessions.
-Credentials are salted-hashed in the existing local SQLite security store, not
-persisted as plaintext. A normal restart does not restore the initial values.
+After logging in, open **Admin → Administrator Credentials** to change the
+administrator username or password. The weak `admin` password is accepted only
+during factory provisioning. Password and username changes revoke the account's
+existing sessions. Credentials are salted-hashed in the local SQLite security
+store, never stored as plaintext. A normal restart does not restore the initial
+values.
 
-### Password changed but factory warning appears after restart
+### Factory warning after restart
 
-The factory **password** and **PIN** are separate credentials. Changing the
-administrator password does not replace the factory PIN `12345678`. If
-the PIN is still unchanged, the login screen now states specifically
-that **the password has already been changed** and only the **PIN** needs
-replacement in **Admin → Security Profiles → Enroll account PIN**. The
-factory-credential warning is advisory; it does **not** prevent saving chamber
-settings, applying profiles, starting the server or controlling an otherwise
-authorized device. A warning
-about the PIN does not mean your new password was forgotten.
+The login screen shows an advisory warning while an enabled ADMIN account still
+accepts the factory password `admin`. The warning does **not** prevent saving
+chamber settings, applying profiles, starting the server or controlling an
+otherwise authorized device.
 
-In **Admin → Administrator Credentials**, the interface independently shows
-whether the default password or default PIN is still active and displays the
-absolute path to the currently used security database
-(`security.sqlite3`). Changes are retained in that database across restarts.
-If a previous password works again after restarting, confirm that the server
-runs as the same OS account and resolves the same `CHAMBER_SECURITY_DIR`
-(default `~/.chamber_web/security` for the server account). Running as a
-different Windows account, as a service, or with a different environment
-variable can select a *different* security database. Never delete or reset
-a security database to diagnose this; preserve its keys, audit chain and
-backups.
+In **Admin → Administrator Credentials**, the interface displays the absolute
+path to the active security database (`security.sqlite3`). If an old password
+works again after a restart, confirm that the server runs as the same OS account
+and resolves the same `CHAMBER_SECURITY_DIR` (default
+`~/.chamber_web/security`). Running as a different account, as a service, or
+with a different environment variable can select a **different** database.
+Never delete or reset a security database to diagnose this; restore an approved
+backup instead.
 
+**Security limitation:** the publicly known factory password is for initial
+commissioning and is unsafe on any accessible network. Replace it promptly,
+even on an isolated network. The server warns but does not block lab startup
+solely because the factory credential remains. Keep Host/Origin validation,
+client allowlists, login lockout, audit retention and role authorization
+enabled. Signed site authorization and safe temperature envelopes remain
+separate mandatory gates.
 
-**Security limitation:** the publicly known factory credentials are for initial
-commissioning and are **unsafe on any accessible network**. The server now
-**warns but does not block** saving chamber settings, starting the configured
-physical HIL server, LAN startup or switching to the Large Network security
-profile solely because one or both factory credentials remain. This is an
-explicit operator-controlled risk, not a safety endorsement. Replace both
-factory credentials promptly, even on an isolated network. Keep strict TLS,
-Host/Origin validation, client allowlists, login, audit and role authorization
-enabled. Signed site authorization, identity pinning, safe temperature
-envelopes, supervision and HIL profile-execution permits are separate
-mandatory gates and are unchanged.
-Do not connect the application or physical chamber to an untrusted network
-with factory credentials. Existing installations keep their credentials on normal restart. A separate,
-explicit host-console maintenance script can restore these factory credentials
-when the administrator password has been lost; this is never automatic or
-available through the web interface. See [local credential recovery](CREDENTIAL_RESET.md).
+A separate, explicit host-console maintenance script can restore the factory
+credential when the administrator password is lost; this is never automatic or
+available through the web interface. See
+[local credential recovery](CREDENTIAL_RESET.md).
 
-Regression coverage: `python -m unittest discover -s tests -p
-"test_security_factory_credentials.py" -v`; GUI smoke:
-`python -m pytest -q tests/test_web_factory_admin_ui.py`. CI runs are
-bounded with job watchdog timeouts. All tests use simulated services only.
+Regression coverage: `python -m pytest -q
+tests/test_security_factory_credentials.py tests/test_web_factory_admin_ui.py`.

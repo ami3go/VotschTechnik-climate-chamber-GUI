@@ -48,9 +48,9 @@ Journal manifest SHA-256:
 
 The checksum-verified raw journal, watchdog logs, signed permit and public key
 are indexed in
-[`hil-evidence/h02-v4-2026-10-21/`](../hil-evidence/h02-v4-2026-10-21/README.md),
+[`hil-evidence/h02-v4-2026-10-21/`](../../../hil-evidence/h02-v4-2026-10-21/README.md),
 with the engineering addendum in
-[`hil-evidence/H02_V4_PHYSICAL_PASS_2026-10-21.md`](../hil-evidence/H02_V4_PHYSICAL_PASS_2026-10-21.md).
+[`hil-evidence/H02_V4_PHYSICAL_PASS_2026-10-21.md`](../../../hil-evidence/H02_V4_PHYSICAL_PASS_2026-10-21.md).
 The prepared human acceptance record remains unsigned:
 [`H02_SITE_ACCEPTANCE_2026-10-21.md`](H02_SITE_ACCEPTANCE_2026-10-21.md).
 

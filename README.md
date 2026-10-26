@@ -10,15 +10,15 @@ The recorded supervised physical **H01** test suite passed 8/8 on 19 October
 2026 ([evidence entry](docs/DEVELOPMENT_SEQUENCE.md)). The project has
 advanced its **design and engineering work queue** to
 [Stage 2 — Pre-production hardening and controlled pilot readiness](docs/STAGE_2_PILOT_READINESS_PLAN.md).
-This does not assert signed site acceptance, independently accepted H02
-physical profile runs, W02 air-gap certification, or R01 release approval.
+This does not assert certified physical operation, W02 air-gap certification,
+or R01 release approval.
 
 ## Isolated lab: full-range unattended operation
 
 On a closed lab network, administrators can enable **Settings → Physical
 profile runs → isolated lab mode**, which launches the server with
 `CHAMBER_LAB_MODE=ISOLATED-LAB-UNATTENDED` and lets the physical chamber run
-profiles across the full envelope without the H02 permit workflow. The same
+profiles across the full envelope. The same
 variable can be set directly in the server environment. Separately,
 `CHAMBER_NETWORK_MODE=lab` serves the UI to the lab laptop over plain HTTP. `scripts/hil_lab_acceptance.py` is the unattended full-range HIL
 acceptance run (`--simulate` validates it without hardware). See
@@ -54,7 +54,7 @@ python -m scripts.reset_credentials
 
 Direct execution resolves `chamber_web` from the checked-out repository, so it also works from an unrelated working directory. Running a standalone copy of the script without the `chamber_web/` directory is not supported.
 
-For a frozen Windows deployment, run `server/ClimateChamberServer.exe --reset-credentials`. This server-host-only recovery does not require the old password, PIN, or recovery token. After explicit interactive confirmation, it restores factory administrator values and General login, revokes sessions and preserves other users and run data. It is not available through the browser; the server OS account must have permission to access the security database. See [credential recovery](docs/CREDENTIAL_RESET.md).
+For a frozen Windows deployment, run `server/ClimateChamberServer.exe --reset-credentials`. This server-host-only recovery does not require the old password. After explicit interactive confirmation, it restores factory administrator credentials, revokes sessions and preserves other users and run data. It is not available through the browser; the server OS account must have permission to access the security database. See [credential recovery](docs/CREDENTIAL_RESET.md).
 
 ## Desktop GUI retirement
 

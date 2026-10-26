@@ -26,7 +26,7 @@ from chamber_web.security.bootstrap import interactive_reset_credentials
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Restore admin/admin and PIN 12345678 locally without the old password"
+        description="Restore admin/admin locally without the old password"
     )
     parser.add_argument(
         "--data-dir", type=Path, default=None,

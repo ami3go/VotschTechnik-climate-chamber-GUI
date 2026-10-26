@@ -56,7 +56,7 @@ natively on the target platform, installable with no index access.
 | `python -m scripts.w02_closure build` | Resolve the closure with pip, download every wheel into a wheelhouse, verify each SHA-256 and write `requirements-w02-runtime.lock` + `w02-closure-manifest.json` |
 | `python -m scripts.w02_closure verify` | Fail closed unless the wheelhouse is *exactly* the locked closure: a damaged, missing or extra artifact is a refusal |
 | `python -m scripts.w02_closure install` | Prove the offline installation with `pip install --no-index --find-links <wheelhouse> --require-hashes` |
-| `python -m scripts.w02_closure sbom` | Emit the **runtime** CycloneDX SBOM and license inventory from the closure |
+| `python -m scripts.w02_closure sbom` | Emit the advisory **runtime** CycloneDX SBOM and license inventory from the closure |
 
 Rules the tool enforces, each of which closes a specific way a previous
 release could have been wrong:
@@ -111,7 +111,7 @@ This transactional install/migration/rollback sequence is **not implemented** an
 | Code signing and closed-file inventory | **PARTIAL SOFTWARE** | Final-head 3.10/3.12 Windows unit results, independent review |
 | Connected Windows frozen x64 smoke | **EARLY W01 evidence only** | Final-head W01 job and extraction / simulator launch |
 | Complete lockfile, hashes and air-gap wheel closure | **SOFTWARE MERGED; DISCONNECTED ACCEPTANCE OPEN** | Approved wheelhouse hash lock, offline pip resolution and damaged-wheel negative tests — tooling, negative tests and the reviewed closure merged ([S2-03](#air-gap-dependency-closure-s2-03-software-increment)): `requirements-w02-runtime.lock` pins the **50** `win_amd64`/CPython 3.12 runtime distributions by SHA-256 — the PyPI runtime, the reproducibly built vendored Vötsch driver and the driver's own `colorama` dependency — and the Windows CI job reproduces that closure and installs it with `--no-index --require-hashes`. Every requirement of every closure member is proven to be inside the closure. **Still open:** the install on a clean disconnected target (Stage 2 S2-04) and the independent supply-chain review |
-| SBOM and license/provenance review | **RUNTIME SBOM MERGED; APPROVAL OPEN** | Reviewed runtime/component inventory with licenses, signed build provenance — the runtime SBOM is now derived from the locked closure instead of the build host, but every license row is still `REVIEW_REQUIRED` and the provenance is still unattested |
+| SBOM and license/provenance review | **ADVISORY** | The runtime SBOM and license inventory are emitted for review but are not release gates. The signed inventory and Ed25519 signature remain the integrity gate. |
 | Independent target-side verifier with no Python | **CANDIDATE CODE / NO-GO** | Frozen tool + PowerShell 5.1 Windows CI, independently attested tool/key policy, clean offline Windows 10/11 evidence |
 | Profile/G07/G08 data migration and reversible upgrade | **NO-GO** | Atomic stage/swap, snapshot, schema and interrupted-update trials |
 | Windows service/portable logoff/reboot and NTFS credentials | **NO-GO** | Clean-VM functional and security observations and site-approved policy |

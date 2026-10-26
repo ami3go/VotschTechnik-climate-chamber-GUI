@@ -2,7 +2,12 @@
 
 Status: **G08-min PR #25 merged; G05 simulated software candidate, final-head CI and review gating merge**.
 This document is a server-side interface contract, **not a VT4011
-qualification or physical-use authorization**. References:
+qualification or physical-use authorization**.
+
+> **Current note (2026-10-26):** the product is lab-only. Selectable security
+> profiles, PIN login and TLS were removed. References to those below are
+> historical; see `G08_FULL_SECURITY.md`.
+References:
 [architecture](CHAMBER_ABSTRACTION_CONTRACT.md),
 [G04 fencing](G04_A_CONTROLLER_CONTRACT.md),
 [G08-min](G08_MIN_SECURITY.md),
@@ -107,8 +112,8 @@ must explicitly apply any target. No signed site-approved limits exist.
 
 1. G08-min PR #25 merged and G05 PR #28 retargeted to main without duplicated
    auth code; the final G05 software CI/review is still a merge gate. Subsequent full G08 protection for
-   any LAN/general-use control, including TLS, OS ACL, audit recovery/retention,
-   backup, revoke/connection handling and security assessment.
+   any lab-network control, including OS ACL, audit retention/export, backup,
+   bind/Origin/client allowlist, revoke/connection handling and security assessment.
 2. Exact equipment model/serial/firmware verified and signed at the site;
    approved temperature limits, tolerances, operation modes, gradients and
    maximum rate parameters. Adapter-advertised simulation bounds are **not**

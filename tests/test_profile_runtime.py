@@ -1,4 +1,4 @@
-"""H02-B: composition-owned G07 run journal wiring (simulation-only tests)."""
+"""Composition-owned G07 run journal wiring (simulation-only tests)."""
 from __future__ import annotations
 
 import json

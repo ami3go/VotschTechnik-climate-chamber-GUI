@@ -1,3 +1,9 @@
+> **HISTORICAL REVIEW — SUPERSEDED IN PART (2026-10-26).** SBOM and licence
+> output are now advisory rather than release gates, and the legacy G08
+> PowerShell verifier was removed. The W02 target verifier and signed inventory
+> remain the single release-integrity path. See `W02_OFFLINE_RELEASE.md` and
+> `G08_FULL_SECURITY.md`.
+
 # W02 — Packaging, supply-chain and Windows security review
 
 **Review type: AI-assisted implementation assessment, NOT independent security approval or Windows release certification.** Review of existing PR #30 after incorporating merged main H01 simulation and PR #33 developer setup. No physical equipment was contacted or enabled.

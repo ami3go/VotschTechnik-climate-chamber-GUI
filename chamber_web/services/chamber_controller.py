@@ -130,53 +130,6 @@ class ChamberController:
             self._operator_generation += 1
             self._operator_name = None
 
-    def force_claim_operator(self, chamber_id: str, owner: str) -> str:
-        """ADMIN-only ownership override; invalidates any existing lease token."""
-        self._check_id(chamber_id)
-        if not isinstance(owner, str) or not 1 <= len(owner.strip()) <= 128:
-            raise ChamberSafetyError("Operator identity is required")
-        with self._state_lock:
-            self._operator_token = uuid.uuid4().hex
-            self._operator_generation += 1
-            self._operator_name = owner.strip()
-            return self._operator_token
-
-    def admin_override(self, chamber_id: str) -> None:
-        """ADMIN-only lab override of the durable STOP/restart fence and owner.
-
-        Still requires a connected chamber with GOOD telemetry. The durable
-        lease is fenced and immediately reconciled as an explicit, audited
-        operator decision; mid-run telemetry/identity/STOP supervision is not
-        disabled. Callers must authorize Role.ADMIN before invoking this.
-        """
-        self._check_id(chamber_id)
-        snapshot = self.status(chamber_id)
-        if snapshot.quality is not ReadingQuality.GOOD:
-            raise ChamberSafetyError(
-                "Admin override requires GOOD authoritative telemetry")
-        with self._state_lock:
-            if not self._connected:
-                raise ChamberSafetyError("Admin override requires a connected chamber")
-            self._operator_token = None
-            self._operator_name = None
-            self._operator_generation += 1
-            try:
-                self._generation = self._lease.fence()
-                self._lease.reconcile()
-            except Exception as exc:
-                self._stop_latched = True
-                self._state = "FAULT"
-                self._reason = "Admin override fencing failed"
-                raise ChamberSafetyError(
-                    "Admin override could not reset durable fencing") from exc
-            self._stop_latched = False
-            self._last_snapshot = snapshot
-            self._state = (
-                "RUNNING" if snapshot.operation_state is OperationState.RUNNING
-                else "VERIFIED_STOPPED"
-            )
-            self._reason = None
-
     def _check_operator(self, token: str | None) -> None:
         # Until G08-min, the no-token path is for trusted server code only.
         # G08-min MUST require authenticated identity at all external entrypoints.

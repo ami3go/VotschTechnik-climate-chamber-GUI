@@ -1,3 +1,5 @@
+> **HISTORICAL CHECKLIST — TLS/PIN ITEMS SUPERSEDED (2026-10-26).** The application is lab-only with plain HTTP, one password policy and no PIN. Retain the hardware/STOP items where applicable.
+
 # H01 — Equipment inventory (UNVERIFIED, site to complete)
 
 Every value below must cite approved OEM manual section, calibration and a signed local inspection. Do not infer from FakeBackend (-40…130 °C), injected Vötsch mock (-20…80 °C), screenshots, firmware assumptions or driver command codes. Project plans mention VT4011, **but site model is unverified**.
@@ -17,7 +19,7 @@ Every value below must cite approved OEM manual section, calibration and a signe
 | Local STOP and *separate* emergency-stop procedures | NOT PROVIDED | OPEN |
 | Physical supervision, trained operator and alternate safety response | NOT PROVIDED | OPEN |
 | Operator permissions, site safety approver, signed permit | NOT PROVIDED | OPEN |
-| Windows host account/ACL, local lock, TLS/firewall, offline security | NOT VERIFIED | OPEN |
+| Windows host account/ACL, local lock, host firewall, offline security | NOT VERIFIED | OPEN |
 | Approved power-loss hazard analysis and special permit | NOT AUTHORIZED | BLOCKED |
 | Driver provenance | `9323e3701f3befedcc23b45170a851fd327f0bcc` (software pin ONLY) | PARTIAL |
 

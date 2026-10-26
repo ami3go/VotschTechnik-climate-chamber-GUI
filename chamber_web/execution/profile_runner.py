@@ -1,9 +1,9 @@
 """G06-A: single-device simulated execution through the G04 ChamberManager.
 
-Physical execution exists only through the narrowly-scoped SupervisedRun
-context: an H02 signed-permit admission whose revalidation runs before every
-dispatch tick; steps are restricted to chamber_run=ON without output or
-gradient mutations and START uses the certified G04 start path once.
+Physical execution exists only through the narrowly-scoped LabRun context
+created by isolated-lab admission; steps are restricted to chamber_run=ON
+without output or gradient mutations and START uses the certified G04 start
+path once.
 
 Every public mutation requires a server-injected G08 authorization decision.
 Synchronous entrypoints must be called off the NiceGUI event loop; async
@@ -159,29 +159,13 @@ class EventSink(Protocol):
 
 
 @dataclass(frozen=True)
-class SupervisedRun:
-    """Server-side supervised-physical run context; never browser-supplied.
-
-    ``revalidate`` re-verifies the signed site permit (signature, window,
-    unchanged bytes) and is invoked before every dispatch tick; any failure
-    stops further physical dispatch and latches UNKNOWN.
-
-    ``supervisor_alive`` reports the H02-C independent watchdog liveness; a
-    false value at any tick stops further dispatch through the same bounded
-    STOP path. The G04 controller remains the single STOP authority, so a
-    watchdog alarm that bypasses the tick loop can still stop the chamber.
-    """
-    permit_sha256: str
+class LabRun:
+    """Server-side isolated-lab run context; never browser-supplied."""
+    run_binding: str
     operator: str
-    revalidate: Callable[[], None]
-    supervisor_alive: Callable[[], bool] | None = None
     # Isolated-lab runs may write declared gradients (verified by readback)
     # and must size every reach timeout for the chamber's setpoint ramp.
     allow_gradients: bool = False
-    # Explicit ADMIN-only lab override. Ownership and pre-run STOP/restart
-    # checks are skipped; telemetry, identity, capability and mid-run STOP
-    # supervision remain enforced. Never set from browser input.
-    admin_override: bool = False
 
 
 def ramp_duration_s(step: ProfileStep, from_temperature_c: float | None) -> float:
@@ -208,7 +192,7 @@ def _device_ramp(sample) -> tuple[float | None, float | None]:
 
 def step_budget(step: ProfileStep, params: RunParameters, *,
                 from_temperature_c: float | None = None) -> float:
-    """Finite per-step schedule used for permit preflight and watchdogs."""
+    """Finite per-step schedule used for admission and runtime watchdogs."""
     reach = float(step.reach_timeout_s)
     if not math.isfinite(reach) or reach <= 0 or reach > 1_209_600:
         raise ValueError("Invalid finite profile reach")
@@ -242,22 +226,18 @@ class ProfileRunner:
         authorize: Authorizer | None = None,
         sink: EventSink | None = None,
         clock: Clock | None = None,
-        supervised: SupervisedRun | None = None,
+        lab_run: LabRun | None = None,
     ):
         ids = manager.configured_ids()
         if len(ids) != 1:
             raise ChamberSafetyError("Only a single chamber runner is supported")
-        if supervised is not None and (
-                not isinstance(supervised, SupervisedRun) or
-                not isinstance(supervised.permit_sha256, str) or
-                len(supervised.permit_sha256) != 64 or
-                not isinstance(supervised.operator, str) or
-                not supervised.operator.strip() or
-                not callable(supervised.revalidate) or
-                type(supervised.allow_gradients) is not bool or
-                type(supervised.admin_override) is not bool or
-                (supervised.supervisor_alive is not None and
-                 not callable(supervised.supervisor_alive))):
+        if lab_run is not None and (
+                not isinstance(lab_run, LabRun) or
+                not isinstance(lab_run.run_binding, str) or
+                len(lab_run.run_binding) != 64 or
+                not isinstance(lab_run.operator, str) or
+                not lab_run.operator.strip() or
+                type(lab_run.allow_gradients) is not bool):
             raise ChamberSafetyError("Invalid supervised run context")
         self._id = ids[0]
         self._manager = manager
@@ -265,7 +245,7 @@ class ProfileRunner:
         self._authorize = authorize
         self._sink = sink
         self._clock = clock or RealClock()
-        self._supervised = supervised
+        self._lab_run = lab_run
         self._mutex = threading.RLock()
         self._advance_lock = threading.Lock()
         self._stop_guard = threading.Lock()
@@ -293,7 +273,6 @@ class ProfileRunner:
         self._stable_count = 0
         self._dwell_elapsed = 0.0
         self._cancel_requested = False
-        self._watchdog_reason: str | None = None
         self._prepared = False
         self._stop_future: Future | None = None
         self._terminal_after_stop = RunState.UNKNOWN
@@ -364,10 +343,10 @@ class ProfileRunner:
                                  ("down", step.ramp_down_c_per_min)):
             if value is None:
                 continue
-            if self._supervised is not None and not self._supervised.allow_gradients:
+            if self._lab_run is not None and not self._lab_run.allow_gradients:
                 raise ChamberSafetyError(
                     "Supervised physical gradients require a signed H03 "
-                    "authorization; gradients unsupported for this permit")
+                    "authorization; gradients are not enabled for this run")
             if not getattr(caps, "supports_ramp_" + direction):
                 raise ChamberSafetyError(
                     "Hardware gradients unsupported by the connected backend")
@@ -446,9 +425,9 @@ class ProfileRunner:
         if chamber_id != self._id:
             raise ChamberSafetyError("Wrong chamber for profile run")
         principal = self._permission("profile.start")
-        if (self._supervised is not None and
-                principal != self._supervised.operator):
-            raise ChamberSafetyError("Supervised physical run is bound to the permit operator")
+        if (self._lab_run is not None and
+                principal != self._lab_run.operator):
+            raise ChamberSafetyError("Lab run is bound to its admitting operator")
         params = parameters or RunParameters()
         if not isinstance(params, RunParameters):
             raise ValueError("Invalid run parameters")
@@ -466,7 +445,7 @@ class ProfileRunner:
             caps = self._manager.capabilities(self._id)
             health = self._manager.health(self._id)
             status = self._manager.status(self._id)
-            if self._supervised is None:
+            if self._lab_run is None:
                 identity_allowed = status.identity.is_simulation
             else:
                 # Supervised runs are physical only, on the exact authorized
@@ -475,31 +454,20 @@ class ProfileRunner:
                     not status.identity.is_simulation and
                     status.identity.backend_id == "votsch" and
                     bool(status.identity.serial_number))
-            admin_override = (
-                self._supervised is not None and self._supervised.admin_override)
-            if admin_override:
-                # Explicit ADMIN lab override: ownership and the pre-run
-                # STOP/restart gate were cleared by the service. Still require
-                # a live, identifiable chamber with GOOD telemetry.
-                if (not health.connected or
-                        status.quality is not ReadingQuality.GOOD or
-                        status.identity.chamber_id != self._id or
-                        not identity_allowed):
-                    raise ChamberSafetyError(
-                        "Admin override requires connected GOOD telemetry")
-            elif (not health.connected or health.stop_latched or
-                  health.state not in ("VERIFIED_STOPPED",) or
-                  status.quality is not ReadingQuality.GOOD or
-                  status.operation_state is not OperationState.STOPPED or
-                  status.identity.chamber_id != self._id or
-                  not identity_allowed):
-                raise ChamberSafetyError("Profile requires reconciled simulated STOPPED chamber")
+            if (not health.connected or health.stop_latched or
+                    health.state not in ("VERIFIED_STOPPED",) or
+                    status.quality is not ReadingQuality.GOOD or
+                    status.operation_state is not OperationState.STOPPED or
+                    status.identity.chamber_id != self._id or
+                    not identity_allowed):
+                raise ChamberSafetyError(
+                    "Profile requires reconciled simulated STOPPED chamber")
             if not (caps.supports_start_stop and caps.supports_running_readback and
                     caps.supports_setpoint_readback):
                 raise ChamberSafetyError("Missing mandatory verified control/readback capability")
             budgets: list[float] = []
             previous_target: float | None = None
-            lab = self._supervised is not None and self._supervised.allow_gradients
+            lab = self._lab_run is not None and self._lab_run.allow_gradients
             # Where the chamber's setpoint readback starts ramping from.
             ramp_from = status.setpoint_temperature_c
             for step in enabled:
@@ -536,11 +504,11 @@ class ProfileRunner:
                     raise ChamberSafetyError(
                         "Profile requests unsupported/unverified digital outputs"
                     )
-                if self._supervised is not None and (
+                if self._lab_run is not None and (
                         step.chamber_run != "ON" or step.digital_outputs or
                         step.compressed_air != "UNCHANGED" or
                         step.dryer != "UNCHANGED" or
-                        (not self._supervised.allow_gradients and (
+                        (not self._lab_run.allow_gradients and (
                             step.ramp_up_c_per_min is not None or
                             step.ramp_down_c_per_min is not None))):
                     raise ChamberSafetyError(
@@ -551,19 +519,13 @@ class ProfileRunner:
                 raise ChamberSafetyError("Profile exceeds finite run watchdog limit")
             if params.max_run_s is not None:
                 total = params.max_run_s
-            if admin_override:
-                owner = self._manager.force_claim_operator(self._id, principal)
-            else:
-                owner = self._manager.claim_operator(self._id, principal)
+            owner = self._manager.claim_operator(self._id, principal)
             try:
                 # Guard a handover/STOP race between preflight and lease grant.
                 latest = self._manager.health(self._id)
-                if admin_override:
-                    if latest.generation != health.generation:
-                        raise ChamberSafetyError(
-                            "Controller generation changed during preparation")
-                elif latest.stop_latched or latest.generation != health.generation:
-                    raise ChamberSafetyError("Controller generation changed during preparation")
+                if latest.stop_latched or latest.generation != health.generation:
+                    raise ChamberSafetyError(
+                        "Controller generation changed during preparation")
                 self._t0 = self._now()
                 self._scheduled_steps = enabled * record.profile.repeat_count
                 self._snapshot = ExecutionSnapshot(
@@ -577,8 +539,8 @@ class ProfileRunner:
                 self._run_deadline = self._t0 + total
                 self._step_index = 0
                 self._step_started = self._t0
-                # Allocate the first watchdog budget before supervision can be
-                # armed.  Later step budgets are allocated atomically with the
+                # Allocate the first watchdog budget before dispatch. Later
+                # step budgets are allocated atomically with the
                 # step-index advance in _complete_step; _dispatch_step must not
                 # reset them and make a same-step countdown move backwards.
                 self._step_deadline = (
@@ -593,17 +555,13 @@ class ProfileRunner:
                     self._event_sequence = 0
                     self._sample_index = 0
                 self._cancel_requested = False
-                self._watchdog_reason = None
                 self._prepared = False
                 self._stop_future = None
                 self._stable_from = self._last_good = None
                 self._last_source_timestamp = None
                 self._stable_count = 0
                 self._dwell_elapsed = 0.0
-                self._profile_running = (
-                    admin_override and
-                    status.operation_state is OperationState.RUNNING
-                )
+                self._profile_running = False
                 self._setpoint_best = math.inf
                 self._setpoint_observed = None
                 self._setpoint_frozen = 0
@@ -694,7 +652,7 @@ class ProfileRunner:
             if self._cancel_requested:
                 return
             requested_running = step.chamber_run == "ON"
-            if self._supervised is not None:
+            if self._lab_run is not None:
                 # Physical chambers start once through the certified START path;
                 # per-step simulated run toggling is never used. Steps after the
                 # first require the chamber to already be running.
@@ -715,34 +673,6 @@ class ProfileRunner:
         self._stable_count = 0
         self._dwell_elapsed = 0.0
         self._transition(RunState.REACHING)
-
-    def notify_supervisor_fault(self, reason: str) -> None:
-        """H02-C watchdog alarm: durable STOP intent, UNKNOWN, no replay.
-
-        Callable from the supervision host thread; ``_begin_stop`` is
-        idempotent and submits at most one G04 STOP. Device arbitration and
-        generation fencing stay with G04.
-        """
-        text = str(reason).strip() or "watchdog fault"
-        if self._watchdog_reason is None:
-            self._watchdog_reason = text
-        self._begin_stop(RunState.UNKNOWN, "Watchdog fault: " + text)
-
-    def supervision_state(self) -> dict:
-        """Bounded monotonic budgets and terminal flag for the watchdog."""
-        with self._mutex:
-            state = self._state
-            if state is None:
-                return {"terminal": True, "step_index": 0,
-                        "step_remaining_s": 0.0, "whole_remaining_s": 0.0}
-            now = self._now()
-            return {
-                "terminal": state in TERMINAL,
-                "stopping": state is RunState.STOP_REQUESTED,
-                "step_index": int(self._step_index),
-                "step_remaining_s": max(0.0, self._step_deadline - now),
-                "whole_remaining_s": max(0.0, self._run_deadline - now),
-            }
 
     def _begin_stop(self, terminal: RunState, reason: str) -> None:
         with self._stop_guard:
@@ -963,6 +893,22 @@ class ProfileRunner:
             )
             self._transition(RunState.TRANSITIONING)
 
+    def budget_state(self) -> dict:
+        """Bounded monotonic budgets and terminal flag for diagnostics."""
+        with self._mutex:
+            state = self._state
+            if state is None:
+                return {"terminal": True, "step_index": 0,
+                        "step_remaining_s": 0.0, "whole_remaining_s": 0.0}
+            now = self._now()
+            return {
+                "terminal": state in TERMINAL,
+                "stopping": state is RunState.STOP_REQUESTED,
+                "step_index": int(self._step_index),
+                "step_remaining_s": max(0.0, self._step_deadline - now),
+                "whole_remaining_s": max(0.0, self._run_deadline - now),
+            }
+
     def advance(self) -> RunState | None:
         """One synchronous tick, suitable for deterministic tests or to_thread."""
         with self._advance_lock, self._mutex:
@@ -974,31 +920,6 @@ class ProfileRunner:
             if self._cancel_requested:
                 self._begin_stop(RunState.CANCELLED, "Operator cancellation")
                 return self._state
-            if self._watchdog_reason is not None and self._stop_future is None:
-                self._begin_stop(
-                    RunState.UNKNOWN, "Watchdog fault: " + self._watchdog_reason,
-                )
-                return self._state
-            if (self._supervised is not None and
-                    self._supervised.supervisor_alive is not None and
-                    self._stop_future is None and
-                    not self._supervised.supervisor_alive()):
-                if self._watchdog_reason is None:
-                    self._watchdog_reason = "Supervisor heartbeat lost"
-                self._begin_stop(
-                    RunState.UNKNOWN, "Watchdog fault: " + self._watchdog_reason,
-                )
-                return self._state
-            if (self._supervised is not None and self._stop_future is None and
-                    self._state is not None and self._state not in TERMINAL):
-                try:
-                    self._supervised.revalidate()
-                except Exception as exc:
-                    self._begin_stop(
-                        RunState.UNKNOWN,
-                        "Supervised permit revalidation failed: " + type(exc).__name__,
-                    )
-                    return self._state
             now = self._now()
             if now > self._run_deadline:
                 self._begin_stop(RunState.FAULT, "Whole-run watchdog exceeded")

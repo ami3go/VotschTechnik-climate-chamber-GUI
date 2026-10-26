@@ -1,6 +1,6 @@
 """Best-effort identification of the exact GUI and driver revisions in use.
 
-An H02 permit is bound to these commit IDs, so they are read from the actual
+Build/release provenance uses these commit IDs, so they are read from the actual
 installation (git checkout and the driver's pip provenance) rather than typed.
 A frozen bundle has no git checkout and a hash-locked wheelhouse loses the
 driver's ``direct_url.json``; such builds carry an integrity-manifested

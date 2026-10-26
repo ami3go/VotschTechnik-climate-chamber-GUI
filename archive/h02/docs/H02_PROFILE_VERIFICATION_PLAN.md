@@ -9,7 +9,7 @@ The successful run `60e8f4da-ea08-4806-9c5c-1c2124f89eb0` tested GUI
 permit. It completed all five steps, recorded 227 G07 events and 198 samples,
 disarmed the independent watchdog cleanly, left no restart latch and ended with
 fresh `GOOD · STOPPED` readback. See the [result](H02_PHYSICAL_PROFILE_RESULT_2026-10-20.md)
-and [controlled evidence](../hil-evidence/h02-v3-2026-10-20/README.md).
+and [controlled evidence](../../../hil-evidence/h02-v3-2026-10-20/README.md).
 The site acceptance form remains unsigned. The historical foundation status
 below is retained to explain the implementation sequence.
 

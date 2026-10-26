@@ -1,8 +1,9 @@
 """NiceGUI read-only Dashboard bound to the server-owned generic service.
 
 G05 exposes server-authorized manual control of one FakeBackend by default, or
-of ONE supervised physical Vötsch chamber when the server is launched with a
-complete CHAMBER_HIL_* authorization (loopback deployment only).
+of ONE physical Vötsch chamber when the server is launched with a complete
+CHAMBER_HIL_* authorization. Physical profile execution additionally requires
+isolated lab mode.
 G03-C stores immutable profiles in /profiles; Dashboard runs saved revisions through G06/G08.
 """
 from __future__ import annotations
@@ -10,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import os
 
-from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -25,11 +25,9 @@ from .adapters.votsch import discover_votsch_chambers
 from .hil.chamber_settings import effective_hil_environment
 from .hil.lab_mode import LabMode, lab_mode_from_env
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
-from .hil.supervised_profile import SupervisedProfileRuntime, supervised_runtime_from_env
-from .hil.supervision import SupervisionHost
 from .security.nicegui import (active_tokens, cookie_secret, current_actor, deployment_policy,
                                get_security, logout, require_authenticated_page)
-from .security.auth import AuthenticationError, AuthorizationError, Role, SecurityProfile
+from .security.auth import AuthenticationError, AuthorizationError, Role
 from .services.run_readers import RunStoreReader
 from .ui_pages import (NavigationContext, install_navigation_resolver,
                        register_pages, render_navigation)
@@ -45,89 +43,32 @@ from .model import MAX_TEMP, MIN_TEMP
 _HIL_ENV, _HIL_SOURCE = effective_hil_environment(os.environ)
 _HIL = hil_authorization_from_env(_HIL_ENV)
 check_hil_deployment(_HIL, deployment_policy, os.environ)
-# Isolated-lab unattended mode: physical profile runs without the H02 permit
-# workflow. Launch-time only; misconfiguration refuses to start.
+# Isolated-lab unattended mode: launch-time only; misconfiguration refuses to start.
 _LAB = lab_mode_from_env(_HIL_ENV, hil_present=_HIL is not None)
 _security = get_security()
 # A factory credential is reported as a security warning, not a hardware
 # admission rule. Physical access still requires explicit HIL authorization,
-# identity pinning, controller safety and supervised-operation permits.
-if _HIL is not None:
-    _factory_password, _factory_pin = _security.factory_credentials_active()
-    if _factory_password or _factory_pin:
-        import logging
-        logging.getLogger(__name__).warning(
-            "Physical HIL security warning: factory administrator %s remain "
-            "active. Change them under Admin to reduce unauthorized access.",
-            "password and PIN" if _factory_password and _factory_pin
-            else "password" if _factory_password else "PIN",
-        )
+# identity pinning and controller safety.
+if _HIL is not None and _security.factory_credentials_active():
+    import logging
+    logging.getLogger(__name__).warning(
+        "Physical HIL security warning: factory administrator password remains "
+        "active. Change it under Admin to reduce unauthorized access.",
+    )
 _dashboard_service, _manual_service = create_demo_control_services(
     _security, _HIL, simulated_slew_c_per_s=0.25,
     gradient_writes=_LAB is not None and _LAB.gradients,
 )
 _MODE = ("Simulation" if _HIL is None else
          "Physical lab" if _LAB is not None else "Physical HIL")
-# Server-side supervised physical admission. A site-signed H02 permit enables
-# supervised profile runs; a partial or broken permit configuration refuses to
-# start (fail closed), and an unconfigured physical launch keeps profile
-# execution disabled. The H02-C independent watchdog must additionally be
-# alive; until `_startup_supervision` proves it, physical starts are refused.
-_SUPERVISED = supervised_runtime_from_env(
-    _HIL_ENV, hil_present=_HIL is not None, supervisor_alive=lambda: False,
-)
-_SUPERVISION: SupervisionHost | None = None
-
-
-def _supervisor_alive() -> bool:
-    return _SUPERVISION is not None and _SUPERVISION.alive()
-
-
 def profile_execution_is_simulation() -> bool:
     """Trusted composition flag; browser input cannot enable profile execution."""
     return _HIL is None
 
 
-def profile_execution_supervision() -> SupervisedProfileRuntime | None:
-    """Trusted composition context for H02 supervised physical runs."""
-    return _SUPERVISED
-
-
 def profile_execution_lab() -> LabMode | None:
     """Trusted isolated-lab context for unattended physical profile runs."""
     return _LAB
-
-
-def get_supervision_host() -> SupervisionHost | None:
-    return _SUPERVISION
-
-
-async def _startup_supervision() -> None:
-    """Start the H02-C independent watchdog for supervised physical launches.
-
-    A restart latch, spawn failure or missing configuration leaves the host
-    fail-closed (alive() false), which refuses every physical profile start.
-    """
-    global _SUPERVISION, _SUPERVISED
-    if _SUPERVISED is None or _HIL is None:
-        return
-    from .services.profile_runtime import run_journal_directory
-    host = SupervisionHost(
-        _SUPERVISED.permit.watchdog,
-        evidence_dir=run_journal_directory() / "watchdog",
-        chamber_id=_HIL.chamber_id, serial_number=_HIL.expected_serial,
-    )
-    host.start()
-    _SUPERVISION = host
-    _SUPERVISED = replace(
-        _SUPERVISED, supervision=host, supervisor_alive=_supervisor_alive,
-    )
-
-
-async def _shutdown_supervision() -> None:
-    host = _SUPERVISION
-    if host is not None:
-        host.close()
 
 
 async def _startup_profile_recording() -> None:
@@ -143,12 +84,9 @@ async def _shutdown_profile_runs() -> None:
 
 
 app.on_startup(_startup_profile_recording)
-app.on_startup(_startup_supervision)
 app.on_startup(_dashboard_service.start)
-# STOP a running profile before the dashboard disconnects its backend; the
-# independent watchdog closes last so it supervises the whole shutdown.
+# STOP a running profile before the dashboard disconnects its backend.
 app.on_shutdown(_shutdown_profile_runs)
-app.on_shutdown(_shutdown_supervision)
 app.on_shutdown(_dashboard_service.close)
 
 
@@ -669,24 +607,6 @@ def admin_page() -> None:
                 f"{data.last_command.state.value} · {data.last_command.action} · "
                 f"{data.last_command.message}")
 
-    async def set_user_pin() -> None:
-        if not require_authenticated_page(touch=False):
-            return
-        try:
-            session, csrf = active_tokens()
-            await asyncio.to_thread(
-                get_security().configure_user_pin, session, csrf,
-                confirm_password.value, pin_account.value, user_pin.value)
-        except (AuthenticationError, AuthorizationError, ValueError):
-            ui.notify("PIN enrollment denied. Check administrator password and account.",
-                      color="negative")
-            return
-        confirm_password.value = ""
-        user_pin.value = ""
-        ui.notify("PIN enrolled. Sessions for that account were revoked.", color="positive")
-        if pin_account.value.casefold() == actor.username.casefold():
-            logout()
-
     async def update_admin_password() -> None:
         if not require_authenticated_page(touch=False):
             return
@@ -757,23 +677,6 @@ def admin_page() -> None:
         account_password_repeat.value = ""
         accounts_table.update_rows(rows)
         ui.notify("User created and enabled.", color="positive")
-
-    async def apply_security_profile() -> None:
-        if not require_authenticated_page(touch=False):
-            return
-        try:
-            session, csrf = active_tokens()
-            await asyncio.to_thread(
-                get_security().set_security_profile, session, csrf,
-                confirm_password.value, SecurityProfile(profile_select.value))
-        except (AuthenticationError, AuthorizationError, ValueError):
-            ui.notify("Security profile change denied. Verify password and PIN setup.",
-                      color="negative")
-            return
-        confirm_password.value = ""
-        ui.notify("Security profile saved. All sessions must sign in again.",
-                  color="positive")
-        logout()
 
     with ui.row().classes("app-shell no-wrap"):
         with ui.column().classes("sidebar gap-1"):
@@ -854,24 +757,17 @@ def admin_page() -> None:
                     with ui.column().classes("panel gap-3"):
                         _panel_title("manage_accounts", "Administrator Credentials")
                         ui.label(
-                            "Factory setup uses admin / admin and PIN 12345678. "
-                            "Changing both is strongly recommended, but factory "
-                            "credential warnings do not block saving or control. "
-                            "Changes are permanent, "
+                            "Factory setup uses admin / admin. Changing the password "
+                            "is strongly recommended, but factory credential warnings "
+                            "do not block saving or control. Changes are permanent, "
                             "hashed in the security database, and revoke active sessions."
                         ).classes("text-sm text-orange-9")
-                        weak_pw, weak_pin = get_security().factory_credentials_active()
+                        weak_pw = get_security().factory_credentials_active()
                         ui.label(
                             "Administrator password: " +
                             ("Factory default — change required" if weak_pw
                              else "Changed — retained across server restarts")
                         ).classes("font-bold text-negative" if weak_pw
-                                  else "text-sm")
-                        ui.label(
-                            "Administrator PIN: " +
-                            ("Factory default — change required" if weak_pin
-                             else "Changed — retained across server restarts")
-                        ).classes("font-bold text-negative" if weak_pin
                                   else "text-sm")
                         ui.label(
                             "Credentials database on this server: " +
@@ -906,10 +802,6 @@ def admin_page() -> None:
                         ui.button("Change username", icon="person",
                                   on_click=update_admin_username).props(
                                       "outline no-caps")
-                        ui.label(
-                            "To change the PIN, use Enroll account PIN below. "
-                            "Each credential change requires administrator authentication."
-                        ).classes("text-xs")
                     with ui.column().classes("panel gap-3"):
                         _panel_title("group_add", "User Accounts")
                         ui.label(
@@ -951,56 +843,6 @@ def admin_page() -> None:
                             "Create enabled user", icon="person_add",
                             on_click=create_account,
                         ).props("outline no-caps")
-                    with ui.column().classes("panel gap-3"):
-                        _panel_title("security", "Security Profiles")
-                        ui.label(
-                            "Security profile controls authentication and session lifetime; "
-                            "it never disables controller safety, STOP fencing, audit or "
-                            "network listener restrictions."
-                        ).classes("text-sm")
-                        active_profile = get_security().get_security_profile()
-                        ui.label("Active profile: " + active_profile.value).classes(
-                            "font-bold")
-                        profile_select = ui.select({
-                            "general": "General — existing G08 security (30 min / 8 h)",
-                            "isolated_lan": "Isolated LAN — PIN, no session timeouts",
-                            "large_network": "Large network — password, 1 h / 12 h",
-                        }, value=active_profile.value, label="Security profile").classes(
-                            "w-full")
-                        ui.label(
-                            "Isolated LAN is intended for a physically controlled single-PC "
-                            "installation. PIN-only access is weaker; manually lock the "
-                            "workstation when unattended. The server cannot guarantee "
-                            "browser-cookie persistence after storage clearing."
-                        ).classes("text-xs text-orange-9")
-                        pin_account = ui.input(
-                            "Account to enroll for PIN login",
-                            value=actor.username).classes("w-full")
-                        user_pin = ui.input("New 6–12 digit PIN", password=True).props(
-                            "autocomplete=off inputmode=numeric").classes("w-full")
-                        confirm_password = ui.input(
-                            "Current administrator password (required to apply changes)",
-                            password=True).props(
-                                "autocomplete=current-password").classes("w-full")
-                        with ui.row().classes("control-row wrap"):
-                            ui.button("Enroll account PIN", icon="pin",
-                                      on_click=set_user_pin).props("outline no-caps")
-                            ui.button("Apply security profile", icon="verified_user",
-                                      on_click=lambda: security_confirm.open()).props(
-                                          "unelevated no-caps")
-                        with ui.dialog() as security_confirm:
-                            with ui.card():
-                                ui.label("Confirm security profile change").classes(
-                                    "font-bold")
-                                ui.label("All users will be logged out immediately. "
-                                         "Switching to PIN mode reduces sign-in security "
-                                         "but never authorizes physical chamber operations.")
-                                with ui.row():
-                                    ui.button("Cancel", on_click=security_confirm.close)
-                                    async def confirm_profile_change():
-                                        security_confirm.close()
-                                        await apply_security_profile()
-                                    ui.button("Confirm", on_click=confirm_profile_change)
 
     ui.timer(1.0, refresh_lease, immediate=False)
     refresh_lease()
@@ -1010,13 +852,8 @@ def admin_page() -> None:
 from .pages import profiles as _profile_editor_page  # noqa: E402,F401
 
 def run() -> None:
-    # TLS, peer ACL and exact Origin are mandatory for explicit LAN mode.
-    # Physical Vötsch I/O requires a CHAMBER_HIL_* authorization and loopback mode.
+    # Physical Vötsch I/O requires a CHAMBER_HIL_* authorization.
     from .security.nicegui import deployment_policy
-    options = {}
-    if deployment_policy.is_lan:
-        options = {"ssl_certfile": str(deployment_policy.certfile),
-                   "ssl_keyfile": str(deployment_policy.keyfile)}
     ui.run(title="Climate Chamber — server simulation" if _HIL is None
            else "Climate Chamber — PHYSICAL (isolated lab mode)" if _LAB is not None
            else "Climate Chamber — SUPERVISED PHYSICAL HIL",
@@ -1024,11 +861,9 @@ def run() -> None:
            reload=False, show=False, storage_secret=cookie_secret(),
            session_middleware_kwargs={
                "same_site": "strict",
-               # The DB enforces General/Large timeouts. A persistent browser
-               # cookie allows isolated workstation sessions to remain logged in.
-               "max_age": 10 * 365 * 24 * 3600,
-               "https_only": deployment_policy.is_lan,
-           }, **options)
+               "max_age": 8 * 3600,
+               "https_only": False,
+           })
 
 
 if __name__ == "__main__":

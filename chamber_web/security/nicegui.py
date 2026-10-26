@@ -12,7 +12,7 @@ import threading
 
 from nicegui import app, ui
 
-from .auth import AuthenticationError, SecurityProfile, SecurityStore
+from .auth import AuthenticationError, SecurityStore
 from .http import OriginMiddleware
 from .deployment import DeploymentPolicy
 from .paths import security_directory
@@ -29,17 +29,14 @@ def get_security() -> SecurityStore:
             store = SecurityStore.from_environment(security_directory())
             store.provision_factory_admin()
             # Factory credentials are advisory for startup. Authentication,
-            # TLS, strict origins, client ACL and permissions remain enforced.
+            # strict origins, client ACL and permissions remain enforced.
             # A publicly known factory credential is unsafe on shared LANs:
             # report it clearly, but never prevent server initialization.
-            weak_password, weak_pin = store.factory_credentials_active()
-            if deployment_policy.is_lan and (weak_password or weak_pin):
+            if deployment_policy.is_lab and store.factory_credentials_active():
                 import logging
                 logging.getLogger(__name__).warning(
-                    "LAN security warning: factory administrator %s remain active. "
-                    "Replace them under Admin > Security Profiles / Credentials.",
-                    "password and PIN" if weak_password and weak_pin
-                    else "password" if weak_password else "PIN",
+                    "LAN security warning: factory administrator password remains "
+                    "active. Replace it under Admin > Administrator Credentials.",
                 )
             _store = store
         return _store
@@ -105,34 +102,15 @@ def logout() -> None:
     ui.navigate.to("/login")
 
 
-def factory_credential_warning(weak_password: bool, weak_pin: bool) -> str | None:
-    """State exactly which factory credential is still active.
-
-    The default PIN is separately enrolled and can remain unchanged after a
-    successful administrator password update; do not tell users to change
-    the password again in that case. No secrets or hashes are returned.
-    """
-    if weak_password and weak_pin:
-        return (
-            "Factory administrator password and PIN are still active. "
-            "Strongly recommended: change the password in Admin > Administrator "
-            "Credentials and the PIN in Admin > Security Profiles. "
-            "Configuration and operations are not blocked by this warning."
-        )
-    if weak_password:
-        return (
-            "Factory administrator password is still active; the factory PIN "
-            "has been replaced. Change the password in Admin > "
-            "Administrator Credentials for safer operation."
-        )
-    if weak_pin:
-        return (
-            "Administrator password has been changed. Only the factory PIN "
-            "is still active. Change the PIN in Admin > Security Profiles "
-            "(Enroll account PIN) for safer operation; the password does not "
-            "need to be changed again."
-        )
-    return None
+def factory_credential_warning(weak_password: bool) -> str | None:
+    """State whether the factory administrator password is still active."""
+    if not weak_password:
+        return None
+    return (
+        "Factory administrator password is still active. Strongly recommended: "
+        "change it in Admin > Administrator Credentials. Configuration and "
+        "operations are not blocked by this warning."
+    )
 
 
 @ui.page("/login")
@@ -150,8 +128,6 @@ def login_page() -> None:
             session = get_security().login(
                 username.value, password.value,
                 client_id=peer if isinstance(peer, str) and peer else "unknown-peer",
-                use_pin=(get_security().get_security_profile()
-                         is SecurityProfile.ISOLATED_LAN),
             )
         except AuthenticationError:
             password.value = ""
@@ -166,18 +142,14 @@ def login_page() -> None:
 
     with ui.card().classes("absolute-center items-stretch").style("min-width: 330px"):
         ui.label("Climate Chamber — sign in").classes("text-h5")
-        isolated = get_security().get_security_profile() is SecurityProfile.ISOLATED_LAN
-        ui.label("Isolated workstation · PIN sign-in · no automatic logout"
-                 if isolated else "Offline local account · password sign-in").classes(
-                     "text-caption")
-        warning = factory_credential_warning(*get_security().factory_credentials_active())
+        ui.label("Offline local account · password sign-in").classes("text-caption")
+        warning = factory_credential_warning(
+            get_security().factory_credentials_active())
         if warning:
             ui.label(warning).classes("text-caption text-orange-9")
         username = ui.input("Username").props("autocomplete=username")
-        password = ui.input("PIN (6–12 digits)" if isolated else "Password",
-                            password=True).props(
-            "autocomplete=off inputmode=numeric" if isolated
-            else "autocomplete=current-password")
+        password = ui.input("Password", password=True).props(
+            "autocomplete=current-password")
         ui.button("Sign in", on_click=sign_in)
 
 

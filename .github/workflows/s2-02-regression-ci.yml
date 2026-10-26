@@ -49,8 +49,6 @@ jobs:
             python: '3.12'
     env:
       PYTHONDONTWRITEBYTECODE: '1'
-      # The watchdog measures idle time by log growth; keep pytest output
-      # unbuffered so a healthy long test never looks dead.
       PYTHONUNBUFFERED: '1'
     steps:
       - uses: actions/checkout@v4
@@ -63,27 +61,20 @@ jobs:
         # so this workflow stays order-independent with respect to PR #72;
         # keep the two pins identical to avoid a pip resolution conflict.
         run: >-
-          python scripts/h02_watchdog_command.py
-          --timeout-s 900 --idle-timeout-s 300 --cleanup-s 15
-          --log-dir s2-02-evidence --
           python -m pip install --disable-pip-version-check --timeout 60
           -r requirements-web.txt -r requirements-hardware.txt -r requirements-dev.txt
           cryptography==46.0.2
-      - name: Combined suite (watchdog-bounded; a timeout kill is FAIL)
+      - name: Combined suite (job timeout is FAIL)
+        timeout-minutes: 25
         run: >-
-          python scripts/h02_watchdog_command.py
-          --timeout-s 1500 --idle-timeout-s 300 --cleanup-s 15
-          --log-dir s2-02-evidence --
           python -m pytest -q tests
           --ignore=tests/hardware
           --ignore=tests/test_h01_browser_e2e.py
           --junitxml=s2-02-junit.xml
-      - name: Publish watchdog and JUnit evidence
+      - name: Publish JUnit evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: s2-02-regression-${{ matrix.os }}-${{ matrix.python }}
-          path: |
-            s2-02-evidence/
-            s2-02-junit.xml
+          path: s2-02-junit.xml
           if-no-files-found: ignore

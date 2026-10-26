@@ -1,3 +1,10 @@
+> **CURRENT-STATE NOTE (2026-10-26).** The H02 signed-permit/watchdog stack
+> has been archived and is no longer part of the product. PINs, selectable
+> security profiles, TLS mode, HMAC audit chains and signed backup manifests
+> were also removed. Dated ledgers below are historical evidence; see
+> `G08_FULL_SECURITY.md` and `STAGE_2_PILOT_READINESS_PLAN.md` for the current
+> lab-only model.
+
 # Migration readiness findings — canonical closure ledger
 
 **Current stage (2026-10-23):** [Stage 2 — pre-production hardening and controlled pilot preparation](STAGE_2_PILOT_READINESS_PLAN.md). H01 engineering verification recorded physical 8/8 PASS on 2026-10-19. H02 run `60e8f4da-ea08-4806-9c5c-1c2124f89eb0` recorded an engineering physical-profile PASS on 2026-10-20 at GUI `a0ecf17`; H02 run `5be68792-77f7-471b-946c-20558f1e6502` repeated that PASS on 2026-10-21 at GUI `74a816d` under a fresh signed permit (`H02-2026-10-21-01`), preceded by an audited STOP reconciliation, with G07 evidence, clean independent-watchdog arm/disarm and final STOPPED readback. H02-B/C software is merged (#55/#56/#58); H03-A typed driver/output software merged (GUI #85 `557aaa5`, driver #6 `d22dc05`); isolated lab mode is on the current feature branch. Raw evidence is indexed under `hil-evidence/`. Physical H02/H03 acceptance, human site/independent signatures, operational security review, W02 offline release and R01 remain OPEN. The dated ledger below retains historical status where explicitly labelled and must not be mistaken for the current source revision.
@@ -217,7 +224,7 @@ VT 4011 SN 58566207770010, supervised, envelope 20–30 °C.
 
 ## H02 outstanding review and readiness — 2026-10-15
 
-Hardware blockers B1/B2/B3/B4 and H2/H4/H7/H8 must not be treated as closed by simulation results. The H02 software foundation adds permit validation and a software command watchdog, but physical-profile runner dispatch, supervision, G07 composition, independent review, signed site method and STOP evidence are still missing. See [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md).
+Hardware blockers B1/B2/B3/B4 and H2/H4/H7/H8 must not be treated as closed by simulation results. The H02 software foundation adds permit validation and a software command watchdog, but physical-profile runner dispatch, supervision, G07 composition, independent review, signed site method and STOP evidence are still missing. See [H02 verification plan](../archive/h02/docs/H02_PROFILE_VERIFICATION_PLAN.md).
 
 **Update 2026-10-18:** the H02 software foundation merged as PR #39 `1dae5ade00f67318f01c763e395f0e85f5310c6a` with all PR checks green (preflight validator and test watchdog only — no physical connection). Runtime composition (H02-B), the separate physical watchdog (H02-C) and site permits remain OPEN per [REMAINING_DEVELOPMENT_TASKS.md](REMAINING_DEVELOPMENT_TASKS.md). **GO/NO-GO unchanged: NO-GO. Hardware test result: NOT RUN.**
 

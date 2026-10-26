@@ -36,11 +36,11 @@ Source contracts: `docs/P00_DECISION_CONTRACTS.md`, `docs/G04_A_CONTROLLER_CONTR
 **NO-GO to real connections, control and certification until signed authorization and independent witnessed HIL.**
 
 
-## H02 scope separation (2026-10-15)
+## H02 scope separation (2026-10-15) — historical; H02 archived 2026-10-26
 
 H01 supervised manual HIL, including its opt-in over LAN and any manual soak,
 is NOT authorization for G06 physical profile execution. The separately
 permitted H02 engineering profile test subsequently passed on 2026-10-20; its
 authorization applied only to that exact revision/profile/run. See the
-[H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md). Future H02 runs
-still require their own valid permit, operator and witness.
+[H02 verification plan](../archive/h02/docs/H02_PROFILE_VERIFICATION_PLAN.md). That permit
+path is retired; current physical profiles use isolated lab mode and the G06/G07/G04/G08 controls.

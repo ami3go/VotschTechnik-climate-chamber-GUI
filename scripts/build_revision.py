@@ -1,4 +1,4 @@
-"""Write or check the frozen-bundle revision stamp used by H02 admission.
+"""Write or check the frozen-bundle GUI/driver revision stamp.
 
 A git checkout identifies its GUI revision directly. A frozen bundle has no
 ``.git`` and a hash-locked wheelhouse may not carry the driver's

@@ -10,7 +10,14 @@
 **Inspected GUI main:** d38506a27fb2bd39f81b8e6d1823638b8b1e81fa  
 **Inspected driver main:** 9323e3701f3befedcc23b45170a851fd327f0bcc
 
-> **Historical 2026-10-18 backlog:** H02-B and H02-C software subsequently merged (#55/#56/#58); H01 hardware tests passed 8/8 again on 2026-10-19 (#60); operator controls/profile handoff PRs #68–#70 merged. Use [Stage 2 plan](STAGE_2_PILOT_READINESS_PLAN.md) for the current queue. The below original scope and prerequisites are preserved for traceability. Signed site acceptance and release are still open.
+> **Historical backlog:** The H02 signed-permit/watchdog stack was subsequently
+> implemented, then archived on 2026-10-26 when the product became lab-only.
+> PIN/security profiles, TLS mode and HMAC audit/backup signing were removed at
+> the same time. H01 hardware tests passed 8/8 on 2026-10-19 (#60); operator
+> controls/profile handoff PRs #68–#70 merged. Use
+> [Stage 2 plan](STAGE_2_PILOT_READINESS_PLAN.md) for the current queue. The
+> original scope below is preserved for traceability. Signed site acceptance
+> and release are still open.
 
 > This is an engineering work plan, not site authorization or a production certification. The statuses below describe remaining acceptance gates as of the stated baseline; check fresh GitHub state before changing code. Historical audits remain historical rather than authorization to operate equipment.
 
@@ -69,7 +76,7 @@ Tasks are independently branchable when file ownership and contracts do not conf
 
 1. Fetch current GUI and driver main, merged PRs and CI. Preserve exact inspected SHAs and links.
 2. Update documentation whose headings still call merged PRs #27–#30 drafts or describe H01 physical I/O as categorically absent.
-3. Reconcile docs/DEVELOPMENT_SEQUENCE.md, docs/READINESS_FINDINGS.md, docs/G08_REMAINING_WORK.md, docs/W02_OFFLINE_RELEASE.md, docs/H02_PROFILE_VERIFICATION_PLAN.md and README_WEB.md; retain dated historical evidence in separate sections.
+3. Reconcile docs/DEVELOPMENT_SEQUENCE.md, docs/READINESS_FINDINGS.md, docs/G08_REMAINING_WORK.md, docs/W02_OFFLINE_RELEASE.md, archive/h02/docs/H02_PROFILE_VERIFICATION_PLAN.md and README_WEB.md; retain dated historical evidence in separate sections.
 4. Publish separate states for **implemented**, **tested in simulation**, **tested on physical hardware**, **independently approved**, and **certified for release**.
 5. Maintain an ID-based BLOCKER/HIGH findings ledger with risk, owner, dependencies, verification evidence, signoff and closure status.
 

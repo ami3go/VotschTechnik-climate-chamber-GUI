@@ -181,9 +181,8 @@ async def test_admin_security_profiles_panel_is_role_restricted(
     browser.find("Sign in").click()
     await browser.should_see("Signed in: profile_admin (ADMIN)", retries=30)
     await browser.open("/admin")
-    await browser.should_see("Security Profiles", retries=30)
-    await browser.should_see("Account to enroll for PIN login", retries=30)
-    await browser.should_see("Apply security profile", retries=30)
+    await browser.should_see("User Accounts", retries=30)
+    await browser.should_see("Administrator Credentials", retries=30)
 
     viewer = create_user()
     await viewer.open("/login")

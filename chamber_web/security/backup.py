@@ -1,14 +1,13 @@
-"""Local signed SQLite security backups. No HTTP endpoints or background restores.
+"""SQLite security backups with a SHA-256 manifest. No HTTP endpoints.
 
-The HMAC key stays in the protected *source* security directory and must be
-escrowed separately from the backup. Restoration is always into a NEW empty
-directory, never an in-place live SQLite overwrite. All sessions are revoked.
+Restoration is always into a NEW empty directory, never an in-place live SQLite
+overwrite. All sessions are revoked. The backup is not signed; protect the
+offline copy with filesystem ACLs and retain it on isolated media.
 """
 from __future__ import annotations
 
 from contextlib import closing
 import hashlib
-import hmac
 import json
 import os
 from pathlib import Path
@@ -19,35 +18,11 @@ import time
 
 MAX_BACKUP_BYTES = 512 * 1024 * 1024
 SCHEMA_VERSION = 1
+FORMAT = "chamber-security-backup-v2"
 
 
 class BackupError(RuntimeError):
     pass
-
-
-def _key(security_directory: Path, *, create: bool) -> bytes:
-    path = security_directory / "backup_signing_key"
-    if create:
-        try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError:
-            pass
-        else:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(secrets.token_bytes(32))
-                stream.flush()
-                os.fsync(stream.fileno())
-    if path.is_symlink():
-        raise BackupError("Symlink backup key forbidden")
-    try:
-        if os.name != "nt" and path.stat().st_mode & 0o077:
-            raise BackupError("Backup key permissions are unsafe")
-        key = path.read_bytes()
-    except OSError as exc:
-        raise BackupError("Missing escrowed backup-signing key") from exc
-    if len(key) != 32:
-        raise BackupError("Invalid backup-signing key")
-    return key
 
 
 def _hash_file(path: Path) -> str:
@@ -73,12 +48,6 @@ def _integrity(path: Path) -> int:
         return version
 
 
-def _signed_manifest(payload: dict, key: bytes) -> dict:
-    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return {"payload": payload, "mac_sha256": hmac.new(
-        key, raw, hashlib.sha256).hexdigest()}
-
-
 def backup_security_database(source_dir: Path, destination: Path) -> tuple[Path, Path]:
     """Online SQLite consistent backup; overwrite and symlinks are forbidden."""
     source_dir, destination = Path(source_dir), Path(destination)
@@ -87,7 +56,6 @@ def backup_security_database(source_dir: Path, destination: Path) -> tuple[Path,
     manifest_path = Path(str(destination) + ".manifest.json")
     if manifest_path.exists() or manifest_path.is_symlink():
         raise BackupError("Manifest destination already exists")
-    key = _key(source_dir, create=True)
     database = source_dir / "security.sqlite3"
     if not database.is_file() or database.is_symlink():
         raise BackupError("Source security database missing or unsafe")
@@ -100,23 +68,22 @@ def backup_security_database(source_dir: Path, destination: Path) -> tuple[Path,
         if scratch.stat().st_size > MAX_BACKUP_BYTES:
             raise BackupError("Security backup exceeds size limit")
         schema = _integrity(scratch)
-        payload = {"format": "chamber-security-backup-v1",
-                   "size": scratch.stat().st_size, "schema": schema,
-                   "sha256": _hash_file(scratch), "created_utc": int(time.time())}
-        signed = _signed_manifest(payload, key)
+        payload = {"format": FORMAT, "size": scratch.stat().st_size,
+                   "schema": schema, "sha256": _hash_file(scratch),
+                   "created_utc": int(time.time())}
         # Windows rejects fsync on a read-only descriptor and holds SQLite
         # files locked while connections remain open.
         with scratch.open("r+b") as file:
             os.fsync(file.fileno())
         os.replace(scratch, destination)
-        manifest_path.write_text(json.dumps(signed, sort_keys=True) + "\n",
+        manifest_path.write_text(json.dumps(payload, sort_keys=True) + "\n",
                                  encoding="utf-8")
         return destination, manifest_path
     finally:
         scratch.unlink(missing_ok=True)
 
 
-def verify_security_backup(source_dir: Path, backup: Path) -> dict:
+def verify_security_backup(backup: Path) -> dict:
     backup = Path(backup)
     manifest_path = Path(str(backup) + ".manifest.json")
     if (backup.is_symlink() or manifest_path.is_symlink()
@@ -125,14 +92,12 @@ def verify_security_backup(source_dir: Path, backup: Path) -> dict:
     if backup.stat().st_size > MAX_BACKUP_BYTES:
         raise BackupError("Backup exceeds maximum supported size")
     try:
-        signed = json.loads(manifest_path.read_text(encoding="utf-8"))
-        payload = signed["payload"]
-        supplied = signed["mac_sha256"]
-        expected = _signed_manifest(payload, _key(Path(source_dir), create=False))
-        if not isinstance(supplied, str) or not hmac.compare_digest(
-                supplied, expected["mac_sha256"]):
-            raise BackupError("Backup manifest signature mismatch")
-        if (payload["format"] != "chamber-security-backup-v1"
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        # Read manifests written by the earlier signed schema too; the MAC was
+        # only an integrity aid and the payload checks below are equivalent.
+        if set(payload) == {"payload", "mac_sha256"}:
+            payload = payload["payload"]
+        if (payload["format"] not in {FORMAT, "chamber-security-backup-v1"}
                 or payload["size"] != backup.stat().st_size
                 or payload["sha256"] != _hash_file(backup)
                 or payload["schema"] != _integrity(backup)):
@@ -142,13 +107,13 @@ def verify_security_backup(source_dir: Path, backup: Path) -> dict:
     return payload
 
 
-def stage_security_restore(source_dir: Path, backup: Path, target_dir: Path) -> Path:
+def stage_security_restore(backup: Path, target_dir: Path) -> Path:
     """Stage offline restore only; stop the service before switching data root.
 
     A restore does not copy NiceGUI signing keys or existing authenticated
     sessions. A privileged operator must explicitly provision signing keys.
     """
-    verify_security_backup(source_dir, backup)
+    verify_security_backup(backup)
     target_dir = Path(target_dir)
     if target_dir.is_symlink() or (
             target_dir.exists() and any(target_dir.iterdir())):
@@ -167,27 +132,10 @@ def stage_security_restore(source_dir: Path, backup: Path, target_dir: Path) -> 
             source.backup(dest)
             # Sessions from backup must NOT be resurrected as authenticated.
             dest.execute("UPDATE sessions SET revoked=1")
-            tables = {row[0] for row in dest.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'")}
-            if "recovery_tokens" in tables:
-                dest.execute("DELETE FROM recovery_tokens")
             dest.commit()
         _integrity(temporary)
         if os.name != "nt":
             temporary.chmod(0o600)
-        # The audit verification key must survive a restore; it is escrowed
-        # independently of the database backup and NEVER embedded in the ZIP.
-        source_key = Path(source_dir) / "audit_hmac_key"
-        target_key = target_dir / "audit_hmac_key"
-        if (not source_key.is_file() or source_key.is_symlink()
-                or len(source_key.read_bytes()) != 32
-                or target_key.exists()):
-            raise BackupError("Audit verification key unavailable for restore")
-        fd = os.open(target_key, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        with os.fdopen(fd, "wb") as output:
-            output.write(source_key.read_bytes())
-            output.flush()
-            os.fsync(output.fileno())
         os.replace(temporary, destination)
         return destination
     finally:

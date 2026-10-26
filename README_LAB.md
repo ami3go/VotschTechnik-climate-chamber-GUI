@@ -1,12 +1,11 @@
-# Isolated-lab mode: full-range chamber operation without the permit workflow
+# Isolated-lab mode: full-range chamber operation
 
-For a **closed lab network** (server, laptop and chamber only). It replaces
-the supervised H02 workflow (signed permit, witness, pinned revisions,
-per-shift STOP confirmation, watchdog process) with a single launch-time
-switch, so profiles run unattended across the full temperature range.
-Administrators can enable it in **Settings → Physical profile runs**; the
-saved setting is applied at the next server start. The environment variable
-below remains available for scripted launches.
+For a **closed lab network** (server, laptop and chamber only). A single
+launch-time switch enables physical profile execution across the full
+temperature range. Administrators can enable it in
+**Settings → Physical profile runs**; the saved setting is applied at the next
+server start. The environment variable below remains available for scripted
+launches.
 
 This is not a certified safety configuration. The chamber's own temperature
 limits, over-temperature protection and emergency stop are the primary safety
@@ -26,12 +25,10 @@ layer. Set the chamber's own limiter to suit the specimen before an unattended r
   reverified. In lab mode the first **Run** performs that independent fresh
   `GOOD`/`STOPPED` read and clears the restart fence; a FAULT or a chamber that
   is actually running is never cleared automatically.
-- **Administrator override:** an ADMIN lab profile start bypasses manual-lease
-  ownership and the pre-run STOP/restart gate, including a latched restart
-  fence or an already-running chamber. It still requires connected, `GOOD`,
-  identity-pinned telemetry, capabilities, the envelope and the run journal.
-  Mid-run supervision and the final verified STOP remain active. Every override
-  is audited as `profile.admin_override`.
+- **No administrator ownership override:** an ADMIN uses the same manual-lease
+  and verified-STOP/restart gates as an operator. A foreign lease, latched STOP
+  fence or already-running chamber must be resolved through the normal STOP,
+  reconciliation and lease controls.
 
 ## Configure
 
@@ -51,10 +48,11 @@ CHAMBER_LAB_MODE=ISOLATED-LAB-UNATTENDED
 
 If you configure the connection and lab mode in Settings instead, leave
 `CHAMBER_HIL_*` unset: explicit environment variables take precedence over the
-saved settings. Do not set `CHAMBER_H02_*` together with lab mode; the server
-refuses to start.
+saved settings. Legacy `CHAMBER_H02_*` variables are no longer supported and
+have no effect.
 
-To use the UI from the laptop over plain HTTP, add the `lab` network mode:
+To use the UI from the laptop over plain HTTP on the closed network, add the
+`lab` network mode:
 
 ```
 CHAMBER_NETWORK_MODE=lab

@@ -18,10 +18,9 @@
 .PARAMETER Variant
   W01 (default): simulated, loopback-only feasibility bundle.
   PreProduction: the FULL server with G08 authentication, G07 recording,
-  STOP fencing and the optional supervised H02 physical profile path. It
-  embeds an integrity-manifested build-revision.json so permit-bound profile
-  admission can identify the exact GUI/driver revisions without a git
-  checkout. NOT a certified release.
+  STOP fencing and the isolated-lab physical profile path. It embeds an
+  integrity-manifested build-revision.json so the frozen self-test can report
+  the exact GUI/driver revisions without a git checkout. NOT a certified release.
 #>
 [CmdletBinding()]
 param(
@@ -115,10 +114,9 @@ try {
     }
     Native $py @("-m", "pip", "install", "--disable-pip-version-check", "pyinstaller==6.16.0")
     if ($preProduction) {
-        # H02 admission binds the exact GUI and driver revisions. A frozen
-        # bundle has no git checkout (and a hash-locked wheelhouse may lose the
-        # driver's direct_url.json), so record an integrity-manifested stamp
-        # from this clean build tree before freezing.
+        # A frozen bundle has no git checkout (and a hash-locked wheelhouse may
+        # lose the driver's direct_url.json), so record an integrity-manifested
+        # revision stamp from this clean build tree before freezing.
         Native $py @((Join-Path $repo "scripts/build_revision.py"),
                      "--out", $stampFile)
         $createdStamp = $true
@@ -181,7 +179,7 @@ try {
     ((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant() +
       "  " + [IO.Path]::GetFileName($zip)) | Set-Content -Encoding ASCII $checksum
     if ($preProduction) {
-        Write-Host "Pre-production runtime: supervised physical capability included; NOT certified"
+        Write-Host "Pre-production runtime: isolated-lab physical capability included; NOT certified"
     } else {
         Write-Host "Simulation-only runtime: physical chamber I/O DISABLED"
     }

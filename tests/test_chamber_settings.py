@@ -4,7 +4,6 @@ No physical hardware is contacted; settings only take effect at server start.
 """
 from __future__ import annotations
 
-import ast
 import json
 import tempfile
 import unittest
@@ -57,22 +56,6 @@ class ChamberSettingsTests(unittest.TestCase):
                    if "chamber.settings.save" in row]
         self.assertTrue(actions)
 
-    def test_main_composes_h02_from_effective_settings_environment(self):
-        """Saved H02 fields must reach the runtime, not only CHAMBER_HIL fields."""
-        source = (Path(__file__).resolve().parents[1] / "chamber_web" / "main.py").read_text(
-            encoding="utf-8"
-        )
-        tree = ast.parse(source)
-        calls = [
-            node for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "supervised_runtime_from_env"
-        ]
-        self.assertEqual(len(calls), 1)
-        self.assertIsInstance(calls[0].args[0], ast.Name)
-        self.assertEqual(calls[0].args[0].id, "_HIL_ENV")
-
     def test_saved_lab_mode_enables_unattended_physical_profiles(self):
         settings = replace(PHYSICAL, person_present_acknowledged=False, lab_mode=True)
         stored = self.save(settings)
@@ -85,14 +68,6 @@ class ChamberSettingsTests(unittest.TestCase):
         self.assertIsNotNone(lab)
         self.assertTrue(lab.gradients)
         self.assertIsNotNone(hil_authorization_from_env(env))
-
-    def test_lab_mode_ignores_legacy_h02_configuration(self):
-        settings = replace(PHYSICAL, lab_mode=True, h02_permit_file="/old/permit.json",
-                           h02_trusted_key="old-key", h02_witness="old-witness")
-        self.assertEqual(settings.h02_environment(), {})
-        env = {**settings.hil_environment(), **settings.lab_environment()}
-        self.assertNotIn("CHAMBER_H02_PERMIT_FILE", env)
-        self.assertIsNotNone(lab_mode_from_env(env, hil_present=True))
 
     def test_lab_mode_requires_a_physical_chamber(self):
         with self.assertRaises(ChamberSafetyError):
@@ -143,7 +118,7 @@ class ChamberSettingsTests(unittest.TestCase):
         saved = save_settings(store, admin.session, admin.csrf, "admin",
                               PHYSICAL, path=self.path)
         self.assertEqual(load_settings(self.path), saved)
-        self.assertEqual(store.factory_credentials_active(), (True, True))
+        self.assertTrue(store.factory_credentials_active())
         self.assertIsNotNone(hil_authorization_from_env(
             effective_hil_environment({}, self.path)[0]))
         self.assertTrue(any("chamber.settings.save" in row
@@ -153,7 +128,7 @@ class ChamberSettingsTests(unittest.TestCase):
                           "wrong-password", PHYSICAL, path=self.path)
         store.change_password(admin.session, admin.csrf, "admin", "NewPassword#123")
         restarted = SecurityStore(self.root / "factory")
-        self.assertEqual(restarted.factory_credentials_active(), (False, True))
+        self.assertFalse(restarted.factory_credentials_active())
         renewed = restarted.login("admin", "NewPassword#123")
         saved = save_settings(restarted, renewed.session, renewed.csrf,
                               "NewPassword#123", PHYSICAL, path=self.path)

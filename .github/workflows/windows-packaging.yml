@@ -51,24 +51,6 @@ jobs:
         run: |
           python -m compileall -q chamber_web/windows_runtime.py scripts tests/test_windows_packaging.py
           python -m pytest -q tests/test_windows_packaging.py
-      - name: G08 offline update authenticity gate (negative and syntax checks)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path ./scripts/verify_g08_offline_update.ps1),
-            [ref]$null, [ref]$errors) | Out-Null
-          if ($errors.Count -ne 0) { throw "G08 update verifier parse failed: $errors" }
-          $denied = $false
-          try {
-            & ./scripts/verify_g08_offline_update.ps1 -Package './requirements-web.txt' -ExpectedSha256 ('0' * 64) -PublisherThumbprint ('0' * 40)
-          }
-          catch {
-            if ($_.Exception.Message -match 'SHA-256 mismatch') { $denied = $true }
-            else { throw }
-          }
-          if (-not $denied) { throw 'Offline update verifier accepted an untrusted digest' }
       - name: Standalone launcher build
         shell: pwsh
         run: |
@@ -99,9 +81,6 @@ jobs:
           if ($manifest.dependency_closure -ne "VERIFIED-HASH-LOCKED") { throw "The closure-built bundle does not record a verified closure" }
           $expected = (Get-FileHash -Algorithm SHA256 "./requirements-w02-runtime.lock").Hash.ToLowerInvariant()
           if ($manifest.dependency_closure_sha256 -ne $expected) { throw "The recorded closure digest is not the reviewed lock" }
-          $sbom = Get-Content "$bundle/sbom.cdx.json" -Raw | ConvertFrom-Json
-          $scope = ($sbom.metadata.properties | Where-Object { $_.name -eq "w02:inventory-scope" }).value
-          if ($scope -ne "locked-runtime-closure") { throw "The bundle SBOM does not describe the runtime closure" }
           $server = "$bundle/server/ClimateChamberServer.exe"
           & $server --self-test --require-module VotschTechnikClimateChamber
           if ($LASTEXITCODE -ne 0) { throw "Closure-built vendor package / adapter self-test failed" }

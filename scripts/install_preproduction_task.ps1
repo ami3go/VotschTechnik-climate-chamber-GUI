@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   The full server runs in the logged-in operator account so its state, logs,
-  security database and supervised H02 journals stay in that user's
+  security database and run journals stay in that user's
   %LOCALAPPDATA%. The task restarts on failure, never runs two instances, has
   no execution-time limit and starts when the machine was unavailable. This is
   a scheduled task, not a Windows service: browser sessions and the watchdog

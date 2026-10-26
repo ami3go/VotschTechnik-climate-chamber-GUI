@@ -1,3 +1,5 @@
+> **HISTORICAL APPROVAL RECORD — H02 SECTION ARCHIVED (2026-10-26).** The H02 physical-profile approval path no longer exists; the signed H02 evidence is preserved under `../archive/h02/`.
+
 # H01 — Site permit checklist and GO / NO-GO decisions
 
 **Default decision for every real physical action: NO-GO.**
@@ -29,11 +31,12 @@ Site authority must verify and sign all items **outside the GUI**:
 Independent review must inspect: module import isolation (Vötsch protocol only in external driver), G04 queue and admitted-call STOP limitations, G05/G08 authenticated mutation and lease-independent STOP, G07 intent-before-write/UNKNOWN recovery, G08 host/LAN threats, W02 service shutdown and physical on-site safety. Document actual reviewer identity and signoff; AI-assisted review alone does not constitute independent safety approval.
 
 
-## H02 physical profile authorization — independently scoped
+## H02 physical profile authorization — historical; H02 archived 2026-10-26
 
-Any earlier H01 manual-control authorization is insufficient for H02 automated
+Any earlier H01 manual-control authorization is insufficient for automated
 profile execution. A separately permitted, witnessed H02 engineering run passed
 on 2026-10-20 with the independent watchdog and G04/G06/G07/G08 integration.
+The H02 stack is archived; current physical profiles use isolated lab mode.
 That result authorizes no later run and does not itself provide independent/site
 acceptance. Future runs need their own signed permit, approved STOP procedure
 and named in-person operator/witness; intrusive fault injection needs additional

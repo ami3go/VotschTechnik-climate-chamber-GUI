@@ -66,14 +66,6 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 temperature_max_c=float(temp_max.value),
                 person_present_acknowledged=bool(acknowledge.value),
                 lab_mode=bool(lab_mode.value),
-                # The supervised H02 permit fields were removed from this
-                # screen. Saving now clears any legacy permit configuration so
-                # the next start cannot mix it with isolated lab mode.
-                h02_permit_file="",
-                h02_trusted_key="",
-                h02_witness="",
-                gui_commit="",
-                driver_commit="",
             )
         except (TypeError, ValueError):
             ui.notify("Temperature limits must be numbers.", color="negative")
@@ -95,7 +87,7 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
         # Credential hygiene is advice, never a substitute for authentication
         # or hardware authorization, and never blocks saving a configuration.
         warning = factory_credential_warning(
-            *get_security().factory_credentials_active())
+            get_security().factory_credentials_active())
         if warning and settings.chamber_type != "simulator":
             ui.notify(warning, color="warning", multi_line=True)
 
@@ -239,11 +231,10 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
             "Changes take effect only after the server is restarted. The software "
             "envelope is a secondary guard: the chamber's own limits and emergency "
             "stop remain the primary safety layer. Physical profile runs require "
-            "either isolated lab mode below or a signed H02 permit configured "
-            "through the server environment."
+            "isolated lab mode below."
         ).classes("demo-banner w-full")
         security_warning = factory_credential_warning(
-            *get_security().factory_credentials_active())
+            get_security().factory_credentials_active())
         if security_warning:
             ui.label(
                 "Security advisory only — chamber settings can be saved: " +
@@ -296,9 +287,8 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                      f"span at most {MAX_ENVELOPE_SPAN_C:g} °C. The connected chamber's "
                      "serial number must match.").classes("text-xs")
             acknowledge = ui.checkbox(
-                "For supervised operation: a trained person is present at the "
-                "chamber whenever the server runs with this configuration "
-                "(not required in isolated lab mode)",
+                "A trained person is present at the chamber whenever the server "
+                "runs with this configuration (not required in isolated lab mode)",
                 value=initial.person_present_acknowledged)
             ui.label("Physical profile runs").classes("text-subtitle2")
             lab_mode = ui.checkbox(
@@ -306,14 +296,11 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 "(isolated lab mode)",
                 value=initial.lab_mode)
             ui.label(
-                "Isolated lab mode replaces the signed H02 permit, named witness "
-                "and independent watchdog with a single administrator approval. "
-                "Profiles then run on the real chamber without a permit. The "
-                "chamber's own temperature limits, over-temperature protection and "
-                "emergency stop remain the primary safety layer; set them before an "
-                "unattended run. This is not a certified production configuration. "
-                "Saving clears any legacy H02 permit fields; supervised H02 runs are "
-                "configured only through the server environment."
+                "Isolated lab mode is a single administrator approval that enables "
+                "profiles on the real chamber. The chamber's own temperature limits, "
+                "over-temperature protection and emergency stop remain the primary "
+                "safety layer; set them before an unattended run. This is not a "
+                "certified production configuration."
             ).classes("text-xs text-orange-9")
         password = ui.input("Current administrator password (required to save)",
                             password=True).props(

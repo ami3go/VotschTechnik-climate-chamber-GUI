@@ -84,4 +84,4 @@ The manifest and materialized CSV/snapshot hashes verified before preservation
 under [`hil-evidence/h02-v3-2026-10-20/`](../hil-evidence/h02-v3-2026-10-20/README.md).
 This is an engineering pass for the tested revision, not Windows power-loss,
 storage rollback, retention-policy or production durability certification. See
-the [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md).
+the [H02 verification plan](../archive/h02/docs/H02_PROFILE_VERIFICATION_PLAN.md).

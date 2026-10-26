@@ -79,24 +79,15 @@ def hil_authorization_from_env(env: Mapping[str, str]) -> HilAuthorization | Non
 
 
 def check_hil_deployment(hil: HilAuthorization | None, policy, env: Mapping[str, str]) -> None:
-    """Loopback by default; LAN only behind an explicit, narrow opt-in.
+    """Loopback by default; lab mode requires a specific private bind address.
 
-    LAN mode already enforces TLS, an exact https origin, a private client
-    allow-list and G08 login. Physical HIL over LAN additionally requires
-    CHAMBER_HIL_ALLOW_LAN=1, a specific bind address and client networks no
-    broader than /24 (IPv4) or /64 (IPv6).
+    Lab mode is plain HTTP behind Host/Origin checks, a private client
+    allow-list and G08 login. Physical HIL never binds 0.0.0.0 because the
+    correct server address must be explicit in the lab configuration.
     """
-    if hil is None or not policy.is_lan:
+    if hil is None or not policy.is_lab:
         return
-    if env.get("CHAMBER_HIL_ALLOW_LAN", "").strip() != "1":
-        raise ChamberSafetyError(
-            "Supervised physical HIL over LAN requires CHAMBER_HIL_ALLOW_LAN=1")
     if ipaddress.ip_address(policy.bind_host).is_unspecified:
-        raise ChamberSafetyError("Physical HIL over LAN requires a specific CHAMBER_BIND_HOST")
-    if policy.certfile is None or policy.keyfile is None:
-        raise ChamberSafetyError("Physical HIL over LAN requires TLS")
-    for network in policy.client_networks:
-        if network.prefixlen < (24 if network.version == 4 else 64):
-            raise ChamberSafetyError(
-                f"Physical HIL over LAN allows client networks of /24 or narrower, not {network}")
+        raise ChamberSafetyError(
+            "Physical HIL in lab mode requires a specific CHAMBER_BIND_HOST")
 

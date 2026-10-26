@@ -36,45 +36,6 @@ def interactive_bootstrap(directory: Path | None = None) -> int:
     return 0
 
 
-def interactive_recovery(*, issue: bool = False, directory: Path | None = None) -> int:
-    """Offline host-only recovery enrollment or one-use consumption.
-
-    Do not invoke from a web route or unattended launch script. Back up the
-    signing key and store issued recovery credentials in separate offline media.
-    """
-    if not sys.stdin.isatty():
-        print("Recovery requires an interactive local terminal", file=sys.stderr)
-        return 2
-    from .auth import AuthenticationError
-    store = SecurityStore.from_environment(directory)
-    if not store.is_bootstrapped():
-        print("No administrator provisioned", file=sys.stderr)
-        return 2
-    username = input("Administrator account: ").strip()
-    try:
-        if issue:
-            password = getpass.getpass("Current administrator password: ")
-            session = store.login(username, password, offline_primary_password=True)
-            try:
-                token = store.issue_recovery_token(session.session, session.csrf)
-            finally:
-                store.logout(session.session)
-            print("Store this one-time credential OFFLINE. It is not logged:")
-            print(token)
-            return 0
-        token = getpass.getpass("Offline recovery credential: ")
-        password = getpass.getpass("New administrator password: ")
-        repeat = getpass.getpass("Repeat new password: ")
-        if password != repeat:
-            print("Passwords do not match", file=sys.stderr)
-            return 2
-        store.recover_admin_offline(token, username, password)
-        print("Credential consumed, password reset and sessions revoked.")
-        return 0
-    except (ValueError, PermissionError, AuthenticationError, AuthorizationError) as exc:
-        print(f"Offline recovery rejected: {type(exc).__name__}", file=sys.stderr)
-        return 2
-
 def _local_reset_console() -> bool:
     """Best-effort remote-session rejection; filesystem ACLs are authoritative.
 
@@ -119,8 +80,8 @@ def interactive_reset_credentials(directory: Path | None = None) -> int:
         if not store.is_bootstrapped():
             print("No administrator provisioned; reset refused", file=sys.stderr)
             return 2
-        print("WARNING: Restore factory administrator username/password/PIN: "
-              "admin / admin / 12345678.")
+        print("WARNING: Restore factory administrator username/password: "
+              "admin / admin.")
         print("This restores General login and revokes ALL user sessions. "
               "It does NOT stop chamber hardware or erase test data.")
         print("First bring the chamber to a verified safe state and stop "
@@ -129,9 +90,9 @@ def interactive_reset_credentials(directory: Path | None = None) -> int:
             print("Reset cancelled; no credentials changed.", file=sys.stderr)
             return 2
         store.reset_factory_credentials_offline()
-        print("Factory credentials restored: username admin, password admin, "
-              "PIN 12345678, profile General. Sessions revoked.")
-        print("Change the factory password and PIN immediately before LAN use.")
+        print("Factory credentials restored: username admin, password admin. "
+              "Sessions revoked.")
+        print("Change the factory password immediately before LAN use.")
         return 0
     except (ValueError, PermissionError, AuthorizationError,
             RuntimeError, OSError, sqlite3.Error) as exc:
@@ -143,17 +104,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Offline climate chamber admin setup")
     parser.add_argument("--data-dir", type=Path, default=None,
                         help="Local security data folder (default ~/.chamber_web/security)")
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--issue-recovery-token", action="store_true")
-    group.add_argument("--recover-admin", action="store_true")
-    group.add_argument("--reset-credentials", action="store_true",
-                       help="Host-console-only recovery to factory admin/admin and PIN 12345678")
+    parser.add_argument("--reset-credentials", action="store_true",
+                        help="Host-console-only recovery to factory admin/admin")
     options = parser.parse_args()
     if options.reset_credentials:
         return interactive_reset_credentials(options.data_dir)
-    if options.issue_recovery_token or options.recover_admin:
-        return interactive_recovery(issue=options.issue_recovery_token,
-                                    directory=options.data_dir)
     return interactive_bootstrap(options.data_dir)
 
 

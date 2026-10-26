@@ -157,9 +157,7 @@ def _build():
                 ui.notify(
                     f"Started saved revision {revision} " +
                     ("in simulation" if started.simulation else
-                     "on the physical chamber (isolated lab mode)"
-                     if started.lab else
-                     "under supervised physical HIL permit"),
+                     "on the physical chamber (isolated lab mode)"),
                     color="positive")
             else:
                 method = {
@@ -224,21 +222,14 @@ def _build():
             button.enable() if enabled_flag else button.disable()
         profile_select.disable() if view.active else profile_select.enable()
         reload_button.disable() if view.active else reload_button.enable()
-        if view.admin_override:
-            mode_label.set_text(
-                "ADMIN OVERRIDE: ownership and STOP/restart checks bypassed for "
-                "isolated lab runs")
-        elif view.lab:
+        if view.lab:
             mode_label.set_text(
                 "Physical chamber: isolated lab mode — no permit or watchdog required" +
                 ("; Run re-verifies STOPPED and clears the restart lock"
                  if view.stop_latched and view.controller_state == "UNKNOWN" else ""))
         elif not view.simulation:
             mode_label.set_text(
-                "Physical HIL: signed permit, witness and live watchdog required"
-                if view.supervised else
-                "Physical HIL: enable isolated lab mode in Settings or configure "
-                "a signed H02 permit in the server environment")
+                "Physical HIL: enable isolated lab mode in Settings to run profiles")
         elif view.stop_latched and view.controller_state == "VERIFIED_STOPPED":
             mode_label.set_text(
                 "Verified STOP — Run Profile rechecks STOPPED before a new run")

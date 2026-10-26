@@ -173,9 +173,9 @@ async def test_scan_local_networks_ignores_configured_ip(
     await user.should_see("No compatible Vötsch/Weiss chambers", retries=30)
 
 @pytest.mark.parametrize("changed_password", [False, True])
-async def test_physical_chamber_settings_save_with_factory_pin_warning(
+async def test_physical_chamber_settings_save_with_factory_password_warning(
         create_user: Callable[[], User], monkeypatch, tmp_path, changed_password):
-    """Browser save succeeds with factory PIN; no hardware connection or actuation."""
+    """Browser save succeeds with factory password; no hardware connection or actuation."""
     from chamber_web import main as application
     from chamber_web.hil.chamber_settings import ChamberSettings, load_settings
     from chamber_web.pages import chamber_config
@@ -191,7 +191,7 @@ async def test_physical_chamber_settings_save_with_factory_pin_warning(
                               "ChangedPassword#123")
         store = SecurityStore(tmp_path / "security")  # simulate restart
         password = "ChangedPassword#123"
-        assert store.factory_credentials_active() == (False, True)
+        assert store.factory_credentials_active() is False
     monkeypatch.setattr(security_ui, "_store", store)
     monkeypatch.setattr(application._manual_service, "_security", store)
     monkeypatch.setattr(application._manual_service._authorized, "_security", store)
@@ -209,7 +209,8 @@ async def test_physical_chamber_settings_save_with_factory_pin_warning(
     user.find("Sign in").click()
     await user.should_see("Signed in: admin (ADMIN)", retries=30)
     await user.open("/settings")
-    await user.should_see("Security advisory only", retries=30)
+    if not changed_password:
+        await user.should_see("Security advisory only", retries=30)
     user.find("Current administrator password (required to save)").type(password)
     user.find("Save chamber settings").click()
     await user.should_see("Saved (applies after restart): Vötsch", retries=30)
@@ -220,13 +221,12 @@ async def test_physical_chamber_settings_save_with_factory_pin_warning(
         await asyncio.sleep(0.05)
     assert target.exists()
     assert load_settings(target).address == "192.168.10.20"
-    assert store.factory_credentials_active() == (
-        (False, True) if changed_password else (True, True))
+    assert store.factory_credentials_active() is not changed_password
 
 
-async def test_settings_toggle_lab_mode_and_clear_legacy_h02(
+async def test_settings_toggle_lab_mode(
         create_user: Callable[[], User], monkeypatch, tmp_path):
-    """The H02 form is gone; one checkbox enables unattended physical profiles."""
+    """One checkbox enables unattended physical profiles."""
     from chamber_web import main as application
     from chamber_web.hil.chamber_settings import ChamberSettings, load_settings
     from chamber_web.pages import chamber_config
@@ -241,8 +241,7 @@ async def test_settings_toggle_lab_mode_and_clear_legacy_h02(
     monkeypatch.setenv("CHAMBER_SECURITY_DIR", str(tmp_path / "storage"))
     monkeypatch.setattr(chamber_config, "load_settings", lambda: ChamberSettings(
         chamber_type="votsch", chamber_id="lab-1", address="192.168.10.20",
-        expected_serial="ABC123", temperature_min_c=15.0, temperature_max_c=35.0,
-        h02_permit_file="/old/permit.json", h02_witness="old-witness"))
+        expected_serial="ABC123", temperature_min_c=15.0, temperature_max_c=35.0))
 
     user = create_user()
     await user.open("/login")
@@ -263,4 +262,3 @@ async def test_settings_toggle_lab_mode_and_clear_legacy_h02(
         await asyncio.sleep(0.05)
     stored = load_settings(target)
     assert stored is not None and stored.lab_mode is True
-    assert stored.h02_permit_file == "" and stored.h02_witness == ""

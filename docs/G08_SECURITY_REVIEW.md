@@ -1,3 +1,10 @@
+> **HISTORICAL REVIEW — SUPERSEDED IN PART (2026-10-26).** The deployment is now
+> lab-only and uses one password policy, plain HTTP in `lab` mode, append-only
+> audit with daily SHA-256 export, SHA-256 backup manifests and no H02
+> permit/watchdog stack. Findings below that reference TLS, PIN/security
+> profiles, HMAC audit chains, signed backups or those H02 components describe
+> the earlier design. See `G08_FULL_SECURITY.md` for the current model.
+
 # G08 focused security and architecture review
 
 Review scope: code in `feat/g08-full-security` initially stacked above

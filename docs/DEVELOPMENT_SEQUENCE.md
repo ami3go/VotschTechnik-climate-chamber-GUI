@@ -1,3 +1,8 @@
+> **CURRENT-STATE NOTE (2026-10-26).** H02 runtime code and its permit/watchdog
+> gates are archived under `archive/h02/`; H02 references below are historical.
+> The current product is lab-only, uses one password policy and plain HTTP, and
+> has append-only audit with SHA-256 export and SHA-256 backup manifests.
+
 # NiceGUI migration — implementation and merge sequence
 
 **Current implementation phase (2026-10-21):** [Stage 2 — pre-production hardening and controlled pilot readiness](STAGE_2_PILOT_READINESS_PLAN.md) is active after H01 real-chamber 8/8 engineering HIL test results, the S2-02 combined regression baseline, and the 2026-10-20 and 2026-10-21 H02 supervised physical-profile engineering PASSES. Raw H02 journal/permit/watchdog evidence is retained. This is a design/engineering transition, **not** signed independent/site H01/H02 acceptance or R01 certification. The dated status paragraphs below remain historical.
@@ -318,7 +323,7 @@ The existing G07-A branch was integrated with `main` including merged H01 #32 an
 
 ## H02 progress note — 2026-10-15 (merged as PR #39 2026-10-18; physical NO-GO)
 
-H02 work is tracked in [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md) and [H02 watchdog operations](H02_WATCHDOG_OPERATIONS.md). The H02 branch added a separately scoped cryptographically verified site-permit preflight primitive, a portable external-process test watchdog and simulation-only CI/fault injection. **It does not connect a physical ProfileRunner, alter existing simulation-only admission, authorize H01 site opt-in as an H02 permit, or claim hardware qualification.** The software foundation merged as PR #39 `1dae5ade00f67318f01c763e395f0e85f5310c6a` with all checks green. Physical integration, G07 composition root, independent two-way physical supervisor, authorized on-site test and independent review remain BLOCKED/OPEN. No physical H02 tests performed.
+H02 work is tracked in [H02 verification plan](../archive/h02/docs/H02_PROFILE_VERIFICATION_PLAN.md) and [H02 watchdog operations](../archive/h02/docs/H02_WATCHDOG_OPERATIONS.md). The H02 branch added a separately scoped cryptographically verified site-permit preflight primitive, a portable external-process test watchdog and simulation-only CI/fault injection. **It does not connect a physical ProfileRunner, alter existing simulation-only admission, authorize H01 site opt-in as an H02 permit, or claim hardware qualification.** The software foundation merged as PR #39 `1dae5ade00f67318f01c763e395f0e85f5310c6a` with all checks green. Physical integration, G07 composition root, independent two-way physical supervisor, authorized on-site test and independent review remain BLOCKED/OPEN. No physical H02 tests performed.
 
 ### H02 integration note — 2026-10-17
 

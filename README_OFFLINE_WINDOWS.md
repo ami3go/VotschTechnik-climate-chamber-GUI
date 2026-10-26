@@ -98,16 +98,15 @@ certify offline network independence, physical controls or released software.
 
 ## First-run credentials
 
-The first NiceGUI launch provisions `admin` / `admin` and default PIN `12345678` only if no administrator exists. General profile uses the password; PIN sign-in requires switching to Isolated LAN. Change the username/password through Admin > Administrator Credentials and the PIN through Admin > Security Profiles. Existing credentials are never reset on startup; LAN use is warned about while factory credentials are present. See [Factory Credentials](docs/FACTORY_CREDENTIALS.md).
+The first NiceGUI launch provisions `admin` / `admin` only if no administrator exists. Change the username and password through Admin > Administrator Credentials. Existing credentials are never reset on startup; LAN use is warned about while factory credentials are present. See [Factory Credentials](docs/FACTORY_CREDENTIALS.md).
 
-## Administrator password / PIN reset
+## Administrator password reset
 
 From a trusted **local interactive** PowerShell terminal in the extracted
 distribution, run `server/ClimateChamberServer.exe --reset-credentials`.
-The script requires no previous password, PIN or recovery token; type
-`RESET` at the server computer to confirm. It restores the factory
-administrator username, password and PIN, selects General password login,
-and revokes all existing sessions. Other user and run data are preserved.
+The script requires no previous password; type `RESET` at the server
+computer to confirm. It restores the factory administrator credentials and
+revokes all existing sessions. Other user and run data are preserved.
 It does **not** stop chamber hardware. Change defaults before LAN use.
 See [credential-reset procedures](docs/CREDENTIAL_RESET.md) in the source
 repository. Never delete the security database/keys to bypass login.
@@ -115,7 +114,7 @@ repository. Never delete the security database/keys to bypass login.
 ## Required before W02 or real hardware
 
 - Generate a fully hash-locked, reviewed **transitive** wheel closure with
-  all redistribution licenses, PyInstaller hook/DLL audit and SBOM.
+  all redistribution licenses, PyInstaller hook/DLL audit and advisory SBOM/licence output.
   W01 records installed versions/hashes of files but is NOT a reproducible
   hash-locked supply-chain build; dependency selection may vary by date.
 - Perform browser-level offline asset/CDN/websocket/download audit with
@@ -150,6 +149,6 @@ no physical device operations are enabled. The administrator store and
 persistent session-cookie signing key reside under
 `%USERPROFILE%\\.chamber_web\\security` unless overridden via
 `CHAMBER_SECURITY_DIR`. Ensure this directory has restrictive NTFS ACLs;
-Windows ACL certification, account recovery, backups and LAN/TLS are full
+Windows ACL certification, account recovery, backups and lab-network policy are full
 G08/W02 work. See [G08-min security contract](docs/G08_MIN_SECURITY.md)
 (in source checkout; not yet certified as part of W01 offline bundle).

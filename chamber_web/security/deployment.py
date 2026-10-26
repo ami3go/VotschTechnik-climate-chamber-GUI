@@ -1,52 +1,15 @@
 """Fail-closed network deployment policy for one server and one chamber.
 
-No network setting may enable the physical Vötsch backend. Source CLI may use
-LAN mode only after explicit IP/CIDR, HTTPS certificate and client ACL setup.
-The W01 frozen simulator deliberately stays loopback-only.
+No network setting may enable the physical Vötsch backend. Supported modes are
+loopback-only ``localhost`` and plain-HTTP ``lab`` on a private network. TLS,
+public origins and internet exposure are deliberately out of scope.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import ipaddress
 import os
-from pathlib import Path
-import ssl
-import time
 from urllib.parse import urlsplit
-
-
-def certificate_matches_host(certificate: dict, hostname: str) -> bool:
-    """subjectAltName match (RFC 6125, no CN fallback).
-
-    Replaces ssl.match_hostname, which Python 3.12 removed. IP origins must
-    appear as an IP Address SAN; DNS names match exactly or one left-most
-    wildcard label.
-    """
-    sans = certificate.get("subjectAltName", ())
-    try:
-        address = ipaddress.ip_address(hostname)
-    except ValueError:
-        address = None
-    if address is not None:
-        for kind, value in sans:
-            if kind == "IP Address":
-                try:
-                    if ipaddress.ip_address(value.strip()) == address:
-                        return True
-                except ValueError:
-                    continue
-        return False
-    host = hostname.lower().rstrip(".")
-    for kind, value in sans:
-        if kind != "DNS":
-            continue
-        pattern = value.lower().rstrip(".")
-        if pattern == host:
-            return True
-        if (pattern.startswith("*.") and "*" not in pattern[2:] and "." in host and
-                host.split(".", 1)[1] == pattern[2:]):
-            return True
-    return False
 
 
 class DeploymentError(RuntimeError):
@@ -60,12 +23,6 @@ class DeploymentPolicy:
     port: int
     allowed_origins: frozenset[str]
     client_networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]
-    certfile: Path | None = None
-    keyfile: Path | None = None
-
-    @property
-    def is_lan(self) -> bool:
-        return self.mode == "lan"
 
     @property
     def is_lab(self) -> bool:
@@ -84,8 +41,8 @@ class DeploymentPolicy:
     def from_env(cls, env: dict[str, str] | None = None) -> "DeploymentPolicy":
         config = os.environ if env is None else env
         mode = config.get("CHAMBER_NETWORK_MODE", "localhost").strip().lower()
-        if mode not in {"localhost", "lan", "lab"}:
-            raise DeploymentError("CHAMBER_NETWORK_MODE must be localhost, lan or lab")
+        if mode not in {"localhost", "lab"}:
+            raise DeploymentError("CHAMBER_NETWORK_MODE must be localhost or lab")
         try:
             port = int(config.get("CHAMBER_PORT", "8080"))
         except ValueError as exc:
@@ -99,13 +56,10 @@ class DeploymentPolicy:
             raise DeploymentError("CHAMBER_BIND_HOST must be a literal IP") from exc
         if mode == "localhost":
             if not bind.is_loopback:
-                raise DeploymentError("Non-loopback binding requires explicit LAN mode")
+                raise DeploymentError("Non-loopback binding requires explicit lab mode")
             if any(config.get(name) for name in (
-                    "CHAMBER_TLS_CERT", "CHAMBER_TLS_KEY",
                     "CHAMBER_ALLOWED_CLIENT_CIDRS", "CHAMBER_PUBLIC_ORIGIN")):
-                raise DeploymentError("LAN-only configuration in localhost mode")
-            # Treat configured origins only as a loopback convenience, not a
-            # way to expand the listen interface or allow foreign Hosts.
+                raise DeploymentError("Lab-only configuration in localhost mode")
             origins = frozenset({
                 f"http://127.0.0.1:{port}", f"http://localhost:{port}"
             })
@@ -113,83 +67,27 @@ class DeploymentPolicy:
             if override:
                 requested = frozenset(v.strip() for v in override.split(","))
                 if not requested or not requested.issubset(origins):
-                    raise DeploymentError("Localhost origins cannot admit LAN clients")
+                    raise DeploymentError("Localhost origins cannot admit lab clients")
                 origins = requested
             networks = (ipaddress.ip_network("127.0.0.0/8"),
                         ipaddress.ip_network("::1/128"))
             return cls(mode, host, port, origins, networks)
-        if mode == "lab":
-            return cls._isolated_lab(config, host, bind, port)
-
-        if bind.is_loopback or bind.is_multicast or bind.is_unspecified and not (
-                config.get("CHAMBER_ALLOWED_CLIENT_CIDRS")):
-            raise DeploymentError("LAN bind requires a non-loopback IP or explicit client ACL")
-        if not bind.is_private and not bind.is_unspecified:
-            raise DeploymentError("Public internet address binding is prohibited")
-        raw_origin = config.get("CHAMBER_PUBLIC_ORIGIN", "")
-        try:
-            parts = urlsplit(raw_origin)
-            valid_origin = (parts.scheme == "https" and bool(parts.hostname)
-                            and not parts.username and not parts.password
-                            and not parts.path and not parts.query
-                            and not parts.fragment and parts.port == port)
-        except ValueError as exc:
-            raise DeploymentError("Invalid HTTPS LAN origin") from exc
-        if not valid_origin:
-            raise DeploymentError("Explicit https CHAMBER_PUBLIC_ORIGIN with port required")
-        cidrs = config.get("CHAMBER_ALLOWED_CLIENT_CIDRS", "")
-        if not cidrs:
-            raise DeploymentError("LAN requires an explicit client network allowlist")
-        try:
-            networks = tuple(ipaddress.ip_network(s.strip(), strict=True)
-                             for s in cidrs.split(","))
-        except ValueError as exc:
-            raise DeploymentError("Invalid client CIDR allowlist") from exc
-        if not networks or any(
-                net.prefixlen == 0 or not (net.is_private or net.is_loopback)
-                for net in networks):
-            raise DeploymentError("Allow-all client CIDR is prohibited")
-        cert = config.get("CHAMBER_TLS_CERT")
-        key = config.get("CHAMBER_TLS_KEY")
-        if not cert or not key:
-            raise DeploymentError("LAN requires both TLS certificate and key")
-        certfile, keyfile = Path(cert).resolve(), Path(key).resolve()
-        if not certfile.is_file() or not keyfile.is_file():
-            raise DeploymentError("Missing TLS certificate or key")
-        if os.name != "nt" and keyfile.stat().st_mode & 0o077:
-            raise DeploymentError("TLS private key must be owner-readable only")
-        try:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-            context.load_cert_chain(str(certfile), str(keyfile))
-            # Validate validity interval and hostname; load_cert_chain alone
-            # only checks that a key matches a syntactically valid certificate.
-            certificate = ssl._ssl._test_decode_cert(str(certfile))
-            if not (ssl.cert_time_to_seconds(certificate["notBefore"]) <= time.time()
-                    < ssl.cert_time_to_seconds(certificate["notAfter"])):
-                raise DeploymentError("TLS certificate is not currently valid")
-            if not certificate_matches_host(certificate, parts.hostname):
-                raise ssl.CertificateError("certificate does not cover public origin host")
-        except (OSError, ssl.SSLError, ValueError, KeyError, AttributeError) as exc:
-            raise DeploymentError("Invalid or untrusted LAN TLS configuration") from exc
-        except ssl.CertificateError as exc:
-            raise DeploymentError("TLS certificate does not match public origin") from exc
-        return cls(mode, host, port, frozenset({raw_origin}), networks,
-                   certfile, keyfile)
+        return cls._lab(config, host, bind, port)
 
     @classmethod
-    def _isolated_lab(cls, config, host: str, bind, port: int) -> "DeploymentPolicy":
+    def _lab(cls, config, host: str, bind, port: int) -> "DeploymentPolicy":
         """Plain HTTP for a closed lab network (server, laptop, chamber only).
 
-        No TLS. Host/Origin binding, the client allowlist (default: private
-        and loopback networks) and G08 sign-in still apply. Origins are
-        ``CHAMBER_PUBLIC_ORIGIN`` (comma-separated) or, for a specific bind
-        address, ``http://<bind>:<port>``; loopback origins are always added.
+        Host/Origin binding, the client allowlist (default: private and
+        loopback networks) and G08 sign-in still apply. There is no TLS mode.
+        Origins are ``CHAMBER_PUBLIC_ORIGIN`` (comma-separated) or, for a
+        specific bind address, ``http://<bind>:<port>``; loopback origins are
+        always added.
         """
         if bind.is_multicast or (not bind.is_private and not bind.is_unspecified):
             raise DeploymentError("Lab mode binds only private, loopback or 0.0.0.0")
         if config.get("CHAMBER_TLS_CERT") or config.get("CHAMBER_TLS_KEY"):
-            raise DeploymentError("Lab mode is plain HTTP; use lan mode for TLS")
+            raise DeploymentError("TLS is not supported; lab mode is plain HTTP")
         origins = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
         raw = [v.strip().rstrip("/") for v in
                config.get("CHAMBER_PUBLIC_ORIGIN", "").split(",") if v.strip()]

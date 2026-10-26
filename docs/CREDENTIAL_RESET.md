@@ -1,8 +1,8 @@
 # Local factory credential recovery
 
-Use this script from a local, interactive console on the **server PC** when
-administrator credentials have been forgotten. It requires no existing
-password, PIN or recovery token. It is not accessible through the web UI.
+Use this from a local, interactive console on the **server PC** when the
+administrator password has been forgotten. It requires no existing password
+and is not accessible through the web UI.
 
 ## Procedure
 
@@ -27,34 +27,26 @@ Linux source checkout:
 .venv/bin/python -m scripts.reset_credentials
 ```
 
-The source script also supports direct file execution and `--data-dir`.
 Both versions use `CHAMBER_SECURITY_DIR` when configured, otherwise
 `~/.chamber_web/security` for the executing OS account.
 
 4. Read the warning and type `RESET` to confirm.
-5. Restart the server and use the documented factory administrator login.
-   Immediately replace factory credentials before permitting LAN access.
+5. Restart the server and use the factory administrator login. Immediately
+   replace the factory password before permitting lab-network access.
 
 ## Recovery effects
 
-The script restores the administrator username, password, and PIN to the
-values documented in [Factory Credentials](FACTORY_CREDENTIALS.md), and
-selects the **General** security profile (password login; PIN-only login
-requires Isolated LAN). It revokes all sessions and outstanding recovery
-tokens and resets login lockouts. Other users and stored chamber profiles,
-configuration, run records and evidence are preserved.
+The script restores the administrator username and password documented in
+[Factory Credentials](FACTORY_CREDENTIALS.md), revokes all sessions and resets
+login lockouts. Other users, stored chamber profiles, configuration, run
+records and audit evidence are preserved.
 
-If the default username belongs to a non-administrator, or there are
-multiple ambiguous administrator accounts, reset is refused. The existing
-database and tamper-evident audit history must be intact; a successful reset
-adds a `recovery.factory.reset` event.
+If the username `admin` belongs to a non-administrator, or there are multiple
+ambiguous administrator accounts, reset is refused. The existing database and
+audit history must be intact; a successful reset adds a
+`recovery.factory.reset` event.
 
 The OS account's filesystem access is the security boundary. The command
-refuses non-TTY execution and detected SSH/RDP sessions, but software
-cannot absolutely prove physical console presence against a privileged
-local operator. Do not expose the service account or security database to
-untrusted users. The application also refuses LAN startup while factory
-credentials remain enabled.
-
-The separate `--recover-admin` mode still supports one-time recovery
-tokens and does not perform a factory reset.
+refuses non-TTY execution and detected SSH/RDP sessions, but software cannot
+absolutely prove physical console presence against a privileged local operator.
+Do not expose the service account or security database to untrusted users.
