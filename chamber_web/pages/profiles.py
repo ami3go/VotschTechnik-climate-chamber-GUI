@@ -71,6 +71,7 @@ def get_profile_execution_service() -> ProfileExecutionService:
         from chamber_web.main import (get_dashboard_service,
                                       get_profile_manual_guard,
                                       profile_execution_is_simulation,
+                                      profile_execution_lab,
                                       profile_execution_supervision)
         editor = get_profile_editor_service()
         runtime = get_profile_runtime()
@@ -88,6 +89,7 @@ def get_profile_execution_service() -> ProfileExecutionService:
             start_blocker=runtime.start_blocker,
             supervised=profile_execution_supervision(),
             manual_guard=manual_guard,
+            lab=profile_execution_lab(),
         )
     return _execution_service
 
@@ -426,11 +428,29 @@ def profiles_page() -> None:
         refresh_library()
 
     def render_run(view: RunView) -> None:
-        if not view.simulation:
+        stop_confirm_button.set_visibility(view.supervised)
+        stop_confirm_label.set_visibility(view.supervised)
+        stop_confirm_label.set_text(
+            "STOP procedure confirmed for this shift" if view.stop_procedure_confirmed
+            else "Before a physical run: confirm you can perform the chamber's own "
+                 "STOP and emergency stop. Web STOP is not an emergency stop.")
+        if view.admin_override:
             run_mode_label.set_text(
-                "Physical HIL: signed site permit and live supervision required"
+                "ADMIN OVERRIDE · isolated lab mode · ownership and STOP/restart "
+                f"checks bypassed · controller {view.controller_state}")
+        elif view.lab:
+            run_mode_label.set_text(
+                f"Physical chamber · isolated lab mode · controller {view.controller_state}" +
+                (" · Run Loaded Revision re-verifies STOPPED and clears the "
+                 "restart lock"
+                 if view.stop_latched and view.controller_state == "UNKNOWN" else ""))
+        elif not view.simulation:
+            run_mode_label.set_text(
+                "Physical HIL: signed site permit, live supervision and an explicit "
+                "STOP-procedure confirmation required"
                 if view.supervised else
-                "Profile execution disabled without supervised H02 site permit")
+                "Profile execution disabled: enable isolated lab mode in Settings "
+                "or configure a supervised H02 permit in the server environment")
         elif view.stop_latched and view.controller_state == "VERIFIED_STOPPED":
             run_mode_label.set_text(
                 "Verified STOP · next Run Profile rechecks and rearms safely")
@@ -495,10 +515,12 @@ def profiles_page() -> None:
                       color="warning")
             return
         profile_id, revision = draft.profile_id, draft.viewed_revision
-        from chamber_web.main import profile_execution_is_simulation
+        from chamber_web.main import profile_execution_is_simulation, profile_execution_lab
         success_message = (
             f"Started revision {revision} in simulation"
             if profile_execution_is_simulation() else
+            f"Started revision {revision} on the physical chamber (lab mode)"
+            if profile_execution_lab() is not None else
             f"Started revision {revision} under supervised H02 permit"
         )
         await run_action(
@@ -528,7 +550,13 @@ def profiles_page() -> None:
     from chamber_web.ui_pages import page_frame
     with page_frame("/profiles", get_dashboard_service(), title="Profiles"):
         ui.label("Persistent Profiles / Revisions").classes("panel-heading")
+        from chamber_web.main import profile_execution_is_simulation, profile_execution_lab
         ui.label("SIMULATION · Saved revisions run only against the simulated chamber"
+                 if profile_execution_is_simulation() else
+                 "PHYSICAL CHAMBER · isolated lab mode · saved revisions drive the real chamber"
+                 if profile_execution_lab() is not None else
+                 "PHYSICAL CHAMBER · profile runs disabled — enable isolated lab mode "
+                 "in Settings or configure a supervised H02 permit in the environment"
                  ).classes("text-xs text-orange-9")
         ui.label("Profiles are saved on the server. Editing never starts or controls "
                  "the physical chamber.").classes("demo-banner w-full")
@@ -619,6 +647,16 @@ def profiles_page() -> None:
                             "STOP requested", threaded(execution.cancel)),
                     ).props("no-caps color=negative")
             run_mode_label = ui.label("").classes("text-xs text-orange-9")
+            with ui.row().classes("items-center gap-2 flex-wrap"):
+                stop_confirm_button = ui.button(
+                    "Confirm STOP Procedure", icon="health_and_safety",
+                    on_click=lambda: run_action(
+                        "Physical STOP procedure confirmed",
+                        threaded(execution.confirm_physical_stop_procedure)),
+                ).props("outline no-caps")
+                stop_confirm_label = ui.label("").classes("text-xs text-grey-7")
+            stop_confirm_button.set_visibility(False)
+            stop_confirm_label.set_visibility(False)
             run_state_label = ui.label("").classes("text-sm")
             run_detail_label = ui.label("").classes("text-xs text-grey-7")
             ui.label("The run belongs to the server: closing this page does not stop it. "

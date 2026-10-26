@@ -23,6 +23,7 @@ from nicegui import app, ui  # noqa: E402
 from .bootstrap import create_demo_control_services
 from .adapters.votsch import discover_votsch_chambers
 from .hil.chamber_settings import effective_hil_environment
+from .hil.lab_mode import LabMode, lab_mode_from_env
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
 from .hil.supervised_profile import SupervisedProfileRuntime, supervised_runtime_from_env
 from .hil.supervision import SupervisionHost
@@ -44,6 +45,9 @@ from .model import MAX_TEMP, MIN_TEMP
 _HIL_ENV, _HIL_SOURCE = effective_hil_environment(os.environ)
 _HIL = hil_authorization_from_env(_HIL_ENV)
 check_hil_deployment(_HIL, deployment_policy, os.environ)
+# Isolated-lab unattended mode: physical profile runs without the H02 permit
+# workflow. Launch-time only; misconfiguration refuses to start.
+_LAB = lab_mode_from_env(_HIL_ENV, hil_present=_HIL is not None)
 _security = get_security()
 # A factory credential is reported as a security warning, not a hardware
 # admission rule. Physical access still requires explicit HIL authorization,
@@ -60,15 +64,17 @@ if _HIL is not None:
         )
 _dashboard_service, _manual_service = create_demo_control_services(
     _security, _HIL, simulated_slew_c_per_s=0.25,
+    gradient_writes=_LAB is not None and _LAB.gradients,
 )
-_MODE = "Simulation" if _HIL is None else "Physical HIL"
+_MODE = ("Simulation" if _HIL is None else
+         "Physical lab" if _LAB is not None else "Physical HIL")
 # Server-side supervised physical admission. A site-signed H02 permit enables
 # supervised profile runs; a partial or broken permit configuration refuses to
 # start (fail closed), and an unconfigured physical launch keeps profile
 # execution disabled. The H02-C independent watchdog must additionally be
 # alive; until `_startup_supervision` proves it, physical starts are refused.
 _SUPERVISED = supervised_runtime_from_env(
-    os.environ, hil_present=_HIL is not None, supervisor_alive=lambda: False,
+    _HIL_ENV, hil_present=_HIL is not None, supervisor_alive=lambda: False,
 )
 _SUPERVISION: SupervisionHost | None = None
 
@@ -85,6 +91,11 @@ def profile_execution_is_simulation() -> bool:
 def profile_execution_supervision() -> SupervisedProfileRuntime | None:
     """Trusted composition context for H02 supervised physical runs."""
     return _SUPERVISED
+
+
+def profile_execution_lab() -> LabMode | None:
+    """Trusted isolated-lab context for unattended physical profile runs."""
+    return _LAB
 
 
 def get_supervision_host() -> SupervisionHost | None:
@@ -713,6 +724,40 @@ def admin_page() -> None:
         ui.notify("Administrator account renamed. Sign in again.", color="positive")
         logout()
 
+    def account_rows() -> list[dict[str, str]]:
+        session = active_tokens()[0]
+        return [{
+            "username": account.username,
+            "role": account.role.value,
+            "status": "Enabled" if account.enabled else "Disabled",
+        } for account in get_security().list_users(session)]
+
+    async def create_account() -> None:
+        if not require_authenticated_page(touch=False):
+            return
+        if account_password.value != account_password_repeat.value:
+            ui.notify("New account passwords do not match.", color="negative")
+            return
+        try:
+            session, csrf = active_tokens()
+            await asyncio.to_thread(
+                get_security().create_user, session, csrf,
+                account_username.value, account_password.value,
+                Role(account_role.value),
+            )
+            rows = await asyncio.to_thread(account_rows)
+        except (AuthenticationError, AuthorizationError, ValueError):
+            ui.notify(
+                "User creation denied. Check the username, password length, and role.",
+                color="negative",
+            )
+            return
+        account_username.value = ""
+        account_password.value = ""
+        account_password_repeat.value = ""
+        accounts_table.update_rows(rows)
+        ui.notify("User created and enabled.", color="positive")
+
     async def apply_security_profile() -> None:
         if not require_authenticated_page(touch=False):
             return
@@ -866,6 +911,47 @@ def admin_page() -> None:
                             "Each credential change requires administrator authentication."
                         ).classes("text-xs")
                     with ui.column().classes("panel gap-3"):
+                        _panel_title("group_add", "User Accounts")
+                        ui.label(
+                            "Create a separate enabled Operator or Viewer account. "
+                            "Account changes are authorized server-side and written to "
+                            "the security audit log."
+                        ).classes("text-sm")
+                        accounts_table = ui.table(
+                            columns=[
+                                {"name": "username", "label": "Username",
+                                 "field": "username", "align": "left"},
+                                {"name": "role", "label": "Role",
+                                 "field": "role", "align": "left"},
+                                {"name": "status", "label": "Status",
+                                 "field": "status", "align": "left"},
+                            ],
+                            rows=account_rows(),
+                            row_key="username",
+                        ).classes("w-full")
+                        account_username = ui.input(
+                            "New account username"
+                        ).props("autocomplete=off").classes("w-full")
+                        account_role = ui.select(
+                            {
+                                Role.OPERATOR.value: "Operator — chamber control",
+                                Role.VIEWER.value: "Viewer — read only",
+                                Role.ADMIN.value: "Administrator — full access",
+                            },
+                            value=Role.OPERATOR.value,
+                            label="New account role",
+                        ).classes("w-full")
+                        account_password = ui.input(
+                            "New account password (12+ bytes)", password=True
+                        ).props("autocomplete=new-password").classes("w-full")
+                        account_password_repeat = ui.input(
+                            "Repeat new account password", password=True
+                        ).props("autocomplete=new-password").classes("w-full")
+                        ui.button(
+                            "Create enabled user", icon="person_add",
+                            on_click=create_account,
+                        ).props("outline no-caps")
+                    with ui.column().classes("panel gap-3"):
                         _panel_title("security", "Security Profiles")
                         ui.label(
                             "Security profile controls authentication and session lifetime; "
@@ -932,6 +1018,7 @@ def run() -> None:
         options = {"ssl_certfile": str(deployment_policy.certfile),
                    "ssl_keyfile": str(deployment_policy.keyfile)}
     ui.run(title="Climate Chamber — server simulation" if _HIL is None
+           else "Climate Chamber — PHYSICAL (isolated lab mode)" if _LAB is not None
            else "Climate Chamber — SUPERVISED PHYSICAL HIL",
            host=deployment_policy.bind_host, port=deployment_policy.port,
            reload=False, show=False, storage_secret=cookie_secret(),

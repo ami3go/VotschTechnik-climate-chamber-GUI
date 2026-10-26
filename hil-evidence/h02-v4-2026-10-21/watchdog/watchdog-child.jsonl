@@ -1,0 +1,15 @@
+{"at_utc": "2026-10-20T15:35:20.484289+00:00", "event": "CHILD_START", "monotonic": 547756.812650821, "pid": 2671287, "protocol": 1}
+{"at_utc": "2026-10-20T15:35:20.488393+00:00", "event": "CHILD_READY", "monotonic": 547756.816743655, "pid": 2671287}
+{"at_utc": "2026-10-20T15:35:20.529213+00:00", "event": "CONFIG_CONFIRMED", "monotonic": 547756.857558943, "pid": 2671287}
+{"at_utc": "2026-10-20T15:40:15.118013+00:00", "event": "FAULT", "monotonic": 548051.446382014, "pid": 2671287, "reason": "step budget moved backwards"}
+{"at_utc": "2026-10-20T15:48:01.829708+00:00", "event": "CHILD_START", "monotonic": 548518.158054125, "pid": 2678663, "protocol": 1}
+{"at_utc": "2026-10-20T15:48:01.832568+00:00", "event": "CHILD_READY", "monotonic": 548518.160909477, "pid": 2678663}
+{"at_utc": "2026-10-20T15:48:01.873610+00:00", "event": "CONFIG_CONFIRMED", "monotonic": 548518.201974115, "pid": 2678663}
+{"at_utc": "2026-10-20T15:57:07.315877+00:00", "event": "FAULT", "monotonic": 549063.644238843, "pid": 2678663, "reason": "controller generation changed"}
+{"at_utc": "2026-10-20T16:27:03.040363+00:00", "event": "CHILD_START", "monotonic": 1553.161219863, "pid": 40560, "protocol": 2}
+{"at_utc": "2026-10-20T16:27:03.043627+00:00", "event": "CHILD_READY", "monotonic": 1553.164479251, "pid": 40560}
+{"at_utc": "2026-10-20T16:27:03.085255+00:00", "event": "CONFIG_CONFIRMED", "monotonic": 1553.20612555, "pid": 40560}
+{"at_utc": "2026-10-20T17:37:59.060369+00:00", "event": "PARENT_LOST", "monotonic": 5809.181256535, "pid": 40560}
+{"at_utc": "2026-10-21T08:55:24.173655+00:00", "event": "CHILD_START", "monotonic": 1692.279903078, "pid": 17906, "protocol": 2}
+{"at_utc": "2026-10-21T08:55:24.176571+00:00", "event": "CHILD_READY", "monotonic": 1692.282807054, "pid": 17906}
+{"at_utc": "2026-10-21T08:55:24.217832+00:00", "event": "CONFIG_CONFIRMED", "monotonic": 1692.324086583, "pid": 17906}

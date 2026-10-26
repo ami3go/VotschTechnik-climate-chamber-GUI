@@ -49,6 +49,15 @@ class Actor:
 
 
 @dataclass(frozen=True)
+class UserAccount:
+    """Non-secret account metadata safe for the administrator UI."""
+
+    username: str
+    role: Role
+    enabled: bool
+
+
+@dataclass(frozen=True)
 class SessionTokens:
     session: str
     csrf: str
@@ -770,6 +779,24 @@ class SecurityStore(AccountOperations):
             raise
         finally:
             db.close()
+
+    def list_users(self, admin_session: str) -> tuple[UserAccount, ...]:
+        """Return non-secret account metadata to a current administrator."""
+        admin = self.authenticate(admin_session)
+        if admin.role is not Role.ADMIN:
+            self.audit(admin, "user.list", "DENIED")
+            raise AuthorizationError("Administrator required")
+        db = self._db()
+        try:
+            rows = db.execute(
+                "SELECT username,role,enabled FROM users "
+                "ORDER BY lower(username),id"
+            ).fetchall()
+        finally:
+            db.close()
+        return tuple(UserAccount(
+            username=row[0], role=Role(row[1]), enabled=bool(row[2])
+        ) for row in rows)
 
     def change_role(self, admin_session: str, csrf: str, username: str,
                     role: Role) -> None:

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "scope": "H02_SUPERVISED_PHYSICAL_PROFILE",
+  "site_method": "H02_FIRST_PHYSICAL_PROFILE_RUNBOOK.md",
+  "approval_reference": "H02-2026-10-21-01",
+  "chamber_id": "hil-votsch",
+  "serial_number": "58566207770010",
+  "profile_id": "41f4e0eb-a71e-4b93-99ea-7aa4fb80ddcd",
+  "profile_revision_sha256": "4afbdcdb9a5652dd9a7711bbf2608c63ce7172aca4b0e8ce4798c6ba9e9b5724",
+  "gui_commit": "74a816d9d9bbb7acbb901334ef457dbc416f7641",
+  "driver_commit": "9323e3701f3befedcc23b45170a851fd327f0bcc",
+  "operator": "admin",
+  "witness": "User0",
+  "specimen_restrictions": "No specimen restrictions declared for this supervised test",
+  "temperature_min_c": 20.0,
+  "temperature_max_c": 30.0,
+  "valid_from_utc": "2026-10-21T08:02:35Z",
+  "valid_until_utc": "2026-10-21T16:02:35Z",
+  "watchdog": {
+    "schema_version": 1,
+    "controller_command_timeout_s": 10.0,
+    "readback_deadline_s": 5.0,
+    "max_telemetry_gap_s": 5.0,
+    "profile_step_deadline_s": 3675.0,
+    "whole_profile_deadline_s": 18405.0,
+    "recorder_heartbeat_s": 5.0,
+    "process_heartbeat_s": 5.0,
+    "supervisor_heartbeat_s": 5.0,
+    "cleanup_timeout_s": 10.0,
+    "stop_verification_timeout_s": 30.0
+  }
+}

@@ -1,12 +1,12 @@
 # Migration readiness findings — canonical closure ledger
 
-**Current stage (2026-10-19):** [Stage 2 — pre-production hardening and controlled pilot preparation](STAGE_2_PILOT_READINESS_PLAN.md). H01 engineering verification has recorded physical 8/8 PASS on 2026-10-19 ([PR #60](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/60)); raw evidence is local and site acceptance signatures are not recorded. H02-B/C software is merged (#55/#56/#58) and H03-A typed driver/output software merged 2026-10-23 (GUI #85 `557aaa5`, driver #6 `d22dc05`), but physical H02/H03 acceptance, independent safety/security review, W02 offline release and R01 remain OPEN. The dated ledger below is a preserved historical 2026-10-18 snapshot and must not be mistaken for the current source revision.
+**Current stage (2026-10-23):** [Stage 2 — pre-production hardening and controlled pilot preparation](STAGE_2_PILOT_READINESS_PLAN.md). H01 engineering verification recorded physical 8/8 PASS on 2026-10-19. H02 run `60e8f4da-ea08-4806-9c5c-1c2124f89eb0` recorded an engineering physical-profile PASS on 2026-10-20 at GUI `a0ecf17`; H02 run `5be68792-77f7-471b-946c-20558f1e6502` repeated that PASS on 2026-10-21 at GUI `74a816d` under a fresh signed permit (`H02-2026-10-21-01`), preceded by an audited STOP reconciliation, with G07 evidence, clean independent-watchdog arm/disarm and final STOPPED readback. H02-B/C software is merged (#55/#56/#58); H03-A typed driver/output software merged (GUI #85 `557aaa5`, driver #6 `d22dc05`); isolated lab mode is on the current feature branch. Raw evidence is indexed under `hil-evidence/`. Physical H02/H03 acceptance, human site/independent signatures, operational security review, W02 offline release and R01 remain OPEN. The dated ledger below retains historical status where explicitly labelled and must not be mistaken for the current source revision.
 
 Original review baseline: GUI `9bbbc6d`, driver `67978f9` (2026-10-12). Status rechecked 2026-10-18 against GUI `9e6c892` (main after PRs #24–#52 merged, including G05 #28, G07-A #27, G08-full #29, W02 foundation #30, H01 #34/#36/#37, H02 #39, factory admin #49/#51 and CI de-flake #50) and driver `9323e3701f3befedcc23b45170a851fd327f0bcc`. **Original review SHAs are historical, not the current implementation.** `B`/`H`/`M` are the only valid IDs for the 2026-10-12 readiness review. Older unidentified `BLOCKER-01`–`HIGH-10` tags in previous plans have been retired rather than guessed into equivalence. Dated sections remain historical records; current consolidated status is in the [2026-10-18 ledger](#consolidated-blockerhigh-ledger--2026-10-18). See [P00 contracts](P00_DECISION_CONTRACTS.md). Main advanced 2026-10-18 to `36e25a1` with PRs #53–#58 (DOC-01 #53, T01 #54, H02-B #55/#56 `2f63d58`/`4f9eaf0`, execution plan #57 `c669f2956f2a5ddd3911f6de38b06dbb7b98b4ab`, H02-C watchdog #58 `36e25a1`).
 
 ## Consolidated BLOCKER/HIGH ledger — 2026-10-18
 
-Release-state definitions used here and in the reconciled reviews: **implemented** (code merged to `main`); **tested in simulation** (mock/simulator CI and browser tests on the merged head, no physical I/O); **tested on physical hardware** (executed against the real Vötsch VT 4011 under supervised HIL with recorded evidence — the 2026-10-15 sessions are the only such evidence and are not certification); **independently approved** (qualified external human review of the exact accepted revision — not obtained for any finding); **certified for release** (signed site acceptance, W02 packaging/data approval and R01 GO — not obtained).
+Release-state definitions used here and in the reconciled reviews: **implemented** (code merged to `main`); **tested in simulation** (mock/simulator CI and browser tests on the merged head, no physical I/O); **tested on physical hardware** (executed against the real Vötsch VT 4011 under supervised HIL with recorded evidence — including H01 and the 2026-10-20 H02 pass — but not certification); **independently approved** (qualified external human review of the exact accepted revision — not yet obtained); **certified for release** (signed site acceptance, W02 packaging/data approval and R01 GO — not obtained).
 
 | ID | Severity | Finding / risk | Owner | Dependencies | Verification evidence (current) | Signoff | Closure status |
 |---|---|---|---|---|---|---|---|
@@ -19,7 +19,7 @@ Release-state definitions used here and in the reconciled reviews: **implemented
 | H7 | HIGH | SQLite/filesystem crash gap | G07 | Windows volume testing | #27 merged with journal/recovery/fault tests (mock) | Independent durability review absent | Software merged, mock-tested; **Windows power-cut certification OPEN** |
 | H8 | HIGH | CI/dependency/driver pin insufficient | Release/W02 | Wheelhouse/hash lock | Direct pins + driver 0.3.0 commit pin + regenerated W02 closure (#85); W02 foundation #30 merged (connected CI only) | Independent supply-chain review absent | **OPEN — W02 certification gates** |
 | H01-OPEN | RELEASE | Site safety signoff, signed HIL acceptance, hardware profiles/gradients/long soak | Site + GUI | H02 plan | 2026-10-15 supervised sessions (8/8 hardware tests, soak PASS); 2026-10-19 re-run on main `5680adb` — `tests/hardware` **8/8 PASS** | Signatures absent | **OPEN** |
-| H02-WD | BLOCKER (physical) | Runtime composition and separate physical watchdog absent | GUI (H02-B/C) | Signed H02 permit | Preflight validator + test watchdog merged (#39 `1dae5ad`); supervised permit admission merged (#55 `2f63d58`, #56 `4f9eaf0`); independent watchdog merged (#58 `36e25a1`) | Independent safety review absent | Runtime composition + watchdog software merged; physical **OPEN** |
+| H02-WD | BLOCKER (approval) | Runtime composition/watchdog physical validation and independent acceptance | GUI (H02-B/C) + site | Signed H02 permit | Runtime/watchdog merged; 2026-10-20 physical run at `a0ecf17` **PASS**; 2026-10-21 physical run at `74a816d` under permit `H02-2026-10-21-01` **PASS** (5/5 steps, 200/200 GOOD samples, clean `RUN_ARM`/`RUN_DISARM`, audited pre-run STOP reconciliation), raw permit/journal/watchdog evidence retained | Independent safety/site acceptance signatures absent | Engineering physical test **PASS** (×2 revisions); independent approval **OPEN** |
 | G07-R items | HIGH (release) | Power-cut durability, measured-setpoint evidence, authenticated export anchoring, independent review | G07/G06/G08 | Windows volume + review | #27 merged ([merge-gate audit](G07_A_MERGE_GATE_AUDIT.md)) | None | **OPEN** as itemized in the audit |
 | G08 review | HIGH (review) | Off-device audit anchoring, backup rollback, NTFS ACLs, LAN penetration | Security | External reviewer | #29 merged; adversarial tests green at merge | Independent reviewer absent | Software merged; **independent approval OPEN** |
 | W02 | HIGH (release) | Air-gap wheel closure, reviewed SBOM/licenses, target verifier certification | Release/W02 | Signing station/QA | Foundation merged `0e9e9cd`; connected CI green | QA/site absent | **RELEASE NO-GO** ([W02 ledger](W02_OFFLINE_RELEASE.md)) |
@@ -95,7 +95,7 @@ All release, HIL, Windows offline and operational security gates remain mandator
 
 ## Active status/next-PR source of truth
 
-See [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md) for per-delivery-unit progress (2026-10-18: all software PRs through #52 merged; W02 certification pending), and [REMAINING_DEVELOPMENT_TASKS.md](REMAINING_DEVELOPMENT_TASKS.md) for the ordered closure program. **No site approval or HIL is recorded.** Hardware remains disabled. Status updates must distinguish phase-complete evidence from a merged foundation or demo.
+See [DEVELOPMENT_SEQUENCE.md](DEVELOPMENT_SEQUENCE.md) for per-delivery-unit progress and [STAGE_2_PILOT_READINESS_PLAN.md](STAGE_2_PILOT_READINESS_PLAN.md) for the current ordered closure program. H01 and H02 engineering HIL are recorded; **human site/independent approval is not**. Physical operation remains opt-in and permit-scoped, never generally enabled. Status updates must distinguish hardware-tested from independently approved or released.
 
 ## G08-min security checkpoint (implementation candidate)
 
@@ -223,6 +223,21 @@ Hardware blockers B1/B2/B3/B4 and H2/H4/H7/H8 must not be treated as closed by s
 
 **Update 2026-10-18 (later):** H02-B runtime composition merged (#55 `2f63d58`, #56 `4f9eaf0`, 16/16 checks green) and the current execution plan was published as PR #57 `c669f2956f2a5ddd3911f6de38b06dbb7b98b4ab`. The H02-C independent watchdog implementation (separate OS process, authenticated loopback IPC with mutually verified heartbeats, one prioritized G04 STOP request with bounded fresh STOP verification, restart latch and `scripts/h02_watchdog_reset.py` review path) merged as PR #58 `36e25a1`. Site permit signature and independent safety review remain ABSENT. **GO/NO-GO unchanged: NO-GO. Hardware test result: NOT RUN.**
 
+**Current update 2026-10-21:** A signed, revision-bound H02 permit authorized
+the short witnessed profile run on 2026-10-20. After two fail-closed attempts
+identified and corrected watchdog defects, attempt 3 completed all five steps,
+disarmed the independent watchdog cleanly and ended `GOOD · STOPPED` without a
+restart latch. The checksum-verified evidence is under
+[`hil-evidence/h02-v3-2026-10-20/`](../hil-evidence/h02-v3-2026-10-20/README.md).
+The same result was repeated on 2026-10-21 under a fresh permit
+(`H02-2026-10-21-01`) at GUI `74a816d`, preceded by an audited STOP
+reconciliation of the uncertain durable lease: run
+`5be68792-77f7-471b-946c-20558f1e6502`, 5/5 steps, 200/200 GOOD samples, clean
+`RUN_ARM`/`RUN_DISARM`, no latch, final `GOOD · STOPPED`. That evidence is under
+[`hil-evidence/h02-v4-2026-10-21/`](../hil-evidence/h02-v4-2026-10-21/README.md).
+This closes the engineering physical-execution evidence gap for the tested
+revisions only. The prepared site/independent acceptance records are unsigned,
+so pilot approval and R01 remain **NO-GO**.
 ## Stage 2 package status — 2026-10-21
 
 Stage 2 tracker: [STAGE_2_PILOT_READINESS_PLAN.md](STAGE_2_PILOT_READINESS_PLAN.md). This
@@ -238,7 +253,7 @@ no physical, HIL or site-signature evidence.
 | S2-04 Installation/upgrade/recovery | **NOT STARTED** | — | Clean air-gapped Win10/11 acceptance |
 | S2-05 G07 evidence and operations | **PARTIAL** — journal readers merged (#74) | GUI PR [#74](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/74) | Authorized, SHA-verified exports; corruption/ENOSPC recovery |
 | S2-06 G08 operational security acceptance | **NOT STARTED** | — | Independent deployment review |
-| S2-07 H02 physical-profile acceptance | **NOT RUN — NO-GO** | No physical H02 result in the repository | New, separately signed H02 permit; witnessed run |
+| S2-07 H02 physical-profile acceptance | **PARTIAL — engineering physical-profile PASS evidenced; independent/site acceptance OPEN** | Two witnessed physical runs reached `COMPLETED`: `60e8f4da-ea08-4806-9c5c-1c2124f89eb0` (2026-10-20, GUI `a0ecf17`) and `5be68792-77f7-471b-946c-20558f1e6502` (2026-10-21, GUI `74a816d`, permit `H02-2026-10-21-01`), each with a signed revision-bound permit, clean watchdog arm/disarm and final `GOOD · STOPPED` readback; evidence under [`hil-evidence/`](../hil-evidence/) | Signed site/independent acceptance record (prepared, unsigned) for each run; a new signed permit for any further run |
 | S2-08 Pilot usability and supervised soak | **NOT STARTED** | — | Depends on S2-03/04/05/06/07 |
 | S2-09 R01 release candidate decision | **NO-GO** | — | All applicable packages |
 
@@ -316,4 +331,10 @@ chamber was connected, no physical command was issued, and no device
 authorization, H02 permit, W02 release, G08 operational acceptance or Stage 3
 pilot use is granted or implied by this delivery.
 
-**Update 2026-10-23 (H03-A):** driver PR #6 merged as `d22dc05687cac4c5cdef440fb52b05965ed3d146` with typed/validated numbered-output APIs (`number_of_digital_outputs`, `digital_output_name`, `read_digital_output`, `set_digital_output`) and read-only gradient range metadata; mocked transport tests only. The GUI adapter (PR #85 `557aaa5`) replaces raw manufacturer query strings with this API, enumerates device-reported outputs at HIL connect (never assumes 1–64) and keeps programmable ramp setters disabled as `UnsupportedCapability`. The W02 closure/SBOM (`w02-closure-manifest.json`) was regenerated for driver 0.3.0 and the current runtime pins in the same PR. Physical capability/unit verification and H03-B restoration policy remain OPEN. **GO/NO-GO unchanged: NO-GO. Hardware test result: NOT RUN.**
+**Boundary of the H02 physical evidence:** the two runs above are supervised
+engineering passes under site-signed permits, exercised with a real operator and
+witness present and the independent watchdog armed. They are **not** independent
+or site acceptance, not a W02 release and not R01 authorization; the prepared
+acceptance records remain unsigned.
+
+**Update 2026-10-23 (H03-A):** driver PR #6 merged as `d22dc05687cac4c5cdef440fb52b05965ed3d146` with typed/validated numbered-output APIs (`number_of_digital_outputs`, `digital_output_name`, `read_digital_output`, `set_digital_output`) and read-only gradient range metadata; mocked transport tests only. The GUI adapter (PR #85 `557aaa5`) replaces raw manufacturer query strings with this API, enumerates device-reported outputs at HIL connect (never assumes 1–64) and keeps programmable ramp setters disabled as `UnsupportedCapability` unless isolated-lab gradient writes are explicitly enabled. The W02 closure/SBOM (`w02-closure-manifest.json`) was regenerated for driver 0.3.0 and the current runtime pins in the same PR. Physical capability/unit verification and H03-B restoration policy remain OPEN. **GO/NO-GO unchanged: NO-GO. Hardware test result: NOT RUN.**

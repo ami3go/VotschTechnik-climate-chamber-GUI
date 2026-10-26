@@ -65,7 +65,8 @@ def check_assets(entries: dict[str, str]) -> None:
 def write_supply_chain_reports(bundle: Path, *, installed: list[dict[str, str]],
                                version: str, include_driver: bool,
                                web_sha256: str, driver_sha256: str,
-                               closure: dict | None = None) -> None:
+                               closure: dict | None = None,
+                               variant: str = "w01") -> None:
     """Emit deterministic CycloneDX, license, and build reports.
 
     With a reviewed closure (``closure``), the reports describe the **runtime
@@ -122,7 +123,12 @@ def write_supply_chain_reports(bundle: Path, *, installed: list[dict[str, str]],
         report.writerow(("distribution", "version", "declared_license", "approval"))
         report.writerows(license_rows)
     provenance = {
-        "schema": 1, "build_kind": "W01-A mock-only connected-host feasibility",
+        "schema": 1,
+        "variant": variant,
+        "build_kind": (
+            "Pre-production supervised-capable Windows x64"
+            if variant == "preproduction" else
+            "W01-A mock-only connected-host feasibility"),
         "release_version": version, "platform": "Windows-x64",
         "python": sys.version.split()[0], "include_external_driver": include_driver,
         "requirements_web_sha256": web_sha256,
@@ -139,7 +145,8 @@ def write_supply_chain_reports(bundle: Path, *, installed: list[dict[str, str]],
 def write_manifest(bundle: Path, *, version: str, include_driver: bool,
                    requirements_web: Path, requirements_driver: Path,
                    closure_manifest: Path | None = None,
-                   closure_lock: Path | None = None) -> None:
+                   closure_lock: Path | None = None,
+                   variant: str = "w01") -> None:
     installed = sorted(
         ({"name": dist.metadata.get("Name", ""), "version": dist.version,
           "license": dist.metadata.get("License", "")}
@@ -159,7 +166,7 @@ def write_manifest(bundle: Path, *, version: str, include_driver: bool,
     write_supply_chain_reports(bundle, installed=installed, version=version,
                                include_driver=include_driver,
                                web_sha256=web_hash, driver_sha256=driver_hash,
-                               closure=closure)
+                               closure=closure, variant=variant)
     entries = files_under(bundle)
     check_assets(entries)
     names = {item["name"].lower().replace("_", "-") for item in installed}
@@ -170,7 +177,11 @@ def write_manifest(bundle: Path, *, version: str, include_driver: bool,
     manifest = {
         "schema": 1,
         "version": version,
-        "distribution": "W01-A SIMULATION ONLY - NOT HARDWARE CERTIFIED",
+        "variant": variant,
+        "distribution": (
+            "PRE-PRODUCTION - SUPERVISED PHYSICAL CAPABLE - NOT CERTIFIED"
+            if variant == "preproduction" else
+            "W01-A SIMULATION ONLY - NOT HARDWARE CERTIFIED"),
         "architecture": "Windows-x64",
         "python": sys.version.split()[0],
         "driver_included": include_driver,
@@ -218,6 +229,7 @@ def main() -> int:
     parser.add_argument("--create", action="store_true")
     parser.add_argument("--verify", action="store_true")
     parser.add_argument("--version", default="0.0.0")
+    parser.add_argument("--variant", choices=("w01", "preproduction"), default="w01")
     parser.add_argument("--include-driver", action="store_true")
     parser.add_argument("--requirements-web", type=Path)
     parser.add_argument("--requirements-hardware", type=Path)
@@ -237,7 +249,8 @@ def main() -> int:
                        requirements_web=args.requirements_web,
                        requirements_driver=args.requirements_hardware,
                        closure_manifest=args.closure_manifest,
-                       closure_lock=args.closure_lock)
+                       closure_lock=args.closure_lock,
+                       variant=args.variant)
     elif args.verify:
         verify_manifest(args.bundle)
     else:

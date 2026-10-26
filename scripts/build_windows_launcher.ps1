@@ -12,6 +12,10 @@
   Display/build version recorded in the manifest (not Authenticode signing).
 .PARAMETER Python
   Native Windows Python executable used to construct a clean build venv.
+.PARAMETER Entry
+  PyInstaller entry script (default: the W01 demo launcher).
+.PARAMETER Variant
+  Recorded build variant (w01 or preproduction) in launcher-build.json.
 #>
 [CmdletBinding()]
 param(
@@ -19,7 +23,9 @@ param(
     [string]$OutputDir = "dist/windows-launcher",
     [ValidateSet("Portable")][string]$Configuration = "Portable",
     [ValidatePattern('^[0-9A-Za-z][0-9A-Za-z.+-]{0,48}$')][string]$Version = "0.1.0-w01",
-    [string]$Python = "python"
+    [string]$Python = "python",
+    [string]$Entry = "scripts/windows_launcher.py",
+    [ValidateSet("w01", "preproduction")][string]$Variant = "w01"
 )
 $ErrorActionPreference = "Stop"
 if ($env:OS -ne "Windows_NT") { throw "Build launcher natively on Windows." }
@@ -46,7 +52,7 @@ try {
         "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--windowed",
         "--name", "ClimateChamberLauncher", "--paths", $repo,
         "--distpath", $output, "--workpath", (Join-Path $work "build"),
-        "--specpath", $work, (Join-Path $repo "scripts/windows_launcher.py")
+        "--specpath", $work, (Join-Path $repo $Entry)
     )
     $exe = Join-Path $output "ClimateChamberLauncher.exe"
     if (-not (Test-Path $exe)) { throw "Launcher executable missing: $exe" }
@@ -54,7 +60,12 @@ try {
         schema = 1
         version = $Version
         configuration = $Configuration
-        kind = "W01-A standalone browser launcher (server required)"
+        variant = $Variant
+        kind = if ($Variant -eq "preproduction") {
+            "Pre-production standalone browser launcher (full server required)"
+        } else {
+            "W01-A standalone browser launcher (server required)"
+        }
         sha256 = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLowerInvariant()
     }
     $details | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 (Join-Path $output "launcher-build.json")

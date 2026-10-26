@@ -591,6 +591,38 @@ class RunnerTests(unittest.TestCase):
         self.terminal(RunState.CANCELLED)
         self.assertEqual(self.backend._target, 25)
 
+    def test_supervision_budget_resets_only_when_step_index_advances(self):
+        second = replace(step(target="26"), step=2)
+        self.prepare(profile=ParsedProfile((step(), second), name="two steps"))
+
+        prepared = self.runner.supervision_state()
+        self.assertEqual(prepared["step_index"], 0)
+        self.assertGreater(prepared["step_remaining_s"], 0)
+
+        self.runner.advance()  # dispatch step 1 without extending its budget
+        dispatched_first = self.runner.supervision_state()
+        self.assertEqual(dispatched_first["step_index"], 0)
+        self.assertLessEqual(
+            dispatched_first["step_remaining_s"], prepared["step_remaining_s"],
+        )
+
+        self.runner.advance()  # complete step 1 and allocate step 2 atomically
+        started_second = self.runner.supervision_state()
+        self.assertEqual(started_second["step_index"], 1)
+        self.assertGreater(started_second["step_remaining_s"], 0)
+
+        self.runner.advance()  # dispatch step 2 without extending its budget
+        dispatched_second = self.runner.supervision_state()
+        self.assertEqual(dispatched_second["step_index"], 1)
+        self.assertLessEqual(
+            dispatched_second["step_remaining_s"], started_second["step_remaining_s"],
+        )
+        self.runner.cancel("unit-chamber")
+        stopping = self.runner.supervision_state()
+        self.assertTrue(stopping["stopping"])
+        self.assertFalse(stopping["terminal"])
+        self.terminal(RunState.CANCELLED)
+
     def test_cancel_cannot_overtake_durable_prepared_snapshot(self):
         entered = threading.Event()
         release = threading.Event()
@@ -717,3 +749,79 @@ class AlternateFixtureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class RampRunnerTests(unittest.TestCase):
+    def setUp(self):
+        tmp = TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.clock = VirtualClock()
+        self.backend = DistinctFake("unit-chamber",
+                                    ramp_range_c_per_min=(0.5, 10.0))
+        self.sink = CaptureSink()
+        self.manager = ChamberManager(
+            [ChamberConfig("unit-chamber", "fake")],
+            backend_factory=lambda config, **kwargs: self.backend,
+            lease_directory=self.root / "lease",
+        )
+        self.manager.connect("unit-chamber")
+        self.addCleanup(self.manager.disconnect, "unit-chamber")
+        self.store = ProfileStore(self.root / "profiles.sqlite")
+        self.runner = ProfileRunner(
+            self.manager, self.store, authorize=lambda action, chamber: "test-operator",
+            sink=self.sink, clock=self.clock,
+        )
+        self.addCleanup(self.runner.close)
+
+    def test_simulated_gradient_profile_dispatches_and_completes(self):
+        header = self.store.create_profile(
+            "unit-chamber", ParsedProfile((step(target="30", up="5", reach="600"),)),
+        )
+        self.runner.start("unit-chamber", header.profile_id, revision=1)
+        self.runner.advance()
+        self.assertEqual(self.backend._gradient_up, 5.0)
+        self.assertIn("GRADIENT_INTENT", [event.kind for event in self.sink.events])
+        self.backend._measured = 30
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if self.runner.advance() in (RunState.COMPLETED, RunState.FAULT,
+                                         RunState.UNKNOWN):
+                break
+            time.sleep(0.005)
+        self.assertEqual(self.runner.state, RunState.COMPLETED, self.runner.reason)
+
+    def test_gradient_readback_mismatch_fails_closed(self):
+        token = self.manager.claim_operator("unit-chamber", "test-operator")
+        self.addCleanup(self.manager.release_operator, "unit-chamber", token)
+        self.backend.set_ramp_up = lambda rate: None
+        with self.assertRaises(ChamberSafetyError):
+            self.manager.set_ramp_up("unit-chamber", 2.0, operator_token=token)
+
+    def test_gradient_outside_declared_range_is_rejected(self):
+        header = self.store.create_profile(
+            "unit-chamber", ParsedProfile((step(target="30", up="20", reach="600"),)),
+        )
+        with self.assertRaises(ValueError):
+            self.runner.start("unit-chamber", header.profile_id, revision=1)
+        self.assertFalse(self.backend._running)
+        self.assertIsNone(self.backend._gradient_up)
+
+
+class SimulatedRampRegistryTests(unittest.TestCase):
+    def test_simulated_gradients_are_opt_in(self):
+        from unittest import mock
+        from chamber_web.adapters.registry import make_backend
+
+        with mock.patch.dict("os.environ", {}, clear=False):
+            import os
+            os.environ.pop("CHAMBER_SIM_RAMP_C_PER_MIN", None)
+            default = make_backend(ChamberConfig("sim", "fake"))
+            self.assertFalse(default.capabilities().supports_ramp_up)
+            os.environ["CHAMBER_SIM_RAMP_C_PER_MIN"] = "0.1,10"
+            ramp = make_backend(ChamberConfig("sim", "fake"))
+            caps = ramp.capabilities()
+            self.assertTrue(caps.supports_ramp_up and caps.supports_ramp_down)
+            self.assertEqual(caps.ramp_up_range_c_per_min, (0.1, 10.0))
+            os.environ["CHAMBER_SIM_RAMP_C_PER_MIN"] = "10,0.1"
+            with self.assertRaises(ChamberSafetyError):
+                make_backend(ChamberConfig("sim", "fake"))

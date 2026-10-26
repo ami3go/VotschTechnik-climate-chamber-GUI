@@ -75,6 +75,9 @@ def watchdog_main(address, authkey: bytes, config: dict,
     observed_step: int | None = None
     step_remaining: float | None = None
     whole_remaining: float | None = None
+    observed_run_id: str | None = None
+    prior_run_stopped = True
+    stop_started: float | None = None
     try:
         conn.send({"type": wp.READY, "protocol": wp.PROTOCOL_VERSION,
                    "pid": os.getpid()})
@@ -119,15 +122,50 @@ def watchdog_main(address, authkey: bytes, config: dict,
                 fault = _heartbeat_fault(message, expected_seq)
                 expected_seq += 1
                 if fault is None:
-                    fault = _run_fault(
-                        message, step_deadline_s, whole_deadline_s,
-                        telemetry_gap_s, observed_step, step_remaining,
-                        whole_remaining,
-                    )
-                    if fault is None:
-                        observed_step = message.get("step_index")
-                        step_remaining = message.get("step_remaining_s")
-                        whole_remaining = message.get("whole_remaining_s")
+                    state = message.get("state")
+                    run_id = message.get("run_id")
+                    if state == wp.STATE_IDLE:
+                        observed_run_id = None
+                        prior_run_stopped = True
+                        stop_started = None
+                        observed_step = None
+                        step_remaining = None
+                        whole_remaining = None
+                        sent_stop = False
+                    elif not isinstance(run_id, str) or not run_id.strip():
+                        fault = "invalid run binding"
+                    elif run_id != observed_run_id:
+                        if observed_run_id is not None and not prior_run_stopped:
+                            fault = "run binding changed before verified STOP"
+                        else:
+                            observed_run_id = run_id
+                            prior_run_stopped = False
+                            stop_started = None
+                            observed_step = None
+                            step_remaining = None
+                            whole_remaining = None
+                            sent_stop = False
+                    if fault is None and state == wp.STATE_ARMED:
+                        stop_started = None
+                        fault = _run_fault(
+                            message, step_deadline_s, whole_deadline_s,
+                            telemetry_gap_s, observed_step, step_remaining,
+                            whole_remaining,
+                        )
+                        if fault is None:
+                            observed_step = message.get("step_index")
+                            step_remaining = message.get("step_remaining_s")
+                            whole_remaining = message.get("whole_remaining_s")
+                    elif fault is None and state == wp.STATE_STOPPING:
+                        if stop_started is None:
+                            stop_started = time.monotonic()
+                        fault = _stopping_fault(
+                            message, telemetry_gap_s,
+                            float(limits["stop_verification_timeout_s"]),
+                            time.monotonic() - stop_started,
+                        )
+                        if fault is None and message.get("stop_verified") is True:
+                            prior_run_stopped = True
                 conn.send({"type": wp.ACK, "seq": message.get("seq")})
                 if fault is not None and not sent_stop:
                     sent_stop = True
@@ -144,7 +182,7 @@ def _heartbeat_fault(message: dict, expected_seq: int) -> str | None:
     if message.get("seq") != expected_seq:
         return "heartbeat sequence gap"
     state = message.get("state")
-    if state not in (wp.STATE_IDLE, wp.STATE_ARMED):
+    if state not in (wp.STATE_IDLE, wp.STATE_ARMED, wp.STATE_STOPPING):
         return "unknown supervision state"
     return None
 
@@ -192,6 +230,37 @@ def _run_fault(message: dict, step_deadline_s: float, whole_deadline_s: float,
         if (previous_step_remaining is not None and
                 remaining > previous_step_remaining + 0.5):
             return "step budget moved backwards"
+    return None
+
+
+def _stopping_fault(message: dict, telemetry_gap_s: float,
+                    stop_deadline_s: float, elapsed_s: float) -> str | None:
+    """Validate the one expected G04 STOP fence and its bounded readback.
+
+    G04 increments the controller generation synchronously when it persists a
+    STOP intent. That exact one-step fence is expected while STOP is pending;
+    any other generation remains a fault. The child stays armed until the
+    parent reports a fresh authoritative GOOD/STOPPED readback.
+    """
+    generation = message.get("generation")
+    expected = message.get("expected_generation")
+    if (isinstance(generation, bool) or not isinstance(generation, int) or
+            isinstance(expected, bool) or not isinstance(expected, int) or
+            generation != expected + 1):
+        return "unexpected controller generation during STOP"
+    if message.get("recorder_ok") is not True:
+        return "run recorder unhealthy during STOP"
+    if message.get("temp_ok") is not True:
+        return "measured temperature outside the approved envelope during STOP"
+    age = message.get("telemetry_age_s")
+    if (isinstance(age, bool) or not isinstance(age, (int, float)) or
+            not 0 <= age <= telemetry_gap_s):
+        return "stale telemetry during STOP"
+    verified = message.get("stop_verified")
+    if verified not in (True, False):
+        return "invalid STOP verification state"
+    if not verified and elapsed_s > stop_deadline_s:
+        return "STOP verification deadline exceeded"
     return None
 
 

@@ -114,6 +114,10 @@ def test_template_has_only_placeholders_for_human_decisions(tmp_path):
 class TestSettingsIntegration:
     @pytest.fixture
     def setup(self, tmp_path, keys, monkeypatch):
+        monkeypatch.setattr(
+            "chamber_web.hil.chamber_settings.detect_gui_commit", lambda: GUI)
+        monkeypatch.setattr(
+            "chamber_web.hil.chamber_settings.detect_driver_commit", lambda: DRIVER)
         private, public = keys
         code, permit = _sign(tmp_path, private, _spec(), monkeypatch=monkeypatch)
         assert code == 0
@@ -166,6 +170,15 @@ class TestSettingsIntegration:
         wrong = (tmp_path / "other.pub").read_text().strip()
         with pytest.raises(ChamberSafetyError):
             save(replace(base, h02_trusted_key=wrong))
+
+    def test_unverified_or_dirty_installed_revision_is_refused(
+            self, setup, monkeypatch):
+        base, save, path = setup
+        monkeypatch.setattr(
+            "chamber_web.hil.chamber_settings.detect_gui_commit", lambda: "")
+        with pytest.raises(ChamberSafetyError, match="unknown/dirty"):
+            save(base)
+        assert not path.exists()
 
     def test_no_permit_leaves_profile_runs_disabled(self, setup):
         base, save, path = setup

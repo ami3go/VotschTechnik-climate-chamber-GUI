@@ -5,7 +5,7 @@
 #       --target <target-dir> -r requirements-w02-runtime.lock
 #
 # target: win_amd64-cp312  python: cp312
-# requirements sha256: e41dd1afd032f89c25a086e4e9b15be6c806c601a7882814b1750bde95bb18f4
+# requirements sha256: 433f9ff9c8d977124b9b5a90bc1e8eefa406c22fee6e21b8f706b360e5da4fab
 # Every entry is a wheel pinned by SHA-256. Build on the target platform.
 
 aiofiles==25.1.0 \

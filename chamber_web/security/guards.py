@@ -297,6 +297,27 @@ class AuthorizedChamber:
                 actor, "chamber.stop.auto_rearm", "SUCCESS", chamber_id)
             return True
 
+    def admin_forget_manual_lease(self, session: str | None, csrf: str | None,
+                                  chamber_id: str) -> None:
+        """ADMIN-only registry reset before an explicit lab profile override.
+
+        The controller lease itself is invalidated by ``manager.admin_override``.
+        This only drops the server-side browser token registry so manual
+        control cannot keep using a stale owner token after the override.
+        """
+        actor = self.authorize(session, csrf, Permission.SETTINGS,
+                               chamber_id=chamber_id)
+        if actor.role is not Role.ADMIN:
+            raise AuthorizationError("ADMIN role required for ownership override")
+        with self._token_lock:
+            had_owner = bool(self._token_owner)
+            self._token_owner.clear()
+            self._token_names.clear()
+            if had_owner:
+                self._token_revision += 1
+        self._security.audit(
+            actor, "chamber.admin_override.owner", "SUCCESS", chamber_id)
+
     def ownership_view(self, session: str | None, chamber_id: str) -> tuple[str | None, bool]:
         """Read-only, no owner tokens leave this server-owned facade."""
         actor = self._security.authenticate(session, touch=False)

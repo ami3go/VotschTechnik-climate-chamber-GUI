@@ -83,7 +83,7 @@ async def test_read_only_routes_and_repeat_browsers(create_user: Callable[[], Us
     user.find(kind=ui.button, content="Search").click()
     await user.should_see("No recorded runs match this search.", retries=30)
     other = create_user()
-    await other.open("/logs")
+    await other.open("/login")
     await other.should_see("Sign in", retries=30)
     await user.open("/logs")
     user.find("Filter recorded messages").type("__no_such_event__")

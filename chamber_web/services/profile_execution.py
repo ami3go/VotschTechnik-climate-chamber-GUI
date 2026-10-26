@@ -12,27 +12,38 @@ revisions, supervisor liveness). Admission runs the full signed-permit
 preflight against fresh G04 identity/health before any runner exists, and the
 runner revalidates the permit before every dispatch tick; without a
 supervised runtime, physical profile starts stay disabled.
+
+Isolated-lab mode (``chamber_web.hil.lab_mode``) is the alternative physical
+admission for a closed lab network: G08 authorization, G04 verified STOPPED
+state, the run journal and every G06 runtime check still apply, but no signed
+permit, witness, STOP-procedure confirmation or watchdog process is needed.
 """
 from __future__ import annotations
 
 import asyncio
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Callable
 
-from chamber_web.domain.chamber import ChamberSafetyError, ReadingQuality
+from chamber_web.domain.chamber import ChamberSafetyError, OperationState, ReadingQuality
 from chamber_web.execution.profile_runner import (
     TERMINAL, Clock, EventSink, ExecutionSnapshot, ProfileRunner, RunParameters, RunState,
     SupervisedRun, step_budget,
 )
+from chamber_web.hil.lab_mode import LAB_RUN_BINDING, LabMode
 from chamber_web.hil.profile_admission import AdmissionDenied, preflight_physical_profile
 from chamber_web.hil.supervised_profile import SupervisedProfileRuntime
 from chamber_web.persistence.profiles import ProfileStore
 from chamber_web.security.auth import Role, SecurityStore
 from chamber_web.security.guards import AuthorizedChamber, Permission, require_permission
 from chamber_web.services.chamber_manager import ChamberManager
+
+# One explicit physical STOP-procedure acknowledgement covers one operator
+# shift; a new server start or a role/credential change always requires a new
+# acknowledgement. It is process-local and never persisted or browser-supplied.
+STOP_CONFIRMATION_TTL_S = 12 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -69,6 +80,9 @@ class RunView:
     can_resume: bool
     events: tuple[RunEventRow, ...]
     supervised: bool = False
+    stop_procedure_confirmed: bool = False
+    lab: bool = False
+    admin_override: bool = False
 
 
 class ProfileExecutionService:
@@ -79,14 +93,18 @@ class ProfileExecutionService:
                  clock: Clock | None = None,
                  start_blocker: Callable[[], str] | None = None,
                  supervised: SupervisedProfileRuntime | None = None,
-                 manual_guard: AuthorizedChamber | None = None):
+                 manual_guard: AuthorizedChamber | None = None,
+                 lab: LabMode | None = None):
         if chamber_id not in manager.configured_ids():
             raise ChamberSafetyError("Profile execution chamber is not configured")
         if type(simulation) is not bool:
             raise ValueError("Trusted simulation mode must be boolean")
         if supervised is not None and simulation:
             raise ValueError("Supervised physical configuration requires physical mode")
+        if lab is not None and (simulation or supervised is not None):
+            raise ValueError("Lab mode requires physical mode without an H02 permit")
         self._supervised = supervised
+        self._lab = lab
         self._manager = manager
         self._store = store
         self._security = security
@@ -98,6 +116,9 @@ class ProfileExecutionService:
         self._manual_guard = manual_guard
         self._sink_factory = sink_factory
         self._parameters = parameters or RunParameters()
+        if lab is not None:
+            self._parameters = replace(
+                self._parameters, measured_margin_c=lab.measured_margin_c)
         self._clock = clock
         self._start_blocker = start_blocker
         self._lock = threading.RLock()
@@ -105,6 +126,10 @@ class ProfileExecutionService:
         self._runner: ProfileRunner | None = None
         self._started_at: float | None = None
         self._task: asyncio.Task | None = None
+        # Explicit operator acknowledgement of the physical STOP procedure,
+        # per authenticated username and bounded to one shift. This is a live
+        # admission input, never derived from the launch-time HIL ack.
+        self._stop_confirmed: dict[str, float] = {}
 
     @property
     def chamber_id(self) -> str:
@@ -150,11 +175,51 @@ class ProfileExecutionService:
         except Exception:
             return "Run journal unavailable"
 
+    def stop_procedure_confirmed(self, username: str) -> bool:
+        """True only for a live, unexpired explicit acknowledgement."""
+        if self._simulation or self._supervised is None or not username:
+            return False
+        with self._lock:
+            expiry = self._stop_confirmed.get(username)
+            if expiry is None:
+                return False
+            if time.monotonic() >= expiry:
+                self._stop_confirmed.pop(username, None)
+                return False
+            return True
+
+    def confirm_physical_stop_procedure(self, session: str | None,
+                                        csrf: str | None) -> None:
+        """Record that this operator has read and can perform the STOP procedure.
+
+        This is a separate, audited human act: the launch-time HIL
+        acknowledgement only admits physical I/O, it does not prove that the
+        person at the chamber knows how to stop it. Web STOP is not an
+        emergency stop; the chamber's own controls remain primary.
+        """
+        actor = self._guard.authorize(
+            session, csrf, Permission.PROFILE_RUN, chamber_id=self._chamber_id)
+        if self._simulation or self._supervised is None:
+            raise ChamberSafetyError(
+                "Physical STOP procedure confirmation applies only to a "
+                "supervised physical deployment")
+        with self._lock:
+            self._stop_confirmed[actor.username] = (
+                time.monotonic() + STOP_CONFIRMATION_TTL_S)
+        self._security.audit(
+            actor, "profile.stop_procedure", "SUCCESS", self._chamber_id)
+
     def _admit_supervised(self, actor, profile_id: str,
                           revision: int) -> SupervisedRun:
         """Fail-closed H02 admission against the server-owned signed permit."""
         supervised = self._supervised
         assert supervised is not None
+        if not self.stop_procedure_confirmed(actor.username):
+            self._security.audit(
+                actor, "profile.stop_procedure", "DENIED", self._chamber_id)
+            raise AdmissionDenied(
+                "Confirm the physical STOP procedure before starting a "
+                "supervised physical run")
         if supervised.supervision is None:
             raise AdmissionDenied(
                 "H02-C independent supervisor is not configured; "
@@ -182,6 +247,7 @@ class ProfileExecutionService:
             verified_stopped=health.state == "VERIFIED_STOPPED",
             no_stop_latch=not health.stop_latched,
             recording_healthy=not self._blocked_reason(),
+            physical_stop_confirmed=self.stop_procedure_confirmed(actor.username),
         )
         permit_sha = preflight_physical_profile(
             supervised.permit.envelope,
@@ -202,6 +268,16 @@ class ProfileExecutionService:
             supervisor_alive=supervised.supervision.alive,
         )
 
+    def _admit_lab(self, actor) -> SupervisedRun:
+        """Isolated-lab physical admission: the G08 actor is the run operator."""
+        assert self._lab is not None
+        self._security.audit(actor, "profile.lab_admission", "SUCCESS", self._chamber_id)
+        return SupervisedRun(
+            permit_sha256=LAB_RUN_BINDING, operator=actor.username,
+            revalidate=lambda: None, allow_gradients=self._lab.gradients,
+            admin_override=actor.role is Role.ADMIN,
+        )
+
     def _supervision_state(self, runner: ProfileRunner) -> dict:
         """Live heartbeat snapshot for the H02-C watchdog (server-derived)."""
         supervised = self._supervised
@@ -220,6 +296,13 @@ class ProfileExecutionService:
             "telemetry_age_s": age,
             "owner_ok": bool(health.connected and not health.stop_latched),
             "recorder_ok": not self._blocked_reason(),
+            "stop_verified": bool(
+                health.state == "VERIFIED_STOPPED" and
+                status.quality is ReadingQuality.GOOD and
+                status.operation_state is OperationState.STOPPED and
+                age is not None and
+                0 <= age <= supervised.permit.watchdog.readback_deadline_s
+            ),
             "temp_ok": bool(
                 status.quality is ReadingQuality.GOOD and measured is not None and
                 float(envelope["temperature_min_c"]) <= measured <=
@@ -246,6 +329,20 @@ class ProfileExecutionService:
             runner.advance()
             time.sleep(0.02)
 
+    def _lab_restart_recoverable(self, health) -> bool:
+        """Lab mode may clear a restart fence on an explicit Run Profile.
+
+        A previous process leaves the durable lease uncertain, so a freshly
+        connected chamber is reported as UNKNOWN with the STOP fence latched.
+        Repeated physical restarts must not require a separate Admin click.
+        Recovery is still conditional on G04's independent fresh, GOOD,
+        STOPPED read; a FAULT, RUNNING or disconnected chamber never qualifies.
+        """
+        return (self._lab is not None and
+                health.connected and
+                health.state == "UNKNOWN" and
+                health.stop_latched)
+
     def _prepare_operator_profile_start(
         self, session: str | None, csrf: str | None, actor,
     ) -> None:
@@ -256,6 +353,28 @@ class ProfileExecutionService:
         An unverified/FAULT stop is never cleared; all admission checks in
         G06 and the optional H02 signed preflight still apply separately.
         """
+        admin_override = (
+            self._lab is not None and actor.role is Role.ADMIN)
+        if admin_override:
+            # Explicit ADMIN-only lab override: discard any manual owner and
+            # clear the controller STOP/restart fence without a fresh STOPPED
+            # precondition. Telemetry, identity and mid-run STOP supervision
+            # remain enforced by G04/G06.
+            self._security.audit(
+                actor, "profile.admin_override", "INTENT", self._chamber_id)
+            try:
+                if self._manual_guard is not None:
+                    self._manual_guard.admin_forget_manual_lease(
+                        session, csrf, self._chamber_id)
+                self._manager.admin_override(self._chamber_id)
+            except BaseException as exc:
+                self._security.audit(
+                    actor, "profile.admin_override", "FAILED",
+                    self._chamber_id, type(exc).__name__)
+                raise
+            self._security.audit(
+                actor, "profile.admin_override", "SUCCESS", self._chamber_id)
+            return
         guard = self._manual_guard
         if guard is not None:
             owner, mine = guard.ownership_view(session, self._chamber_id)
@@ -263,7 +382,9 @@ class ProfileExecutionService:
                 raise ChamberSafetyError(
                     "Chamber control is held by another operator")
         health = self._manager.health(self._chamber_id)
-        if (not health.connected or health.state != "VERIFIED_STOPPED"):
+        restart_recovery = self._lab_restart_recoverable(health)
+        if not health.connected or (
+                health.state != "VERIFIED_STOPPED" and not restart_recovery):
             raise ChamberSafetyError(
                 "Stop the chamber and verify STOPPED status before running a profile")
         if health.stop_latched:
@@ -280,6 +401,10 @@ class ProfileExecutionService:
                 raise
             self._security.audit(
                 actor, "profile.stop_rearm", "SUCCESS", self._chamber_id)
+            health = self._manager.health(self._chamber_id)
+            if health.state != "VERIFIED_STOPPED" or health.stop_latched:
+                raise ChamberSafetyError(
+                    "STOP reconciliation did not verify a fresh STOPPED chamber")
         if guard is not None:
             health = self._manager.health(self._chamber_id)
             guard.release_stopped_manual_lease_for_profile(
@@ -290,7 +415,7 @@ class ProfileExecutionService:
               profile_id: str, revision: int) -> ExecutionSnapshot:
         """Authorize and prepare an exact saved revision; call off the event loop."""
         actor = self._preauthorize(session, csrf)
-        if not self._simulation and self._supervised is None:
+        if not self._simulation and self._supervised is None and self._lab is None:
             raise ChamberSafetyError("Profile execution is disabled outside simulation")
         blocker = self._blocked_reason()
         if blocker:
@@ -310,6 +435,7 @@ class ProfileExecutionService:
             # Physical admission still enforces signed, revision-bound H02
             # permit, live independent watchdog, witness and site envelopes.
             supervised = (None if self._simulation else
+                          self._admit_lab(actor) if self._lab is not None else
                           self._admit_supervised(actor, profile_id, revision))
             runner = ProfileRunner(
                 self._manager, self._store, authorize=self._authorize,
@@ -321,7 +447,7 @@ class ProfileExecutionService:
                     self._chamber_id, profile_id, revision=revision,
                     parameters=self._parameters,
                 ))
-                if supervised is not None:
+                if supervised is not None and self._lab is None:
                     try:
                         self._arm_supervision(runner, snapshot)
                     except Exception:
@@ -374,8 +500,9 @@ class ProfileExecutionService:
         with self._lock:
             runner, started_at = self._runner, self._started_at
         may_run = actor.role in (Role.ADMIN, Role.OPERATOR)
+        admin_override = self._lab is not None and actor.role is Role.ADMIN
         manual_available = True
-        if self._manual_guard is not None:
+        if self._manual_guard is not None and not admin_override:
             manual_owner, mine = self._manual_guard.ownership_view(
                 session, self._chamber_id)
             manual_available = manual_owner is None or mine
@@ -396,6 +523,8 @@ class ProfileExecutionService:
             if event.kind != "SAMPLE"
         )
         mine = snapshot is not None and snapshot.operator_id == actor.username
+        stop_confirmed = self.stop_procedure_confirmed(actor.username)
+        lab_restart_ready = self._lab_restart_recoverable(health)
         return RunView(
             state.value if state is not None else None, active,
             snapshot.run_id if snapshot else None,
@@ -407,12 +536,15 @@ class ProfileExecutionService:
             (time.monotonic() - started_at) if started_at is not None and snapshot else None,
             blocker if blocker and not active else (runner.reason if runner is not None else ""),
             health.stop_latched, health.state, self._simulation,
-            may_run and manual_available and (self._simulation or (
-                self._supervised is not None and
-                self._supervised.supervision is not None and
-                self._supervised.supervision.alive())) and
-            not blocker and not active and
-            health.connected and health.state == "VERIFIED_STOPPED",
+            may_run and (admin_override or manual_available) and (
+                self._simulation or self._lab is not None or (
+                    stop_confirmed and
+                    self._supervised is not None and
+                    self._supervised.supervision is not None and
+                    self._supervised.supervision.alive())) and
+            not blocker and not active and health.connected and
+            (admin_override or health.state == "VERIFIED_STOPPED" or
+             lab_restart_ready),
             may_run and active and state is not RunState.STOP_REQUESTED,
             may_run and mine and state in (
                 RunState.REACHING, RunState.STABILIZING, RunState.DWELLING,
@@ -420,6 +552,9 @@ class ProfileExecutionService:
             may_run and mine and state is RunState.PAUSED,
             events,
             self._supervised is not None,
+            stop_confirmed,
+            self._lab is not None,
+            admin_override,
         )
 
     async def shutdown(self) -> None:

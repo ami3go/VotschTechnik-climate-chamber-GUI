@@ -130,10 +130,58 @@ class ChamberController:
             self._operator_generation += 1
             self._operator_name = None
 
+    def force_claim_operator(self, chamber_id: str, owner: str) -> str:
+        """ADMIN-only ownership override; invalidates any existing lease token."""
+        self._check_id(chamber_id)
+        if not isinstance(owner, str) or not 1 <= len(owner.strip()) <= 128:
+            raise ChamberSafetyError("Operator identity is required")
+        with self._state_lock:
+            self._operator_token = uuid.uuid4().hex
+            self._operator_generation += 1
+            self._operator_name = owner.strip()
+            return self._operator_token
+
+    def admin_override(self, chamber_id: str) -> None:
+        """ADMIN-only lab override of the durable STOP/restart fence and owner.
+
+        Still requires a connected chamber with GOOD telemetry. The durable
+        lease is fenced and immediately reconciled as an explicit, audited
+        operator decision; mid-run telemetry/identity/STOP supervision is not
+        disabled. Callers must authorize Role.ADMIN before invoking this.
+        """
+        self._check_id(chamber_id)
+        snapshot = self.status(chamber_id)
+        if snapshot.quality is not ReadingQuality.GOOD:
+            raise ChamberSafetyError(
+                "Admin override requires GOOD authoritative telemetry")
+        with self._state_lock:
+            if not self._connected:
+                raise ChamberSafetyError("Admin override requires a connected chamber")
+            self._operator_token = None
+            self._operator_name = None
+            self._operator_generation += 1
+            try:
+                self._generation = self._lease.fence()
+                self._lease.reconcile()
+            except Exception as exc:
+                self._stop_latched = True
+                self._state = "FAULT"
+                self._reason = "Admin override fencing failed"
+                raise ChamberSafetyError(
+                    "Admin override could not reset durable fencing") from exc
+            self._stop_latched = False
+            self._last_snapshot = snapshot
+            self._state = (
+                "RUNNING" if snapshot.operation_state is OperationState.RUNNING
+                else "VERIFIED_STOPPED"
+            )
+            self._reason = None
+
     def _check_operator(self, token: str | None) -> None:
         # Until G08-min, the no-token path is for trusted server code only.
         # G08-min MUST require authenticated identity at all external entrypoints.
-        if self._operator_token is not None and token != self._operator_token:
+        if ((token is None and self._operator_token is not None) or
+                (token is not None and token != self._operator_token)):
             raise ChamberSafetyError("Operator lease owned by another caller")
 
     def _physical_authorized(self) -> bool:
@@ -352,6 +400,63 @@ class ChamberController:
         with self._state_lock:
             if self._stop_latched:
                 raise ChamberSafetyError("Setpoint result superseded by STOP/FAULT")
+
+    def _verified_ramp_write(self, operation: Callable, direction: str,
+                             expected: float) -> None:
+        operation()
+        snapshot = self._require_readback(self._backend.read_status())
+        actual = (snapshot.gradient_up_c_per_min if direction == "up"
+                  else snapshot.gradient_down_c_per_min)
+        if actual is None or not math.isfinite(actual) or abs(actual - expected) > 0.01:
+            raise ChamberSafetyError("Gradient readback did not confirm command")
+        with self._state_lock:
+            self._last_snapshot = snapshot
+
+    def _check_ramp(self, direction: str, rate_c_per_min: float) -> float:
+        caps = self._capabilities
+        supported = (caps is not None and
+                     getattr(caps, "supports_ramp_" + direction))
+        limits = (getattr(caps, "ramp_" + direction + "_range_c_per_min", None)
+                  if supported else None)
+        if not supported or not limits:
+            raise ChamberSafetyError(
+                "Gradients are not supported/verified by this backend")
+        if (isinstance(rate_c_per_min, bool) or
+                not isinstance(rate_c_per_min, (int, float)) or
+                not math.isfinite(rate_c_per_min)):
+            raise ChamberSafetyError("Invalid gradient rate")
+        low, high = limits
+        if not low <= float(rate_c_per_min) <= high:
+            raise ChamberSafetyError("Gradient outside supported range")
+        return float(rate_c_per_min)
+
+    def set_ramp_up(self, chamber_id: str, rate_c_per_min: float, *,
+                    operator_token: str | None = None) -> None:
+        self._check_id(chamber_id)
+        with self._state_lock:
+            self._check_operator(operator_token)
+            rate = self._check_ramp("up", rate_c_per_min)
+        self._submit("set_ramp_up",
+                     lambda: self._verified_ramp_write(
+                         lambda: self._backend.set_ramp_up(rate), "up", rate),
+                     mutation=True, operator_token=operator_token)
+        with self._state_lock:
+            if self._stop_latched:
+                raise ChamberSafetyError("Gradient result superseded by STOP/FAULT")
+
+    def set_ramp_down(self, chamber_id: str, rate_c_per_min: float, *,
+                      operator_token: str | None = None) -> None:
+        self._check_id(chamber_id)
+        with self._state_lock:
+            self._check_operator(operator_token)
+            rate = self._check_ramp("down", rate_c_per_min)
+        self._submit("set_ramp_down",
+                     lambda: self._verified_ramp_write(
+                         lambda: self._backend.set_ramp_down(rate), "down", rate),
+                     mutation=True, operator_token=operator_token)
+        with self._state_lock:
+            if self._stop_latched:
+                raise ChamberSafetyError("Gradient result superseded by STOP/FAULT")
 
     def start(self, chamber_id: str, *, operator_token: str | None = None) -> None:
         self._check_id(chamber_id)

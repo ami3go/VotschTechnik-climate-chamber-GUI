@@ -38,4 +38,9 @@ Source contracts: `docs/P00_DECISION_CONTRACTS.md`, `docs/G04_A_CONTROLLER_CONTR
 
 ## H02 scope separation (2026-10-15)
 
-H01 supervised manual HIL, including its opt-in over LAN and any manual soak, is NOT authorization for G06 physical profile execution. H02 requires a separately signed scope-specific site test method, independent watchdog and safety review. See [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md); physical H02 tests NOT RUN.
+H01 supervised manual HIL, including its opt-in over LAN and any manual soak,
+is NOT authorization for G06 physical profile execution. The separately
+permitted H02 engineering profile test subsequently passed on 2026-10-20; its
+authorization applied only to that exact revision/profile/run. See the
+[H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md). Future H02 runs
+still require their own valid permit, operator and witness.

@@ -32,15 +32,17 @@ def _describe(settings: ChamberSettings | None) -> str:
         return "Simulator (no hardware)"
     return (f"{CHAMBER_TYPES[settings.chamber_type]} · {settings.chamber_id} · "
             f"{settings.address} · serial {settings.expected_serial} · "
-            f"{settings.temperature_min_c:g}…{settings.temperature_max_c:g} °C")
+            f"{settings.temperature_min_c:g}…{settings.temperature_max_c:g} °C"
+            f"{' · isolated lab mode' if settings.lab_mode else ''}")
 
 
 def render_chamber_config_panel(discover_chambers: Callable | None = None) -> None:
     """Settings-tab panel; the form is shown to administrators only."""
     actor = current_actor()
-    from chamber_web.main import active_chamber_authorization
+    from chamber_web.main import active_chamber_authorization, profile_execution_lab
 
     hil, source = active_chamber_authorization()
+    lab = profile_execution_lab()
     try:
         saved = load_settings()
         saved_error = ""
@@ -63,11 +65,15 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 temperature_min_c=float(temp_min.value),
                 temperature_max_c=float(temp_max.value),
                 person_present_acknowledged=bool(acknowledge.value),
-                h02_permit_file=(permit_file.value or "").strip(),
-                h02_trusted_key=(trusted_key.value or "").strip(),
-                h02_witness=(witness.value or "").strip(),
-                gui_commit=(gui_commit.value or "").strip().lower(),
-                driver_commit=(driver_commit.value or "").strip().lower(),
+                lab_mode=bool(lab_mode.value),
+                # The supervised H02 permit fields were removed from this
+                # screen. Saving now clears any legacy permit configuration so
+                # the next start cannot mix it with isolated lab mode.
+                h02_permit_file="",
+                h02_trusted_key="",
+                h02_witness="",
+                gui_commit="",
+                driver_commit="",
             )
         except (TypeError, ValueError):
             ui.notify("Temperature limits must be numbers.", color="negative")
@@ -200,6 +206,12 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
         ui.label("Chamber Connection").classes("panel-heading")
         if hil is None:
             ui.label("Running: Simulator (no hardware)").classes("font-bold")
+        elif lab is not None:
+            ui.label(
+                f"Running: PHYSICAL · isolated lab mode · {hil.chamber_id} · "
+                f"{hil.address} · serial {hil.expected_serial} · "
+                f"{hil.temperature_min_c:g}…{hil.temperature_max_c:g} °C").classes(
+                    "font-bold text-negative")
         else:
             ui.label(
                 f"Running: SUPERVISED PHYSICAL HIL · {hil.chamber_id} · {hil.address} · "
@@ -226,8 +238,9 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
         ui.label(
             "Changes take effect only after the server is restarted. The software "
             "envelope is a secondary guard: the chamber's own limits and emergency "
-            "stop remain the primary safety layer. Physical profile runs additionally "
-            "require the signed H02 site permit."
+            "stop remain the primary safety layer. Physical profile runs require "
+            "either isolated lab mode below or a signed H02 permit configured "
+            "through the server environment."
         ).classes("demo-banner w-full")
         security_warning = factory_credential_warning(
             *get_security().factory_credentials_active())
@@ -283,29 +296,25 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                      f"span at most {MAX_ENVELOPE_SPAN_C:g} °C. The connected chamber's "
                      "serial number must match.").classes("text-xs")
             acknowledge = ui.checkbox(
-                "A trained person will be present at the chamber whenever the server "
-                "runs with this configuration",
+                "For supervised operation: a trained person is present at the "
+                "chamber whenever the server runs with this configuration "
+                "(not required in isolated lab mode)",
                 value=initial.person_present_acknowledged)
-            ui.label("Supervised profile runs (H02)").classes("text-subtitle2")
+            ui.label("Physical profile runs").classes("text-subtitle2")
+            lab_mode = ui.checkbox(
+                "Enable unattended profile runs on this chamber "
+                "(isolated lab mode)",
+                value=initial.lab_mode)
             ui.label(
-                "Optional. Profiles run on the real chamber only with a permit signed "
-                "by the site approver (scripts/h02_sign_permit.py). Leave blank to keep "
-                "profile runs disabled; manual control is unaffected. The permit is "
-                "verified when you save. The independent watchdog starts automatically "
-                "with the server."
-            ).classes("text-xs text-grey-7")
-            permit_file = ui.input("Signed permit file path (on the server)",
-                                   value=initial.h02_permit_file).classes("w-full")
-            trusted_key = ui.input("Site public key (base64 or hex, Ed25519)",
-                                   value=initial.h02_trusted_key).classes("w-full")
-            witness = ui.input("Witness name (must match the permit)",
-                               value=initial.h02_witness).classes("w-full")
-            gui_commit = ui.input(
-                "GUI commit (blank = detect from this installation)",
-                value=initial.gui_commit).classes("w-full")
-            driver_commit = ui.input(
-                "Driver commit (blank = detect from this installation)",
-                value=initial.driver_commit).classes("w-full")
+                "Isolated lab mode replaces the signed H02 permit, named witness "
+                "and independent watchdog with a single administrator approval. "
+                "Profiles then run on the real chamber without a permit. The "
+                "chamber's own temperature limits, over-temperature protection and "
+                "emergency stop remain the primary safety layer; set them before an "
+                "unattended run. This is not a certified production configuration. "
+                "Saving clears any legacy H02 permit fields; supervised H02 runs are "
+                "configured only through the server environment."
+            ).classes("text-xs text-orange-9")
         password = ui.input("Current administrator password (required to save)",
                             password=True).props(
                                 "autocomplete=current-password").classes("w-full")
