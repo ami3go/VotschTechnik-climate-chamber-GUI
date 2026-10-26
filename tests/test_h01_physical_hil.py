@@ -14,7 +14,7 @@ from pathlib import Path
 
 from chamber_web.adapters.votsch import VotschBackend
 from chamber_web.domain.chamber import (
-    ChamberIdentityMismatch, ChamberSafetyError, OperationState,
+    ChamberIdentityMismatch, ChamberSafetyError, OperationState, UnsupportedCapability,
 )
 from chamber_web.domain.config import ChamberConfig
 from chamber_web.hil.physical import (
@@ -45,7 +45,7 @@ class DriverDouble:
     """Same attribute surface as VotschTechnikClimateChamber.ClimateChamber."""
 
     def __init__(self, serial=SERIAL, measured=24.6, setpoint=23.0, ramp_c_per_min=None,
-                 ramp_goal_offset=0.0):
+                 ramp_goal_offset=0.0, output_count=16):
         self.serial_number = serial
         self.test_system_type = "VT 4011"
         self.temperature_measured = measured
@@ -56,9 +56,30 @@ class DriverDouble:
         self._ramp_from, self._ramp_t0, self._goal = setpoint, time.monotonic(), setpoint
         self._goal_offset = ramp_goal_offset
         self._running = False
+        self._output_count = output_count
+        self._outputs = {number: False for number in range(1, output_count + 1)}
         self.calls = []
+        self.output_calls = []
         self.disconnected = False
         self._lock = threading.Lock()
+
+    @property
+    def number_of_digital_outputs(self):
+        return self._output_count
+
+    def digital_output_name(self, number):
+        if not 1 <= number <= self._output_count:
+            raise ValueError("output number outside the device-reported count")
+        return {1: "Chamber run", 7: "Compressed air", 8: "Dryer"}.get(
+            number, f"Digital output {number}")
+
+    def read_digital_output(self, number):
+        self.output_calls.append(("read", number))
+        return self._outputs[number]
+
+    def set_digital_output(self, number, state):
+        self.output_calls.append(("set", number, state))
+        self._outputs[number] = state
 
     @property
     def temperature_set_point(self):
@@ -257,6 +278,55 @@ class VotschHilBackendTests(unittest.TestCase):
             with self.subTest(target), self.assertRaises(Exception):
                 backend.set_temperature(target)
         self.assertEqual(self.driver.calls, [])
+
+    def test_capabilities_advertise_device_reported_outputs_only(self):
+        backend = self.backend()
+        backend.connect()
+        outputs = backend.capabilities().digital_outputs
+        self.assertEqual(len(outputs), 16)
+        self.assertEqual(outputs[0], (1, "Chamber run"))
+        self.assertEqual(dict(outputs)[7], "Compressed air")
+        self.assertEqual(dict(outputs)[8], "Dryer")
+
+    def test_smaller_device_count_does_not_assume_reserved_outputs(self):
+        driver = DriverDouble(output_count=5)
+        backend = self.backend(driver)
+        backend.connect()
+        self.assertEqual([number for number, _ in backend.capabilities().digital_outputs],
+                         [1, 2, 3, 4, 5])
+        with self.assertRaises(UnsupportedCapability):
+            backend.read_digital_output(7)
+
+    def test_output_enumeration_failure_fails_closed(self):
+        class BadCount(DriverDouble):
+            @property
+            def number_of_digital_outputs(self):
+                return 0
+
+        driver = BadCount()
+        with self.assertRaises(ChamberSafetyError):
+            self.backend(driver).connect()
+        self.assertTrue(driver.disconnected)
+
+        class BadName(DriverDouble):
+            def digital_output_name(self, number):
+                return "   "
+
+        driver = BadName()
+        with self.assertRaises(ChamberSafetyError):
+            self.backend(driver).connect()
+        self.assertTrue(driver.disconnected)
+
+    def test_typed_output_read_write_reaches_driver(self):
+        backend = self.backend()
+        backend.connect()
+        backend.set_digital_output(2, True)
+        self.assertIs(backend.read_digital_output(2), True)
+        backend.set_digital_output(2, False)
+        self.assertIs(backend.read_digital_output(2), False)
+        self.assertEqual(self.driver.output_calls, [
+            ("set", 2, True), ("read", 2), ("set", 2, False), ("read", 2),
+        ])
 
 
 class HilManualControlTests(unittest.TestCase):

@@ -53,6 +53,7 @@ class VotschBackend:
         self._ramp: tuple[float, float] | None = None
         # Isolated-lab mode only: profile gradients write 11068/11072.
         self._gradient_writes = bool(gradient_writes)
+        self._digital_outputs: tuple[tuple[int, str], ...] = ()
 
     @property
     def simulation_only(self) -> bool:
@@ -86,10 +87,31 @@ class VotschBackend:
             if not all(math.isfinite(rate) and 0 < rate <= 60 for rate in ramp):
                 raise ChamberSafetyError("Chamber setpoint gradients unavailable or invalid")
             self._ramp = ramp
+            try:
+                self._digital_outputs = self._enumerate_digital_outputs(driver)
+            except ChamberSafetyError:
+                raise
+            except Exception as exc:
+                raise ChamberSafetyError(
+                    "Chamber digital outputs unavailable or invalid") from exc
         except BaseException:
             driver.disconnect()
             raise
         self._driver = driver
+
+    @staticmethod
+    def _enumerate_digital_outputs(driver) -> tuple[tuple[int, str], ...]:
+        """Advertise only outputs the device reports; never assume a count."""
+        count = driver.number_of_digital_outputs
+        if type(count) is not int or not 1 <= count <= 64:
+            raise ChamberSafetyError("Chamber digital output count unavailable or invalid")
+        outputs = []
+        for number in range(1, count + 1):
+            name = driver.digital_output_name(number)
+            if not isinstance(name, str) or not name.strip():
+                raise ChamberSafetyError("Chamber digital output name unavailable or invalid")
+            outputs.append((number, name.strip()))
+        return tuple(outputs)
 
     def _default_hil_driver(self):
         from VotschTechnikClimateChamber import ClimateChamber
@@ -104,6 +126,7 @@ class VotschBackend:
             finally:
                 self._driver = None
                 self._identity = None
+                self._digital_outputs = ()
 
     def _require(self):
         if self._driver is None:
@@ -130,7 +153,8 @@ class VotschBackend:
                                            GRADIENT_UP_RANGE_C_PER_MIN if writes else None),
                                        ramp_down_range_c_per_min=(
                                            GRADIENT_DOWN_RANGE_C_PER_MIN if writes else None),
-                                       setpoint_readback_ramp_c_per_min=self._ramp)
+                                       setpoint_readback_ramp_c_per_min=self._ramp,
+                                       digital_outputs=self._digital_outputs)
         if self._factory is None:
             return ChamberCapabilities(0, 1, False, False, False)
         return ChamberCapabilities(-20, 80, True, True, True)
@@ -166,15 +190,26 @@ class VotschBackend:
     def read_digital_output(self, number: int) -> bool:
         if type(number) is not int or not 1 <= number <= 64:
             raise UnsupportedCapability("Digital output number must be 1..64")
-        value = self._require().query("GET DIGITAL_OUT VALUE", number)[0]
-        if value not in ("0", "1"):
+        driver = self._require()
+        self._require_verified_output(number)
+        value = driver.read_digital_output(number)
+        if type(value) is not bool:
             raise ChamberSafetyError("Digital output readback was not boolean")
-        return value == "1"
+        return value
 
     def set_digital_output(self, number: int, state: bool) -> None:
         if type(number) is not int or not 1 <= number <= 64 or type(state) is not bool:
             raise UnsupportedCapability("Digital output number/state invalid")
-        self._require().query("SET DIGITAL_OUT VALUE", number, 1 if state else 0)
+        driver = self._require()
+        self._require_verified_output(number)
+        driver.set_digital_output(number, state)
+
+    def _require_verified_output(self, number: int) -> None:
+        if self._hil is None:
+            return
+        if number not in {item[0] for item in self._digital_outputs}:
+            raise UnsupportedCapability(
+                "Digital output is not verified on this physical chamber")
 
     def _set_gradient(self, direction: str, rate_c_per_min: float) -> None:
         if not self._gradient_writes:

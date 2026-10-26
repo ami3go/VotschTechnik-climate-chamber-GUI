@@ -118,13 +118,13 @@
       "version": "0.23"
     },
     {
-      "filename": "fastapi-0.159.1-py3-none-any.whl",
+      "filename": "fastapi-0.161.1-py3-none-any.whl",
       "license": "NOASSERTION",
       "name": "fastapi",
       "requires_python": ">=3.10",
-      "sha256": "49b94c29afec2fca1390e9c39be202c59755d5cda8e4f1148a133761e4313e7e",
-      "url": "https://files.pythonhosted.org/packages/8d/35/b03b5df04a1a8ee400c9df4b1795af84370b2bb6f1cc4be57c0b79688d00/fastapi-0.159.1-py3-none-any.whl",
-      "version": "0.159.1"
+      "sha256": "a1363080cf9aeedecd99f4e1a23669d7e77542227f6536f4d7bbd59f07ecaa94",
+      "url": "https://files.pythonhosted.org/packages/45/2a/101012d82931d9de3855384e1667e49c0e07a0048e3868f9fec1697293a9/fastapi-0.161.1-py3-none-any.whl",
+      "version": "0.161.1"
     },
     {
       "filename": "frozenlist-1.8.0-cp312-cp312-win_amd64.whl",
@@ -442,13 +442,13 @@
       "version": "1.25.1"
     },
     {
-      "filename": "votschtechnikclimatechamber-0.2.0-py3-none-any.whl",
+      "filename": "votschtechnikclimatechamber-0.3.0-py3-none-any.whl",
       "license": "MIT License",
       "name": "VotschTechnikClimateChamber",
       "requires_python": ">=3.7",
-      "sha256": "13b411742015097ed94e8f41eb21be52c119f02201972214fbf386df1606e26e",
-      "url": "git+https://github.com/ami3go/VotschTechnik-climate-chamber-Python.git@b56cfbd54570e66cddf83106505487d3b19d9677",
-      "version": "0.2.0"
+      "sha256": "f420c781250c7ec1db5af7786d23f67ce38061256afe42e13f2283e38072c8dc",
+      "url": "git+https://github.com/ami3go/VotschTechnik-climate-chamber-Python.git@d22dc05687cac4c5cdef440fb52b05965ed3d146",
+      "version": "0.3.0"
     }
   ],
   "platform": [

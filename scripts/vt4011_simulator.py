@@ -37,6 +37,7 @@ class SimulatedVT4011:
         self._ramp_from = self._goal = float(ambient_c)
         self._ramp_t0 = self._t = time.monotonic()
         self._running = False
+        self._digital_outputs = {number: False for number in range(1, 9)}
         self.offline = False
         self.calls: list[tuple] = []
 
@@ -139,6 +140,36 @@ class SimulatedVT4011:
             self._advance()
             self._running = False
             self.calls.append(("stop",))
+
+    @property
+    def number_of_digital_outputs(self) -> int:
+        with self._lock:
+            self._online()
+            return len(self._digital_outputs)
+
+    def digital_output_name(self, number: int) -> str:
+        with self._lock:
+            self._online()
+            if number not in self._digital_outputs:
+                raise ValueError("Unknown simulated digital output")
+            return f"Simulated output {number}"
+
+    def read_digital_output(self, number: int) -> bool:
+        with self._lock:
+            self._online()
+            if number not in self._digital_outputs:
+                raise ValueError("Unknown simulated digital output")
+            return self._digital_outputs[number]
+
+    def set_digital_output(self, number: int, state: bool) -> None:
+        with self._lock:
+            self._online()
+            if number not in self._digital_outputs:
+                raise ValueError("Unknown simulated digital output")
+            if type(state) is not bool:
+                raise TypeError("Digital output state must be boolean")
+            self._digital_outputs[number] = state
+            self.calls.append(("digital_output", number, state))
 
     def query(self, command: str, *args):
         with self._lock:

@@ -23,6 +23,7 @@ class FakeDriver:
 
     def __init__(self):
         self.outputs = {number: False for number in range(1, 9)}
+        self.calls = []
 
     def disconnect(self):
         pass
@@ -35,24 +36,31 @@ class FakeDriver:
         self.is_running = False
         self.outputs[1] = False
 
-    def query(self, command, number, *values):
-        if command == "GET DIGITAL_OUT VALUE":
-            return ["1" if self.outputs[number] else "0"]
-        if command == "SET DIGITAL_OUT VALUE":
-            self.outputs[number] = bool(values[0])
-            return []
-        raise AssertionError("unexpected mock-driver query")
+    def read_digital_output(self, number):
+        self.calls.append(("read", number))
+        return self.outputs[number]
+
+    def set_digital_output(self, number, state):
+        self.calls.append(("set", number, state))
+        self.outputs[number] = state
 
 
 class BackendContractTests(unittest.TestCase):
-    def test_votsch_numbered_output_protocol_mapping_is_read_back(self):
-        backend = VotschBackend("chamber-c", "mock.invalid", mock_driver_factory=FakeDriver)
+    def test_votsch_typed_numbered_output_api_is_used(self):
+        driver = FakeDriver()
+        backend = VotschBackend("chamber-c", "mock.invalid",
+                                mock_driver_factory=lambda: driver)
         backend.connect()
         self.addCleanup(backend.disconnect)
         backend.set_digital_output(2, True)
         self.assertTrue(backend.read_digital_output(2))
         backend.set_digital_output(2, False)
         self.assertFalse(backend.read_digital_output(2))
+        self.assertEqual(driver.calls, [
+            ("set", 2, True), ("read", 2), ("set", 2, False), ("read", 2),
+        ])
+        with self.assertRaises(UnsupportedCapability):
+            backend.set_digital_output(65, True)
 
     def test_three_backends_sequential_contract(self):
         backends = (
