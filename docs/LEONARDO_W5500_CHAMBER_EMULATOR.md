@@ -144,7 +144,32 @@ state transition occurred, as on the ESP32 prototype. Reboot starts STOPPED.
 8 s AVR main-loop watchdog protects against a stalled loop; actual
 network/WDT fault recovery is not yet hardware qualified.
 
-## 6. Automated verification
+## 6. Physical-board verification (opt-in only)
+
+Use the maintained Python driver, `pyserial==3.5`, the actual Leonardo
+USB CDC serial port, and an independently isolated Ethernet test subnet.
+This checks live **USB-CDC identity before TCP**, not merely a self-reported
+network serial. Example for Linux, from repository root:
+
+```sh
+export LEONARDO_EMULATOR_HARDWARE_OPT_IN=1
+python scripts/h02_watchdog_command.py \
+  --timeout-s 180 --idle-timeout-s 40 \
+  --log-dir test-evidence/leonardo/hardware-watchdog -- \
+  python firmware/esp32_eth01_chamber_emulator/test/hardware/verify_leonardo.py \
+    --ip 192.168.42.42 --usb-port /dev/ttyACM0 --serial SIMLEO0001 \
+    --ack-isolated-test-lan --ack-physical-usb
+```
+
+On Windows set the environment variable in PowerShell and use a `COM` port.
+The script is read-only unless `--allow-writes` is explicitly supplied.
+With that flag it performs only three verified Start/Stop cycles on the
+operator-confirmed isolated emulator. A lost STOP acknowledgement produces
+UNKNOWN and the test fails. All tests have watchdog, socket, and UART
+deadlines. Do **not** run it against a real Vötsch chamber. It is not an
+independently authenticated GUI enrollment mechanism.
+
+## 7. Automated verification
 
 The AVR and the host share the exact `leonardo_core.cpp` command engine.
 Run native host golden tests and driver TCP interoperability with H02
