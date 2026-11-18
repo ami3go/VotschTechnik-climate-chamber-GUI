@@ -1,6 +1,5 @@
 #include "leonardo_core.h"
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 
 namespace leonardo {
@@ -71,32 +70,86 @@ bool single(const Request& r, const char* index = "1") {
 }
 bool without_args(const Request& r) { return r.nargs == 0; }
 
-// strtod on AVR is finite precision (float). Reject malformed, NaN and Inf,
-// and bound BEFORE scaling. Quantize to 0.01 C/0.01 C per minute.
-bool number_centi(const char* p, int32_t& result) {
-    if (!p || !*p) return false;
-    bool digit = false;
-    for (const char* s = p; *s; ++s) {
-        char c = *s;
-        if (c >= '0' && c <= '9') digit = true;
-        else if (c != '-' && c != '+' && c != '.' && c != 'e' && c != 'E')
-            return false;
+// Decimal parser using only 32-bit integer arithmetic. Supports fixed
+// decimal and bounded scientific notation. No strtod/AVR float linker cost.
+bool number_centi(const char* text, int32_t& result) {
+    if (!text || !*text) return false;
+    bool negative = false;
+    if (*text == '+' || *text == '-') { negative = *text == '-'; ++text; }
+    bool point = false, digit = false;
+    uint8_t fractional_digits = 0;
+    uint32_t mantissa = 0;
+    while (*text) {
+        if (*text == '.') {
+            if (point) return false;
+            point = true; ++text; continue;
+        }
+        if (*text < '0' || *text > '9') break;
+        digit = true;
+        // Numbers whose mantissas overflow 1e8 are not needed by this
+        // emulator and are rejected explicitly, not silently truncated.
+        if (mantissa > 10000000UL) return false;
+        mantissa = mantissa * 10UL + static_cast<uint8_t>(*text - '0');
+        if (point) {
+            if (++fractional_digits > 8) return false;
+        }
+        ++text;
     }
     if (!digit) return false;
-    char* end = 0;
-    double n = strtod(p, &end);
-    if (end == p || *end || !(n >= -10000.0 && n <= 10000.0))
-        return false; // inequality also rejects NaN / infinities
-    const double scaled = n * 100.0;
-    result = static_cast<int32_t>(scaled >= 0 ? scaled + 0.5 : scaled - 0.5);
+    int8_t exponent = 0;
+    if (*text == 'e' || *text == 'E') {
+        ++text;
+        bool exponent_negative = false;
+        if (*text == '+' || *text == '-') {
+            exponent_negative = *text == '-'; ++text;
+        }
+        if (*text < '0' || *text > '9') return false;
+        int8_t magnitude = 0;
+        do {
+            if (magnitude > 12) return false;
+            magnitude = static_cast<int8_t>(magnitude * 10 + (*text - '0'));
+            ++text;
+        } while (*text >= '0' && *text <= '9');
+        exponent = exponent_negative ? -magnitude : magnitude;
+        if (exponent > 12 || exponent < -12) return false;
+    }
+    if (*text) return false;
+    const int8_t power = static_cast<int8_t>(exponent - fractional_digits + 2);
+    uint32_t scaled = mantissa;
+    if (power > 0) {
+        for (int8_t i=0; i<power; ++i) {
+            if (scaled > 100000UL) return false;
+            scaled *= 10UL;
+        }
+    } else if (power < 0) {
+        const uint8_t decimals = static_cast<uint8_t>(-power);
+        if (decimals > 8) scaled = 0;
+        else {
+            uint32_t divisor = 1;
+            for (uint8_t i=0; i<decimals; ++i) divisor *= 10UL;
+            scaled = (scaled + divisor / 2UL) / divisor;
+        }
+    }
+    if (scaled > 1000000UL) return false;
+    result = negative ? -static_cast<int32_t>(scaled) :
+                        static_cast<int32_t>(scaled);
     return true;
 }
 
 void format_centi(int32_t centi, char* out, size_t cap) {
-    // AVR libc printf omits float formatting by default.
-    long magnitude = static_cast<long>(centi < 0 ? -centi : centi);
-    snprintf(out, cap, "%s%ld.%02ld0",
-             centi < 0 ? "-" : "", magnitude / 100, magnitude % 100);
+    const uint32_t magnitude = static_cast<uint32_t>(centi < 0 ? -centi : centi);
+    char digits[12];
+    ultoa(magnitude / 100UL, digits, 10);
+    const size_t size = strlen(digits) + (centi < 0 ? 1 : 0) + 5;
+    if (cap < size) { if (cap) *out = 0; return; }
+    size_t at = 0;
+    if (centi < 0) out[at++] = '-';
+    for (size_t i=0; digits[i]; ++i) out[at++] = digits[i];
+    out[at++] = '.';
+    out[at++] = static_cast<char>('0' + (magnitude % 100UL) / 10UL);
+    out[at++] = static_cast<char>('0' + magnitude % 10UL);
+    out[at++] = '0';
+    out[at] = 0;
 }
 size_t number_reply(uint8_t* out, size_t cap, int32_t n) {
     char text[24];
