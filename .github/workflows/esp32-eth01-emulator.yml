@@ -142,14 +142,14 @@ jobs:
           logs = sorted(Path("test-evidence/leonardo/avr-build").rglob("stdout.log"))
           assert logs, "Missing AVR compiler watchdog output"
           text = logs[-1].read_text(errors="replace")
-          for metric, limit in (("RAM", 2560), ("Flash", 28672)):
+          for metric, limit, reserve in (("RAM", 2560, 768), ("Flash", 28672, 512)):
               match = re.search(rf"{metric}:.*used (\d+) bytes from (\d+) bytes", text)
               if not match:
                   raise SystemExit(f"No verified {metric} metrics in PlatformIO output")
               used, reported = map(int, match.groups())
               print(f"{metric}: {used}/{reported} bytes ({100*used/reported:.1f}%), free={reported-used}")
-              if reported != limit or used > limit:
-                  raise SystemExit(f"Invalid {metric} target resources")
+              if reported != limit or used > limit - reserve:
+                  raise SystemExit(f"{metric} reserve below {reserve} bytes")
           PY
       - name: Firmware SHA-256
         run: |
