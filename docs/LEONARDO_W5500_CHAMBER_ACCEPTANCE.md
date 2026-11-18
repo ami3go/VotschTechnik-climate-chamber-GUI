@@ -11,10 +11,10 @@ UPS hardware reference: `USB-UPS-Simulator` master
 | --- | --- | --- |
 | Original UPS Leonardo/W5500 wiring audited | VERIFIED FROM REPO | ICSP SPI, W5500 D10, SD D4 HIGH, native USB and Serial1 |
 | S!MPAC core and finite frame buffers | IMPLEMENTED | 80-byte ingress, 64-byte response, explicit error replies |
-| Thermal model and start/stop semantics | IMPLEMENTED, CI PENDING | fixed-point Basic, 10x accelerated, STOP readback |
-| Host C++ golden tests | CI PENDING | native source compiled with warnings as errors |
-| External driver direct/subnet discovery and control | CI PENDING | real TCP reference; no Python transport mock |
-| Leonardo flash/RAM budget and firmware.hex | CI PENDING | pinned PlatformIO and Ethernet lib |
+| Thermal model and start/stop semantics | HOST PASS | fixed-point Basic, 10x accelerated, STOP readback in golden tests |
+| Host C++ golden tests | PASS | Native C++11 warnings-as-errors, [CI 44287212844](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44287212844) |
+| External driver direct/subnet discovery and control | PASS (host TCP) | Current pinned driver d22dc05 against actual C++ core, [CI 44287212844](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44287212844); no Python transport mock |
+| Leonardo flash/RAM budget and firmware.hex | BUILD PASS | AVR 28,116/28,672 flash; 1,571/2,560 SRAM. 556 bytes flash / 989 SRAM free, [CI 44287212844](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44287212844) |
 | Real Leonardo+W5500 flash / UART log | NOT RUN | no physical board connected |
 | Real TCP 2049, DHCP/static, link reconnection | NOT RUN | hardware integration required |
 | WDT reset/STOPPED persistence and fault recovery | NOT RUN ON HARDWARE | code implementation alone not sufficient |
@@ -39,3 +39,20 @@ UPS hardware reference: `USB-UPS-Simulator` master
 
 No PR merge or safety-gate removal until blocking review findings have
 objective CI and board evidence.
+
+## Pinned build evidence (2026-11-18)
+
+- Source revision: `bbe0d4cc1cc263e5683ef0c4dfed49aa760f6a94`.
+- Build run: [GitHub Actions #44287212844](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44287212844).
+- Built artifact: `firmware/esp32_eth01_chamber_emulator/.pio/build/leonardo-w5500/firmware.hex`.
+- SHA-256: `2f7ea247e7385cbf724249d56757746c210b836fd99bbe74f5a2a5cb1b287a50`.
+- Usage: 28,116 / 28,672 bytes flash (98.1%), **556 bytes free**;
+  1,571 / 2,560 bytes static RAM (61.4%), **989 bytes free**.
+- New CI budget guard requires at least 512 bytes free flash and
+  768 bytes static RAM. AVR feature scope should remain minimal.
+- Later documentation/CI-guard changes require their own validation;
+  never interpret this build as flashed or physically verified.
+
+**Disposition: build + host interoperability confirmed; actual hardware and
+GUI emulator activation remain blocked until separate opt-in bench tests
+and trustworthy simulator-only enrollment have been reviewed.**
