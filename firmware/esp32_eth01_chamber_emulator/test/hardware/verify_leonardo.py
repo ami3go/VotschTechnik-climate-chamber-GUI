@@ -62,7 +62,7 @@ def run():
     try:
         with serial.Serial(args.usb_port, 115200, timeout=0.25, write_timeout=0.5) as port:
             # Some Leonardo CDC revisions reset on port open.
-            deadline = time.monotonic() + 8
+            deadline = time.monotonic() + 18
             found = None
             while time.monotonic() < deadline:
                 port.write(b"status\n")
