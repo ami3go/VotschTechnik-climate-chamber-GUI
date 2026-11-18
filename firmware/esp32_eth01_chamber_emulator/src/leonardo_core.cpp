@@ -139,12 +139,17 @@ bool number_centi(const char* text, int32_t& result) {
 void format_centi(int32_t centi, char* out, size_t cap) {
     const uint32_t magnitude = static_cast<uint32_t>(centi < 0 ? -centi : centi);
     char digits[12];
-    ultoa(magnitude / 100UL, digits, 10);
-    const size_t size = strlen(digits) + (centi < 0 ? 1 : 0) + 5;
+    uint8_t digit_count = 0;
+    uint32_t whole = magnitude / 100UL;
+    do {
+        digits[digit_count++] = static_cast<char>('0' + whole % 10UL);
+        whole /= 10UL;
+    } while (whole && digit_count < sizeof(digits));
+    const size_t size = digit_count + (centi < 0 ? 1 : 0) + 5;
     if (cap < size) { if (cap) *out = 0; return; }
     size_t at = 0;
     if (centi < 0) out[at++] = '-';
-    for (size_t i=0; digits[i]; ++i) out[at++] = digits[i];
+    while (digit_count) out[at++] = digits[--digit_count];
     out[at++] = '.';
     out[at++] = static_cast<char>('0' + (magnitude % 100UL) / 10UL);
     out[at++] = static_cast<char>('0' + magnitude % 10UL);
