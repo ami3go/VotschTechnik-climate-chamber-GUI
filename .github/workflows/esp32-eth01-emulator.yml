@@ -134,6 +134,23 @@ jobs:
             find test-evidence/leonardo/avr-build -name stderr.log -exec tail -n 80 {} \;
             exit 1
           fi
+      - name: Report actual Leonardo flash and SRAM resource usage
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          logs = sorted(Path("test-evidence/leonardo/avr-build").rglob("stdout.log"))
+          assert logs, "Missing AVR compiler watchdog output"
+          text = logs[-1].read_text(errors="replace")
+          for metric, limit in (("RAM", 2560), ("Flash", 28672)):
+              match = re.search(rf"{metric}:.*used (\d+) bytes from (\d+) bytes", text)
+              if not match:
+                  raise SystemExit(f"No verified {metric} metrics in PlatformIO output")
+              used, reported = map(int, match.groups())
+              print(f"{metric}: {used}/{reported} bytes ({100*used/reported:.1f}%), free={reported-used}")
+              if reported != limit or used > limit:
+                  raise SystemExit(f"Invalid {metric} target resources")
+          PY
       - name: Firmware SHA-256
         run: |
           sha256sum firmware/esp32_eth01_chamber_emulator/.pio/build/leonardo-w5500/firmware.hex > leonardo-firmware-sha256.txt
