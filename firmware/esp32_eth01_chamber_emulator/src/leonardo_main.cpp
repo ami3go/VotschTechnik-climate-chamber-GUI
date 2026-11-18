@@ -134,8 +134,8 @@ void console_command(char* text, Print& out) {
     if (!strcmp(text, "status")) {
         print_status(out);
     } else if (!strcmp(text, "help")) {
-        out.println(F("status | fault clear/sticky_stop/drop_stop/timeout/partial/invalid_sensor/freeze/alarm/runaway_heat/runaway_cool/reset | fault delay 0..2000"));
-        out.println(F("speed 1|10 | identity serial ALNUM | net dhcp | net static IP MASK GW DNS | net mac 1..254 | eeprom reset"));
+        out.println(F("status | fault <name>|clear | fault delay N"));
+        out.println(F("speed 1|10 | identity serial ID | net dhcp|static | net mac N | eeprom reset"));
     } else if (!strcmp(text, "fault clear")) {
         faults = leonardo::Faults{};
         out.println(F("FAULTS CLEAR"));
