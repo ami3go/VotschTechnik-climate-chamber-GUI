@@ -102,6 +102,8 @@ jobs:
           mkdir -p firmware/esp32_eth01_chamber_emulator/build
           python scripts/h02_watchdog_command.py --timeout-s 120 --idle-timeout-s 60 --log-dir test-evidence/leonardo/native-build -- \
             bash -c 'set -euo pipefail; d=firmware/esp32_eth01_chamber_emulator; g++ -std=c++11 -Wall -Wextra -Werror -I"$d/include" "$d/src/leonardo_core.cpp" "$d/test/host/test_leonardo.cpp" -o "$d/build/test_leonardo"; g++ -std=c++11 -Wall -Wextra -Werror -I"$d/include" "$d/src/leonardo_core.cpp" "$d/test/host/leonardo_tcp_reference.cpp" -o "$d/build/leonardo_tcp_reference"'
+      - name: Check syntax of opt-in physical hardware runner (no hardware contact)
+        run: python -m py_compile firmware/esp32_eth01_chamber_emulator/test/hardware/verify_leonardo.py
       - name: Execute fixed-buffer S!MPAC golden tests
         run: |
           python scripts/h02_watchdog_command.py --timeout-s 120 --idle-timeout-s 60 --log-dir test-evidence/leonardo/native-golden -- \
