@@ -111,17 +111,26 @@ chamber gradient, so **Set Target** is confirmed only after the ramp settles.
 Profile execution remains simulation-only. Web STOP is not an emergency stop;
 the chamber's own controls and emergency stop remain primary.
 
-### Real-hardware tests (opt-in)
+### Real-hardware tests (opt-in, 24-hour operator PIN)
+
+**Current agent test authorization:** [HIL PIN runbook](docs/HIL_PIN_RUNBOOK.md).
+An operator issues the eight-digit PIN interactively with
+`bash scripts/hil_pin.sh setup` (or rotates it with `reset`). The old
+H02 signed-permit/witness package is **not** required by the physical
+pytest test harness. Identity, envelope, controller STOP checks and
+exclusive bench ownership remain mandatory. The signed-permit path in
+the legacy H02 *application runtime* has not been removed.
 
 `tests/hardware/` holds acceptance tests that drive the physical chamber. They
 are always collected but **skipped** unless the complete `CHAMBER_HIL_*`
-authorization above is set **and** `CHAMBER_HIL_RUN_TESTS=1`; a partial or
-invalid configuration aborts the run. CI never runs them.
+configuration above is set **and** `CHAMBER_HIL_RUN_TESTS=1`; an additional
+fresh local operator PIN is mandatory when tests are enabled. Invalid/expired
+PINs abort before touching hardware. CI never runs them.
 
 ```bash
 export CHAMBER_HIL_ADDRESS=192.168.0.11 CHAMBER_HIL_EXPECTED_SERIAL=58566207770010 \
        CHAMBER_HIL_TEMP_MIN_C=20 CHAMBER_HIL_TEMP_MAX_C=30 CHAMBER_HIL_ACK=SUPERVISED-PHYSICAL-HIL
-CHAMBER_HIL_RUN_TESTS=1 CHAMBER_HIL_EVIDENCE_DIR=hil-evidence \
+bash scripts/hil_pin.sh run -- env CHAMBER_HIL_RUN_TESTS=1 CHAMBER_HIL_EVIDENCE_DIR=hil-evidence \
     python -m pytest -v tests/hardware --junitxml=hil-evidence/junit.xml
 ```
 
@@ -139,8 +148,8 @@ server is connected. Tunables: `CHAMBER_HIL_TEST_STEP_C` (default 1.0),
 ### Soak / endurance run
 
 ```bash
-python scripts/hil_soak.py --evidence hil-soak   # ~28 min: 25, 26, 24 °C, STOP, restart at 24 °C
-python scripts/hil_soak.py --evidence hil-soak --plan 25:1800 --restart 24:60
+bash scripts/hil_pin.sh run -- python scripts/hil_soak.py --evidence hil-soak
+bash scripts/hil_pin.sh run -- python scripts/hil_soak.py --evidence hil-soak --plan 25:1800 --restart 24:60
 ```
 
 Runs locally (no internet) through the same G04/G08/G05 services as the web
