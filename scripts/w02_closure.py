@@ -1015,6 +1015,15 @@ def main(argv: list[str] | None = None) -> int:
                        help="a requirements file whose 'name @ git+url@commit' "
                             "pins are vendored into the closure")
 
+    hydrate = sub.add_parser(
+        "hydrate", help="download only the reviewed manifest artifacts (no resolution)")
+    hydrate.add_argument("--requirements", type=Path, required=True)
+    hydrate.add_argument("--vcs-requirement", action="append", type=Path, default=[])
+    hydrate.add_argument("--wheelhouse", type=Path, required=True)
+    hydrate.add_argument("--lock", type=Path, required=True)
+    hydrate.add_argument("--manifest", type=Path, required=True)
+    hydrate.add_argument("--target", default="win_amd64-cp312")
+
     verify = sub.add_parser("verify", help="verify a wheelhouse against a lock")
     verify.add_argument("--wheelhouse", type=Path, required=True)
     verify.add_argument("--lock", type=Path, required=True)
@@ -1112,6 +1121,12 @@ def main(argv: list[str] | None = None) -> int:
         }
         _write(args.manifest, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         print(f"Closure built: {len(artifacts)} wheels -> {args.wheelhouse}")
+        return 0
+
+    if args.command == "hydrate":
+        hydrate_reviewed_closure(
+            args.requirements, args.lock, args.manifest, args.wheelhouse,
+            target=args.target, vcs_sources=args.vcs_requirement)
         return 0
 
     if args.command == "verify":
