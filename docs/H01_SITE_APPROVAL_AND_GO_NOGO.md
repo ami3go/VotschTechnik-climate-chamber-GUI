@@ -1,4 +1,10 @@
-# H01 — Site permit checklist and GO / NO-GO decisions
+# H01 — Site approval and GO / NO-GO (historical release review)
+
+> Automated HIL **test** admission now uses only the local 24-hour operator
+> PIN: [HIL_PIN_RUNBOOK.md](HIL_PIN_RUNBOOK.md). Do not ask an AI agent for
+> a witness/signature/permit package to run test tooling. This older checklist
+> still describes product certification and intrusive-site hazards, which a
+> PIN cannot override.
 
 **Default decision for every real physical action: NO-GO.**
 
