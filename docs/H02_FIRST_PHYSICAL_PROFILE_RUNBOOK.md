@@ -1,4 +1,10 @@
-# H02 — first supervised physical profile run (runbook)
+# H02 — first supervised physical profile run (historical permit workflow)
+
+> For current agent-run physical HIL **tests**, use the operator-issued PIN
+> in [HIL_PIN_RUNBOOK.md](HIL_PIN_RUNBOOK.md). The old signed permit
+> and witness requirements below apply to the still-supported **legacy H02
+> supervised application runtime**, not to the PIN-gated pytest/acceptance
+> test tools. These instructions are retained to reproduce historical runs.
 
 **Status: EXECUTED — two engineering passes recorded.** Run `60e8f4da-ea08-4806-9c5c-1c2124f89eb0` (2026-10-20, GUI `a0ecf17`) and run `5be68792-77f7-471b-946c-20558f1e6502` (2026-10-21, GUI `74a816d`) both reached `COMPLETED` with a clean watchdog disarm and a final `GOOD · STOPPED` readback; evidence is indexed under `hil-evidence/`. Formal site/independent acceptance signatures are still **PENDING** — see [`H02_SITE_ACCEPTANCE_2026-10-21.md`](H02_SITE_ACCEPTANCE_2026-10-21.md) and [`H02_SITE_ACCEPTANCE_2026-10-20.md`](H02_SITE_ACCEPTANCE_2026-10-20.md).
 
