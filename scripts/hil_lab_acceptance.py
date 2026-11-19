@@ -56,7 +56,7 @@ if str(ROOT) not in sys.path:
 from chamber_web.domain.chamber import OperationState, ReadingQuality  # noqa: E402
 from chamber_web.hil.lab_mode import LabMode, lab_mode_from_env  # noqa: E402
 from chamber_web.hil.physical import HilAuthorization, hil_authorization_from_env
-from chamber_web.hil.pin import HilPinError, require_hil_pin  # noqa: E402
+from chamber_web.hil.pin import require_hil_pin  # noqa: E402
 
 ADMIN = ("lab_admin", "StrongLabAdminPassword#1")
 OPERATOR = ("lab_operator", "StrongLabOperatorPassword#2")
