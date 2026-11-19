@@ -1,13 +1,13 @@
 # Stage 2 — Pre-production hardening and controlled pilot readiness
 
-**Plan revision:** 1.1 (2026-10-21 — S2-02 delivered; package status added)  
+**Plan revision:** 1.3 (2026-10-21 — S2-02/S2-03 package status merged with the H02 physical-pass evidence)  
 **Design stage:** **STAGE 2 ACTIVE — engineering and pilot preparation**  
 **Prior milestone:** H01 supervised manual-control HIL executed; 8/8 physical tests PASS (2026-10-19).  
 **Site acceptance:** **PENDING DOCUMENTED SIGNATURES**.  
-**H02 physical profile acceptance:** **NOT YET EVIDENCED**.  
+**H02 physical profile engineering test:** **PASS EVIDENCED (2026-10-20 at `a0ecf17`; repeated 2026-10-21 at `74a816d`)**; independent/site acceptance signatures pending.  
 **R01 production release:** **NO-GO**.  
-**GUI main inspected:** `014456bfa2604e1bdf8b21207bbbe598d5ba03dc` (PR #73, S2-02 combined regression baseline).  
-**External driver inspected:** `b56cfbd54570e66cddf83106505487d3b19d9677` (driver PR #5).  
+**GUI tested:** `a0ecf17414cc7d3f4847f15aabcb9cd0692396f4` (2026-10-20), `74a816d9d9bbb7acbb901334ef457dbc416f7641` (2026-10-21); S2-02 combined regression baseline inspected at `014456bfa2604e1bdf8b21207bbbe598d5ba03dc`.  
+**External driver tested:** `9323e3701f3befedcc23b45170a851fd327f0bcc` (physical HIL runs); driver PR #5 inspected at `b56cfbd54570e66cddf83106505487d3b19d9677`.
 **Scope:** one Vötsch chamber, isolated/local network, NiceGUI web UI.
 
 > **Engineering-stage advancement is not equipment authorization.** The owner reports HIL verification complete, and the repository records passing H01 manual-control tests. Preserve the signed-site, H02 physical-profile, operational security and W02 release gates independently. This plan does not request any live hardware test or unreviewed control action.
@@ -17,8 +17,8 @@
 | Aspect | Verifiable repository status | Next-stage disposition |
 |---|---|---|
 | H01 manual functional HIL | [PR #60](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/60), 2026-10-19: `tests/hardware` 8/8 PASS, 132.6 s, VT4011 physical chamber; STOP during ramp and real-browser path exercised. Details: [development sequence](DEVELOPMENT_SEQUENCE.md). | **Technical test execution complete** for the recorded eight cases; preserve raw JUnit/timeline and site record. |
-| Hardware evidence provenance | H01 `hil-evidence/` retained locally, not committed; no signed acceptance form in repository. | **Evidence/signoff pending**; no inference from test count to certification. |
-| H02 signed-permit runtime | H02-B PRs #55/#56 merged and H02-C independent supervisory software PR #58 merged; physical profile authorization code is opt-in. | **Software implemented**, separately witnessed physical profile execution evidence still needed. |
+| Hardware evidence provenance | H01 and H02 raw evidence, screenshots and checksums are indexed under `hil-evidence/`; no completed human acceptance form is in the repository. | **Technical evidence retained; human signoff pending**; no inference from test count to certification. |
+| H02 signed-permit runtime | H02-B/C runtime and watchdog were corrected and tested on the physical chamber at GUI `a0ecf17`; run `60e8f4da-ea08-4806-9c5c-1c2124f89eb0` completed with clean disarm and final STOPPED readback. Repeated 2026-10-21 at GUI `74a816d` under permit `H02-2026-10-21-01`: run `5be68792-77f7-471b-946c-20558f1e6502`, 5/5 steps, 200/200 GOOD samples, audited pre-run STOP reconciliation, clean `RUN_ARM`/`RUN_DISARM`, final `GOOD · STOPPED`. | **Engineering physical test PASS**; independent reviewer/site acceptance remains open. |
 | Manual operator experience | GUI PRs #68, #69 merged: routine verified Start/Stop/Start; retained/manual auto-claim operator lease. | Move to pilot usability and fault handling evaluation. |
 | Profile UX | GUI PR #70 merged: saved profile selection, operator-to-G06 handoff and repeat run after verified STOP. | Test on **simulator** and in specifically authorized H02 scope; not proof of real profile execution. |
 | Driver integration | Driver PR #5 merged; GUI uses the external driver exclusively through `VotschBackend`. | Keep exact pin; verify clean offline installation and unchanged driver communication contract. |
@@ -28,7 +28,10 @@
 
 **What the existing HIL proves:** supervised functional control of the actual unit with a limited software envelope and selected STOP/readback paths.
 
-**What it does *not* prove:** signed site equipment/safety limits, power-cut and worst-case failure handling, certified gradient/auxiliary output operation, physical H02 scripted-profile acceptance, long-duration unattended operation, Windows air-gap release, LAN security accreditation or production certification.
+**What it does *not* prove:** final signed site equipment/safety acceptance,
+power-cut and worst-case failure handling, certified gradient/auxiliary output
+operation, long-duration unattended operation, Windows air-gap release, LAN
+security accreditation or production certification.
 
 ### Gate handoff record
 
@@ -114,7 +117,7 @@ in [test-evidence/s2-02/S2_02_REPORT.md](../test-evidence/s2-02/S2_02_REPORT.md)
 | Gate | Evidence required | Current |
 |---|---|---|
 | H01 signed acceptance | Named approver + operator/witness + scope, exact serial, dated raw report and deviation closure; valid site-certified temperature/STOP policy | **OPEN: user reports complete, repository signature not present** |
-| H02 if physical profiles enabled | Signed *H02-specific* site permit, exact profile digest/GUI/driver revisions, witnessed run, separate watchdog and G07 independent readback evidence | **OPEN: no physical H02 result in repository** |
+| H02 if physical profiles enabled | Signed *H02-specific* site permit, exact profile digest/GUI/driver revisions, witnessed run, separate watchdog and G07 independent readback evidence | **TECHNICAL PASS EVIDENCED** for the 2026-10-20 run at `a0ecf17` and the 2026-10-21 run at `74a816d`; independent/site acceptance signatures **OPEN** |
 | G04/G05/G06 safe control | Simulator races and browser workflows plus approved site physical scope; no unverified/competing restart | **PARTIAL: code/CI and recorded manual HIL** — S2-02 added the combined simulation baseline and closed a G05 refusal of an operator Start after a verified STOP; the approved *site physical scope* is still absent |
 | G07 evidence and recovery | Storage/readback/audit/export integrity, crash/restart evidence on target Windows storage | **OPEN** |
 | G08 local/LAN operations | Site-reviewed security profile, bounded network exposure, credential handling, ACL, independent review | **OPEN** |
@@ -143,14 +146,14 @@ require a separate written site permit for that specific scope.
 
 ## 6. Immediate next action
 
-**Begin S2-01 and S2-02 in parallel; start S2-03 offline packaging work.**
-The user's report is sufficient to advance the *design backlog* today, but not
-to declare H01 independently accepted or to begin unrestricted physical
-profiles. The most useful physical handoff artifact is the site-completed
-[H01 equipment/acceptance checklist](H01_HARDWARE_ACCEPTANCE_CHECKLIST.md)
-with a verified evidence manifest. For H02, use the
-[H02 profile verification plan](H02_PROFILE_VERIFICATION_PLAN.md) and
-[H02 watchdog operations](H02_WATCHDOG_OPERATIONS.md).
+**Complete S2-01 human evidence signoff and S2-02 exact-head regression; continue
+S2-03 offline packaging work.** The H02 engineering run is now evidenced, but
+it does not declare H01/H02 independently accepted or authorize unrestricted
+physical profiles. Complete the
+[H01 equipment/acceptance checklist](H01_HARDWARE_ACCEPTANCE_CHECKLIST.md) and
+the prepared [H02 site acceptance record](H02_SITE_ACCEPTANCE_2026-10-21.md)
+(the 2026-10-20 record remains open as well). Every later physical profile still
+needs a new signed permit bound to its exact clean revision.
 
 **No changes to device-side authorization, STOP safety, signed-site controls,
 or production-enable flags are authorized by this design transition.**

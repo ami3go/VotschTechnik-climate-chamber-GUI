@@ -8,7 +8,7 @@ request is the approved G04 STOP path handled by the application.
 """
 from __future__ import annotations
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 READY = "READY"
 ACK = "ACK"
@@ -19,6 +19,7 @@ SHUTDOWN = "SHUTDOWN"
 
 STATE_IDLE = "IDLE"
 STATE_ARMED = "ARMED"
+STATE_STOPPING = "STOPPING"
 
 # Child exit codes (never a PASS):
 EXIT_CONNECT_FAILED = 2

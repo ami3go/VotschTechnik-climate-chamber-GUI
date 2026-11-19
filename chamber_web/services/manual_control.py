@@ -23,6 +23,23 @@ from chamber_web.services.chamber_manager import ChamberManager
 from chamber_web.services.dashboard import DashboardService, DashboardView
 
 
+def _live_ramp(sample: ChamberSnapshot, declared: tuple[float, float] | None
+               ) -> tuple[float, float] | None:
+    """The chamber's current (up, down) setpoint ramp, read back when available.
+
+    A profile run may have rewritten the gradients since connect; size waits
+    from the live readback rather than the connect-time capability.
+    """
+    if not declared:
+        return declared
+    live = []
+    for value, fallback in zip((sample.gradient_up_c_per_min,
+                                sample.gradient_down_c_per_min), declared):
+        ok = value is not None and math.isfinite(value) and value > 0
+        live.append(float(value) if ok else fallback)
+    return live[0], live[1]
+
+
 class ManualState(str, Enum):
     IDLE = "IDLE"
     PENDING = "PENDING"
@@ -34,6 +51,12 @@ class ManualState(str, Enum):
 
 
 _MAX_REASON_CHARS = 160
+# A ramped setpoint expected to settle within this window is confirmed only
+# at the target. Longer (e.g. full-range) ramps are confirmed once the
+# readback is verified moving toward the target; Dashboard tracks the rest.
+_RAMP_CONVERGE_WINDOW_S = 300.0
+# Readback progress toward the target that proves a long ramp is under way.
+_RAMP_PROGRESS_C = 0.2
 
 
 def _bounded_reason(exc: Exception) -> str:
@@ -180,13 +203,22 @@ class ManualControlService:
 
     def _await_ramped_setpoint(self, chamber_id: str, target: float,
                                ramp: tuple[float, float], origin: float | None):
-        """Fresh G04 reads (STOP can interleave) until a device ramp reaches target."""
+        """Fresh G04 reads (STOP can interleave) until a device ramp reaches target.
+
+        Returns ``(snapshot, converged)``. A ramp too long to wait for returns
+        ``converged=False`` once the readback has verifiably moved toward the
+        target, never away from it.
+        """
         from chamber_web.domain.chamber import ChamberProtocolError, ChamberTimeoutError
 
         if origin is None or not math.isfinite(origin):
             raise ChamberProtocolError("No verified setpoint before ramped write")
         rate = ramp[0] if target >= origin else ramp[1]
-        budget = min(300.0, abs(target - origin) / rate * 60.0 * 1.5 + 15.0)
+        budget = abs(target - origin) / rate * 60.0 * 1.5 + 15.0
+        long_ramp = budget > _RAMP_CONVERGE_WINDOW_S
+        if long_ramp:
+            # Enough time to see _RAMP_PROGRESS_C of movement at this rate.
+            budget = _RAMP_PROGRESS_C / rate * 60.0 * 3 + 15.0
         deadline = time.monotonic() + budget
         # A ramp toward a WRONG goal passes through the target, so convergence
         # also requires the readback to have stopped moving: a second read,
@@ -194,6 +226,7 @@ class ManualControlService:
         settle_s = min(30.0, max(1.0, 0.05 * 60.0 / min(ramp)))
         best = math.inf
         candidate = None
+        start_distance = abs(origin - target)
         while True:
             verified, _ = self._fresh(chamber_id)
             readback = verified.setpoint_temperature_c
@@ -201,13 +234,19 @@ class ManualControlService:
                 raise ChamberProtocolError("Setpoint readback unavailable during ramp")
             distance = abs(readback - target)
             now = time.monotonic()
-            if distance <= 0.1:
+            if long_ramp:
+                low, high = min(origin, target) - 0.1, max(origin, target) + 0.1
+                if not low <= readback <= high:
+                    raise ChamberProtocolError("Setpoint readback is not ramping toward target")
+                if start_distance - distance >= _RAMP_PROGRESS_C:
+                    return verified, False
+            elif distance <= 0.1:
                 if candidate is None:
                     candidate = (readback, now)
                 elif abs(readback - candidate[0]) > 0.02:
                     candidate = (readback, now)  # still moving: restart settle window
                 elif now - candidate[1] >= settle_s:
-                    return verified
+                    return verified, True
             else:
                 candidate = None
             if distance > best + 0.2:
@@ -424,15 +463,16 @@ class ManualControlService:
                     command_may_have_dispatched = True
                     self._authorized.execute_owned(
                         session, csrf, chamber_id, "set_temperature", target)
-                ramp = caps.setpoint_readback_ramp_c_per_min
+                ramp = _live_ramp(sample, caps.setpoint_readback_ramp_c_per_min)
+                converged = True
                 if action == "set_temperature" and ramp:
-                    verified = self._await_ramped_setpoint(
+                    verified, converged = self._await_ramped_setpoint(
                         chamber_id, target, ramp, sample.setpoint_temperature_c)
                 else:
                     verified, _ = self._fresh(chamber_id)  # independent authoritative readback
                 if action == "start" and verified.operation_state is not OperationState.RUNNING:
                     raise ChamberProtocolError("Follow-up START readback disagrees")
-                if action == "set_temperature" and (
+                if action == "set_temperature" and converged and (
                     verified.setpoint_temperature_c is None or
                     not math.isfinite(verified.setpoint_temperature_c) or
                     abs(verified.setpoint_temperature_c - target) > 0.1
@@ -444,6 +484,13 @@ class ManualControlService:
                             "VERIFIED_STOPPED", "RUNNING")):
                     raise ChamberSafetyError(
                         "Command superseded by a newer STOP/FAULT generation")
+                if not converged:
+                    rate = ramp[0] if target >= sample.setpoint_temperature_c else ramp[1]
+                    minutes = abs(target - verified.setpoint_temperature_c) / rate
+                    return self._finish(
+                        serial, action, ManualState.CONFIRMED,
+                        f"Setpoint accepted; chamber readback ramping toward {target:g} °C "
+                        f"at {rate:g} °C/min (about {math.ceil(minutes)} min)")
             return self._finish(serial, action, ManualState.CONFIRMED,
                                 stop_message if action == "stop" else
                                 ("Confirmed by authoritative physical device readback"

@@ -1,4 +1,12 @@
-# H01 — Physical Chamber HIL Verification (PREPARATION ONLY)
+# H01 — Physical Chamber HIL Verification (historical baseline)
+
+> **Current automated-test admission policy (November 2026):** use the
+> [operator PIN HIL runbook](HIL_PIN_RUNBOOK.md). An interactive operator issues
+> a 24-hour PIN; AI agents request only this PIN, not the old signed
+> permit/witness paperwork. The historical requirements below document the
+> earlier H01/H02 safety review and must not be mistaken for the current
+> agent authorization interface. Physical STOP, identity, envelope and
+> evidence requirements remain mandatory.
 
 **Status: PHYSICAL NO-GO.** This file is a future site test plan, **not** authority to connect/operate hardware. GUI main baseline 64c3d8c2d41bd40173428aaec4ca5125af60dd95; pinned external driver 9323e3701f3befedcc23b45170a851fd327f0bcc. G05 #28, G07-A #27, G08-full #29 are open draft PRs; refresh the baseline and review all three before execution.
 
@@ -38,4 +46,11 @@ Source contracts: `docs/P00_DECISION_CONTRACTS.md`, `docs/G04_A_CONTROLLER_CONTR
 
 ## H02 scope separation (2026-10-15)
 
-H01 supervised manual HIL, including its opt-in over LAN and any manual soak, is NOT authorization for G06 physical profile execution. H02 requires a separately signed scope-specific site test method, independent watchdog and safety review. See [H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md); physical H02 tests NOT RUN.
+H01 supervised manual HIL, including its opt-in over LAN and any manual soak,
+is NOT authorization for G06 physical profile execution. The separately
+permitted H02 engineering profile test subsequently passed on 2026-10-20; its
+authorization applied only to that exact revision/profile/run. See the
+[H02 verification plan](H02_PROFILE_VERIFICATION_PLAN.md). For current **agent-run HIL test tooling**, the operator PIN workflow above
+supersedes the old per-run signed-permit/witness workflow. The legacy H02
+application runtime still validates signed permits until its own admission
+implementation is deliberately migrated.

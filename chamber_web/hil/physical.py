@@ -21,7 +21,8 @@ from chamber_web.domain.chamber import ChamberSafetyError, validate_chamber_id
 ACKNOWLEDGEMENT = "SUPERVISED-PHYSICAL-HIL"
 HARD_MIN_C = -40.0
 HARD_MAX_C = 130.0
-MAX_ENVELOPE_SPAN_C = 30.0
+# The chamber's own limits still apply; site permits narrow this further.
+MAX_ENVELOPE_SPAN_C = HARD_MAX_C - HARD_MIN_C
 
 _KEYS = (
     "CHAMBER_HIL_ADDRESS", "CHAMBER_HIL_EXPECTED_SERIAL",

@@ -181,3 +181,35 @@ class ManifestTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VariantReportTests(unittest.TestCase):
+    def test_preproduction_reports_are_labelled_not_certified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp)
+            manifest.write_supply_chain_reports(
+                bundle, installed=[], version="0.2.0-pre",
+                include_driver=True, web_sha256="a" * 64,
+                driver_sha256="b" * 64, variant="preproduction")
+            provenance = json.loads(
+                (bundle / "build-provenance.json").read_text(encoding="utf-8"))
+            self.assertEqual(provenance["variant"], "preproduction")
+            self.assertEqual(
+                provenance["build_kind"],
+                "Pre-production supervised-capable Windows x64")
+            sbom = json.loads((bundle / "sbom.cdx.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                sbom["metadata"]["component"]["name"],
+                "ClimateChamber-Web-Windows-x64")
+
+    def test_w01_reports_keep_the_simulation_label(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp)
+            manifest.write_supply_chain_reports(
+                bundle, installed=[], version="0.1.0",
+                include_driver=False, web_sha256="a" * 64,
+                driver_sha256="b" * 64)
+            provenance = json.loads(
+                (bundle / "build-provenance.json").read_text(encoding="utf-8"))
+            self.assertEqual(provenance["variant"], "w01")
+            self.assertIn("mock-only", provenance["build_kind"])

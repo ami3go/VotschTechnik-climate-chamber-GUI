@@ -4,7 +4,9 @@ Collected but SKIPPED unless BOTH are true:
 
 * a complete, valid ``CHAMBER_HIL_*`` authorization (see README_WEB.md), and
 * ``CHAMBER_HIL_RUN_TESTS=1`` (so an exported HIL server environment alone
-  never makes a broad ``pytest`` run move a chamber).
+  never makes a broad ``pytest`` run move a chamber), and
+* a fresh operator-issued, 24-hour HIL PIN (``bash scripts/hil_pin.sh setup``).
+  See ``docs/HIL_PIN_RUNBOOK.md``.
 
 A person must be present at the chamber. The session guard refuses to start
 unless the chamber is verified STOPPED inside the envelope, issues STOP after

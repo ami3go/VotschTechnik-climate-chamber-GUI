@@ -72,7 +72,7 @@ def keygen(args) -> int:
     if args.public_key_out:
         args.public_key_out.write_text(encoded + "\n", encoding="utf-8")
     print("Private key written (mode 0600):", args.private_key)
-    print("Public key (paste into Settings > H02 trusted site key):", encoded)
+    print("Public key (set as CHAMBER_H02_TRUSTED_KEY):", encoded)
     return 0
 
 

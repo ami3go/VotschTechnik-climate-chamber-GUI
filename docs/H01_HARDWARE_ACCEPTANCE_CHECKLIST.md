@@ -1,4 +1,9 @@
-# H01 — Equipment inventory (UNVERIFIED, site to complete)
+# H01 — Equipment inventory (historical site acceptance checklist)
+
+> For current agent-run physical HIL *tests*, use the local operator-issued
+> PIN described in [HIL_PIN_RUNBOOK.md](HIL_PIN_RUNBOOK.md), not a site
+> permit/signature/witness package. This equipment inventory still documents
+> independent hardware/safety checks and the distinct certification process.
 
 Every value below must cite approved OEM manual section, calibration and a signed local inspection. Do not infer from FakeBackend (-40…130 °C), injected Vötsch mock (-20…80 °C), screenshots, firmware assumptions or driver command codes. Project plans mention VT4011, **but site model is unverified**.
 
@@ -16,11 +21,13 @@ Every value below must cite approved OEM manual section, calibration and a signe
 | Actual START/manual control/STOP interpretation | NOT VERIFIED | OPEN |
 | Local STOP and *separate* emergency-stop procedures | NOT PROVIDED | OPEN |
 | Physical supervision, trained operator and alternate safety response | NOT PROVIDED | OPEN |
-| Operator permissions, site safety approver, signed permit | NOT PROVIDED | OPEN |
+| Test operator PIN (24 h; never record value) | Not issued in repository; issued at bench | OPERATOR ACTION |
 | Windows host account/ACL, local lock, TLS/firewall, offline security | NOT VERIFIED | OPEN |
 | Approved power-loss hazard analysis and special permit | NOT AUTHORIZED | BLOCKED |
 | Driver provenance | `9323e3701f3befedcc23b45170a851fd327f0bcc` (software pin ONLY) | PARTIAL |
 
-Site equipment owner/signature/date: __________ ; safety officer/signature/date: __________ ; trained operator/signature/date: __________ ; independent witness/signature/date: __________ ; permit ID/expiry: __________.
+Physical test: operator/UTC time: __________ ; HIL PIN validity (do not record PIN): __________ ; serial/STOP verified: __________ .
+
+Separate product/site certification (if applicable): owner/safety officer/witness/permit: __________ .
 
 **Physical I/O: NOT APPROVED.**

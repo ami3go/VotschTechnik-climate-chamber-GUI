@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "repository": "ami3go/VotschTechnik-climate-chamber-GUI",
+  "agent_guides": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".github/copilot-instructions.md",
+    "docs/HIL_PIN_RUNBOOK.md"
+  ],
+  "hardware_test_authorization": {
+    "policy": "operator-issued-pin-only",
+    "pin_length": 8,
+    "validity_hours": 24,
+    "setup": "bash scripts/hil_pin.sh setup",
+    "reset": "bash scripts/hil_pin.sh reset",
+    "revoke": "bash scripts/hil_pin.sh revoke",
+    "run": "bash scripts/hil_pin.sh run -- <command>",
+    "env_name": "CHAMBER_HIL_PIN",
+    "must_request_from_operator": true,
+    "agent_may_issue_pin": false,
+    "required_hardware_protections": [
+      "chamber identity",
+      "approved temperature envelope",
+      "physical STOP readiness",
+      "exclusive bench lock",
+      "fresh readback",
+      "safe stop/restore",
+      "finite timeout/watchdog",
+      "evidence"
+    ],
+    "simulation_pin_required": false,
+    "legacy_h02_runtime_signed_permit_still_present": true,
+    "status": "test-tool migration; legacy runtime unchanged"
+  },
+  "software_only_verification": "python -m unittest discover -s tests -p test_hil_pin.py -v",
+  "long_task_watchdog": "Use bounded watchdog for software tasks; physical tasks require controlled STOP and verified STOPPED",
+  "instrument_transport_repository": "ami3go/VotschTechnik-climate-chamber-Python",
+  "ui_framework": "NiceGUI"
+}

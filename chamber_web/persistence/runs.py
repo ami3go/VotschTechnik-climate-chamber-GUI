@@ -31,7 +31,7 @@ APP_ID = 0x43485237  # CHR7; NOT the G03 profile database.
 VERSION = 1
 FINAL = frozenset({"COMPLETED", "ABORTED", "FAULT", "INTERRUPTED", "UNKNOWN"})
 EVENT_KINDS = frozenset({
-    "PREPARED", "START_INTENT", "SETPOINT_INTENT", "OUTPUT_INTENT",
+    "PREPARED", "START_INTENT", "GRADIENT_INTENT", "SETPOINT_INTENT", "OUTPUT_INTENT",
     "RUN_STATE_INTENT", "STATE",
     "SAMPLE", "STEP_COMPLETED", "STOP_INTENT", "TERMINAL", "RECOVERY",
 })
@@ -365,6 +365,8 @@ class RunStore:
             raise RunIntegrityError("START_INTENT replay/late delivery")
         if kind == "SETPOINT_INTENT" and run["lifecycle"] not in {"START_INTENT", "RUNNING"}:
             raise RunIntegrityError("Setpoint without durable START_INTENT")
+        if kind == "GRADIENT_INTENT" and run["lifecycle"] not in {"START_INTENT", "RUNNING"}:
+            raise RunIntegrityError("Gradient without durable START_INTENT")
         if kind == "SAMPLE" and run["lifecycle"] not in {"START_INTENT", "RUNNING", "STOP_INTENT"}:
             raise RunIntegrityError("Sample before START_INTENT")
         if kind == "STEP_COMPLETED" and run["lifecycle"] not in {"RUNNING", "STOP_INTENT"}:
