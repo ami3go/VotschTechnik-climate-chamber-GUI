@@ -81,7 +81,9 @@ jobs:
 
   chromium-nicegui-e2e:
     name: Browser-to-NiceGUI Chromium smoke (simulation only)
-    runs-on: ubuntu-latest
+    # Playwright 1.58.0 does not install Chromium on ubuntu26.04-x64.
+    # Use a supported, pinned runner instead of silently skipping browser CI.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
