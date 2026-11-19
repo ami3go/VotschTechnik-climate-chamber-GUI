@@ -4,6 +4,10 @@ NiceGUI browser-based interface for a single Vötsch environmental chamber. The 
 
 The application includes a dashboard, manual chamber controls, persistent temperature profiles, profile execution, run recording and operator authorization. Simulation is the default. **Physical HIL is explicitly opt-in, not certified production use**. Agent-operated hardware **tests** use a locally issued 24-hour operator PIN rather than per-run signed permits. Historical H02 supervised *runtime* permit support and the separate production/offline release gates remain; see [the PIN runbook](docs/HIL_PIN_RUNBOOK.md). See the [detailed remaining development and release plan](docs/REMAINING_DEVELOPMENT_TASKS.md), [web setup and operating limitations](README_WEB.md), [development sequence](docs/DEVELOPMENT_SEQUENCE.md), [hardware safety acceptance](docs/H01_HARDWARE_ACCEPTANCE_CHECKLIST.md), the [canonical readiness findings and release blockers](docs/READINESS_FINDINGS.md) and the [W02 offline release gates](docs/W02_OFFLINE_RELEASE.md).
 
+## Current execution and pending tasks (November 2026)
+
+The **[authoritative Chamber execution tracker](docs/CHAMBER_EXECUTION_TRACKER.md)** links the ten current GitHub work packages, open emulator PRs, legacy driver PR, exact-head CI gates, mandatory watchdogs, and separate software/HIL/release acceptance criteria. Use the tracker and [linked issues](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues) for current execution status; the older dated Stage 2 plan and readiness findings remain historical evidence and design/release contracts.
+
 ## Current engineering phase — Stage 2 (2026-10-19)
 
 The recorded supervised physical **H01** test suite passed 8/8 on 19 October

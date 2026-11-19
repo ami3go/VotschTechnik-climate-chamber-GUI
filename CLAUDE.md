@@ -1,7 +1,8 @@
 # Claude / AI agent instructions
 
 Follow [AGENTS.md](AGENTS.md) and the authoritative
-[HIL PIN runbook](docs/HIL_PIN_RUNBOOK.md).
+[HIL PIN runbook](docs/HIL_PIN_RUNBOOK.md) and the
+[current execution tracker](docs/CHAMBER_EXECUTION_TRACKER.md) for tasks CH-WP-01…10, dependencies, GitHub issues and evidence gates.
 
 For automated physical HIL **tests**, request only the operator-issued
 24-hour PIN; use `bash scripts/hil_pin.sh run -- ...` to authenticate and
