@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from chamber_web.hil.physical import hil_authorization_from_env
+from chamber_web.hil.pin import require_hil_pin, HilPinError
 
 STEP_C = float(os.environ.get("CHAMBER_HIL_TEST_STEP_C", "1.0"))
 RUN_S = float(os.environ.get("CHAMBER_HIL_TEST_RUN_S", "20"))
@@ -22,6 +23,10 @@ OPERATOR = ("hil_test_operator", "StrongOperatorPassword#2")
 def authorization():
     if os.environ.get("CHAMBER_HIL_RUN_TESTS") != "1":
         return None, "set CHAMBER_HIL_RUN_TESTS=1 to run real-hardware tests"
+    try:
+        require_hil_pin(os.environ)
+    except HilPinError as exc:
+        pytest.exit(f"Physical HIL operator PIN denied: {exc}", returncode=2)
     try:
         hil = hil_authorization_from_env(os.environ)
     except Exception as exc:  # invalid configuration must fail loudly, not skip
