@@ -8,11 +8,12 @@ Backend polling runs independently of browser clients, in worker threads,
 and failed/stale reads show **UNKNOWN/unverified** rather than the last
 measured value. The domain/manager are manufacturer-neutral.
 
-**Manual controls (claim, target, start, stop) run against the simulated
-backend only.** Any physical mutation requires the supervised HIL opt-in
-below plus signed site authorization. The external Vötsch driver is
-imported only by the dedicated `VotschBackend` adapter; G04 fencing and
-server-side authorization guard every command.
+**Simulation is the default; physical manual control is explicit opt-in.**
+Automated physical HIL **test** entrypoints require the operator-issued
+24-hour PIN described below. The legacy H02 supervised *runtime* still uses
+its signed permit. The external Vötsch driver is imported only by the
+`VotschBackend` adapter; G04 fencing and server-side authorization guard
+every command.
 
 Profiles are persisted server-side with immutable revisions (G03-C) and can
 be run from the browser in simulation through the server-owned profile
@@ -105,7 +106,7 @@ CHAMBER_HIL_ACK=SUPERVISED-PHYSICAL-HIL     # a person is present at the chamber
 python main.py
 ```
 
-HIL is loopback-only (LAN mode with HIL is refused) and needs the external
+Physical HIL is loopback by default (a narrowly configured TLS LAN opt-in also exists) and needs the external
 driver (`requirements-hardware.txt`). The Vötsch setpoint readback ramps at the
 chamber gradient, so **Set Target** is confirmed only after the ramp settles.
 Profile execution remains simulation-only. Web STOP is not an emergency stop;
