@@ -25,6 +25,7 @@ from .adapters.votsch import discover_votsch_chambers
 from .hil.chamber_settings import effective_hil_environment
 from .hil.lab_mode import LabMode, lab_mode_from_env
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
+from .hil.pin import require_hil_pin
 from .hil.supervised_profile import SupervisedProfileRuntime, supervised_runtime_from_env
 from .hil.supervision import SupervisionHost
 from .security.nicegui import (active_tokens, cookie_secret, current_actor, deployment_policy,
@@ -45,6 +46,10 @@ from .model import MAX_TEMP, MIN_TEMP
 _HIL_ENV, _HIL_SOURCE = effective_hil_environment(os.environ)
 _HIL = hil_authorization_from_env(_HIL_ENV)
 check_hil_deployment(_HIL, deployment_policy, os.environ)
+# An opt-in physical pytest web subprocess must validate the operator PIN before
+# opening its chamber connection. Ordinary product server launches are unchanged.
+if _HIL is not None and os.environ.get("CHAMBER_HIL_RUN_TESTS") == "1":
+    require_hil_pin(os.environ)
 # Isolated-lab unattended mode: physical profile runs without the H02 permit
 # workflow. Launch-time only; misconfiguration refuses to start.
 _LAB = lab_mode_from_env(_HIL_ENV, hil_present=_HIL is not None)
