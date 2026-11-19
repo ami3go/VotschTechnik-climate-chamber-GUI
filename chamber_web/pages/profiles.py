@@ -436,8 +436,8 @@ def profiles_page() -> None:
                  "STOP and emergency stop. Web STOP is not an emergency stop.")
         if view.admin_override:
             run_mode_label.set_text(
-                "ADMIN OVERRIDE · isolated lab mode · ownership and STOP/restart "
-                f"checks bypassed · controller {view.controller_state}")
+                "ADMIN TAKEOVER · isolated lab · manual lease may be reassigned "
+                f"only after verified STOPPED · controller {view.controller_state}")
         elif view.lab:
             run_mode_label.set_text(
                 f"Physical chamber · isolated lab mode · controller {view.controller_state}" +
