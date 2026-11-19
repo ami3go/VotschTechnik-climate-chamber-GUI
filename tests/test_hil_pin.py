@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from chamber_web.hil.pin import (HilPinError, TTL, issue_pin, require_hil_pin,
                                  revoke_pin, state_path, verify_pin)
+from scripts import hil_soak
 
 
 class HilPinTests(unittest.TestCase):
@@ -95,6 +96,36 @@ class HilPinTests(unittest.TestCase):
             with self.assertRaises(HilPinError):
                 require_hil_pin({"CHAMBER_HIL_PIN": "123"})
         
+    def test_direct_soak_without_pin_never_reaches_chamber_authorization(self):
+        with patch("chamber_web.hil.pin.state_path", return_value=self.path), \
+             patch.object(hil_soak, "hil_authorization_from_env") as authorization, \
+             patch.dict(os.environ, {}, clear=True):
+            result = hil_soak.main(["--evidence", str(self.path.parent / "evidence")])
+        self.assertEqual(result, 2)
+        authorization.assert_not_called()
+        self.assertFalse((self.path.parent / "evidence").exists())
+
+    def test_direct_soak_wrong_pin_rejected_before_chamber_authorization(self):
+        pin, _ = issue_pin(path=self.path, now=datetime.now(timezone.utc))
+        wrong = "00000000" if pin != "00000000" else "99999999"
+        with patch("chamber_web.hil.pin.state_path", return_value=self.path), \
+             patch.object(hil_soak, "hil_authorization_from_env") as authorization, \
+             patch.dict(os.environ, {"CHAMBER_HIL_PIN": wrong}, clear=True):
+            result = hil_soak.main(["--evidence", str(self.path.parent / "evidence")])
+        self.assertEqual(result, 2)
+        authorization.assert_not_called()
+
+    def test_direct_soak_valid_pin_reaches_only_configuration_gate(self):
+        pin, _ = issue_pin(path=self.path, now=datetime.now(timezone.utc))
+        with patch("chamber_web.hil.pin.state_path", return_value=self.path), \
+             patch.object(hil_soak, "hil_authorization_from_env",
+                          return_value=None) as authorization, \
+             patch.dict(os.environ, {"CHAMBER_HIL_PIN": pin}, clear=True):
+            result = hil_soak.main(["--evidence", str(self.path.parent / "evidence")])
+        self.assertEqual(result, 2)
+        authorization.assert_called_once()
+        self.assertFalse((self.path.parent / "evidence").exists())
+
     def test_default_path_not_controlled_by_env_override(self):
         with patch.dict(os.environ, {"CHAMBER_HIL_PIN_STATE": "/tmp/unsafe"}, clear=False):
             self.assertNotEqual(str(state_path()), "/tmp/unsafe")
