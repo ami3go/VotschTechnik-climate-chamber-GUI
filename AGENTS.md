@@ -31,6 +31,10 @@ VotschBackend/G04 services. Never duplicate the device protocol in the GUI.
   path; do not claim that path has been changed without implementing and
   testing its admission changes. See `docs/HIL_PIN_RUNBOOK.md`.
 
+## Current work packages and source of truth
+
+Read [docs/CHAMBER_EXECUTION_TRACKER.md](docs/CHAMBER_EXECUTION_TRACKER.md) before taking an autonomous task. Work packages CH-WP-01…10 map to GitHub issues #90–#99 with dependencies, exact acceptance criteria, and verified-vs-unverified state. Refresh GitHub's live issue, PR, CI and commit state rather than trusting a historical Markdown snapshot. Never close a task solely because a PR merged; record actual software CI and keep HIL/site and R01 gates separate. Emulator PR #88 is stacked on unmerged PR #84. Use a finite watchdog and explicit hard timeout for long tasks; energized hardware requires graceful verified STOP, not blind process termination.
+
 ## Engineering workflow
 
 Make changes on a branch; test simulation/CI without hardware; review
