@@ -82,42 +82,26 @@ jobs:
         run: python -m pip install -r requirements-web.txt -r requirements-w02-build.txt pytest==9.1.1
       - name: Adversarial closure tests
         run: python -m pytest -q tests/test_w02_closure.py
-      - name: Resolve and download the hash-locked closure
-        # The external Votsch driver is not on an index: it is vendored from
-        # the pinned revision in requirements-hardware.txt and built
-        # reproducibly, so its hash belongs in the closure too.
+      - name: Hydrate the pinned reviewed wheelhouse (no new resolution)
+        # Fetch only the exact wheel URLs and hashes already committed in the
+        # reviewed manifest. Rebuild the external driver from its pinned commit
+        # and compare its wheel hash to the same committed manifest.
         run: >
-          python -m scripts.w02_closure build
+          python -m scripts.w02_closure hydrate
           --requirements requirements-web.txt
           --vcs-requirement requirements-hardware.txt
           --wheelhouse w02-wheelhouse
-          --lock w02-closure-build/built.lock
-          --manifest w02-closure-build/built-manifest.json
+          --lock requirements-w02-runtime.lock
+          --manifest w02-closure-manifest.json
           --target win_amd64-cp312
-          --version 1.0.0
-      - name: Verify the freshly built wheelhouse
-        run: >
-          python -m scripts.w02_closure verify
-          --wheelhouse w02-wheelhouse
-          --lock w02-closure-build/built.lock
-          --manifest w02-closure-build/built-manifest.json
-          --target win_amd64-cp312
-      - name: Prove an offline installation with no index access
-        run: >
-          python -m scripts.w02_closure install
-          --wheelhouse w02-wheelhouse
-          --lock w02-closure-build/built.lock
-          --target-dir offline-target
-      - name: Reproduce the reviewed closure when it is committed
-        if: hashFiles('requirements-w02-runtime.lock') != ''
+      - name: Verify reviewed wheelhouse and complete dependency graph
         run: >
           python -m scripts.w02_closure verify
           --wheelhouse w02-wheelhouse
           --lock requirements-w02-runtime.lock
           --manifest w02-closure-manifest.json
           --target win_amd64-cp312
-      - name: Install offline from the reviewed closure when it is committed
-        if: hashFiles('requirements-w02-runtime.lock') != ''
+      - name: Prove a no-index offline installation from reviewed closure
         run: >
           python -m scripts.w02_closure install
           --wheelhouse w02-wheelhouse
@@ -126,8 +110,8 @@ jobs:
       - name: Emit the runtime SBOM and license inventory
         run: >
           python -m scripts.w02_closure sbom
-          --lock w02-closure-build/built.lock
-          --manifest w02-closure-build/built-manifest.json
+          --lock requirements-w02-runtime.lock
+          --manifest w02-closure-manifest.json
           --sbom-out w02-closure-build/sbom.cdx.json
           --licenses-out w02-closure-build/THIRD_PARTY_LICENSES.csv
           --target win_amd64-cp312
@@ -138,8 +122,8 @@ jobs:
         with:
           name: w02-airgap-closure-win-amd64-cp312
           path: |
-            w02-closure-build/built.lock
-            w02-closure-build/built-manifest.json
+            requirements-w02-runtime.lock
+            w02-closure-manifest.json
             w02-closure-build/sbom.cdx.json
             w02-closure-build/THIRD_PARTY_LICENSES.csv
           if-no-files-found: error
