@@ -778,6 +778,154 @@ def download_artifacts(report: list[dict], wheelhouse: Path, *,
     return artifacts
 
 
+
+
+# --------------------------------------------------------------------------
+# Reconstruct an already reviewed closure without resolving latest versions
+# --------------------------------------------------------------------------
+
+def reviewed_artifacts(requirements: Path, lock: Path, manifest: Path, *,
+                       target: str, vcs_sources: list[Path]) -> tuple[list[Artifact], dict[str, tuple[str, str, str]]]:
+    """Validate the committed closure before downloading any dependencies.
+
+    A normal pip re-resolution changes whenever unpinned transitive packages
+    publish new releases. That must never drive a release build: use exactly
+    the artifact URLs and hashes already reviewed in the committed manifest.
+    """
+    if target not in TARGETS:
+        raise ClosureError("unsupported closure target: " + target)
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError) as exc:
+        raise ClosureError("reviewed closure manifest unreadable") from exc
+    platform_tags, python_tag, _native, _env = TARGETS[target]
+    if not isinstance(payload, dict) or payload.get("schema") != SCHEMA:
+        raise ClosureError("reviewed closure has unsupported schema")
+    if (payload.get("target") != target
+            or payload.get("python_tag") != python_tag
+            or payload.get("platform") != list(platform_tags)):
+        raise ClosureError("reviewed closure target/platform mismatch")
+    if (payload.get("requirements") != requirements.name
+            or payload.get("requirements_sha256") != canonical_sha256(requirements)):
+        raise ClosureError("reviewed closure was not built from current requirements")
+    entries = parse_lock(lock.read_text(encoding="utf-8"))
+    locked = {(_normalise(name), version): digest for name, version, digest in entries}
+    records = payload.get("artifacts")
+    if not isinstance(records, list) or len(records) != len(entries):
+        raise ClosureError("reviewed manifest and lock have different artifact counts")
+
+    from urllib.parse import urlsplit
+
+    pins: dict[str, tuple[str, str, str]] = {}
+    for source in vcs_sources:
+        for name, url, commit in vcs_pins(source):
+            ref = f"{url}@{commit}"
+            if ref in pins:
+                raise ClosureError("duplicate vendored pin: " + ref)
+            pins[ref] = (name, url, commit)
+
+    artifacts: list[Artifact] = []
+    seen_filenames: set[str] = set()
+    seen_requirements: set[tuple[str, str]] = set()
+    used_pins: set[str] = set()
+    for item in records:
+        if not isinstance(item, dict):
+            raise ClosureError("invalid reviewed artifact record")
+        for key in ("name", "version", "filename", "sha256", "url"):
+            if not isinstance(item.get(key), str) or not item[key]:
+                raise ClosureError("reviewed artifact has invalid " + key)
+        artifact = Artifact(
+            name=item["name"], version=item["version"], filename=item["filename"],
+            sha256=item["sha256"], url=item["url"],
+            requires_python=str(item.get("requires_python", "")),
+            license=str(item.get("license", "")),
+        )
+        if not _SHA256.fullmatch(artifact.sha256):
+            raise ClosureError("reviewed artifact digest is invalid")
+        if artifact.filename in seen_filenames:
+            raise ClosureError("duplicate reviewed artifact filename")
+        seen_filenames.add(artifact.filename)
+        wheel_name, wheel_version, _py, _abi, _plat = parse_wheel_filename(
+            artifact.filename)
+        key = (_normalise(artifact.name), artifact.version)
+        if (key in seen_requirements
+                or _normalise(wheel_name) != key[0]
+                or wheel_version != artifact.version
+                or locked.get(key) != artifact.sha256):
+            raise ClosureError("reviewed manifest and lock disagree: " + artifact.filename)
+        seen_requirements.add(key)
+        check_wheel_platform(artifact.filename, platform_tags=platform_tags,
+                             python_tag=python_tag)
+        if artifact.url.startswith("git+"):
+            pin = pins.get(artifact.url)
+            if pin is None or _normalise(pin[0]) != key[0]:
+                raise ClosureError("vendored artifact lacks a matching pinned VCS source")
+            used_pins.add(artifact.url)
+        else:
+            source_url = urlsplit(artifact.url)
+            if (source_url.scheme != "https" or source_url.netloc != "files.pythonhosted.org"
+                    or not source_url.path.startswith("/packages/")
+                    or not source_url.path.endswith("/" + artifact.filename)
+                    or source_url.query or source_url.fragment or source_url.username):
+                raise ClosureError("reviewed wheel URL is not an exact trusted wheel URL")
+        artifacts.append(artifact)
+    if seen_requirements != set(locked) or used_pins != set(pins):
+        raise ClosureError("reviewed artifacts and pinned inputs are incomplete")
+    return artifacts, pins
+
+
+def hydrate_reviewed_closure(requirements: Path, lock: Path, manifest: Path,
+                             wheelhouse: Path, *, target: str,
+                             vcs_sources: list[Path]) -> None:
+    """Fetch only reviewed wheels, compare hashes, and prove offline closure.
+
+    Never calls pip's dependency resolver. The only permitted VCS wheel must
+    match the pinned external driver requirement and its reviewed wheel digest.
+    """
+    require_native_target(target)
+    artifacts, pins = reviewed_artifacts(
+        requirements, lock, manifest, target=target, vcs_sources=vcs_sources)
+    wheelhouse.mkdir(parents=True, exist_ok=True)
+    if any(wheelhouse.iterdir()):
+        raise ClosureError("reviewed wheelhouse must begin empty")
+    platform_tags, python_tag, _native, _env = TARGETS[target]
+    entries = parse_lock(lock.read_text(encoding="utf-8"))
+    with tempfile.TemporaryDirectory(prefix="w02-reviewed-") as scratch:
+        workdir = Path(scratch)
+        stage = workdir / "wheels"
+        stage.mkdir()
+        for index, artifact in enumerate(artifacts):
+            destination = stage / artifact.filename
+            if artifact.url.startswith("git+"):
+                name, source_url, commit = pins[artifact.url]
+                vcs_work = workdir / ("vcs-" + str(index))
+                vcs_work.mkdir()
+                wheel, provenance = build_vcs_wheel(name, source_url, commit, vcs_work)
+                if wheel.name != artifact.filename or provenance != artifact.url:
+                    raise ClosureError("vendored wheel differs from reviewed provenance")
+                shutil.copyfile(wheel, destination)
+            else:
+                result = _pip_run([
+                    "download", "--no-deps", "--no-cache-dir",
+                    "--dest", str(stage), artifact.url,
+                ])
+                if result.returncode != 0 or not destination.is_file():
+                    raise ClosureError("cannot fetch reviewed wheel: " + artifact.filename)
+            if sha256_file(destination) != artifact.sha256:
+                raise ClosureError("reviewed wheel digest mismatch: " + artifact.filename)
+            metadata = wheel_metadata(destination)
+            if (_normalise(metadata.get("name", "")) != _normalise(artifact.name)
+                    or metadata.get("version") != artifact.version):
+                raise ClosureError("reviewed wheel metadata mismatch: " + artifact.filename)
+        verify_wheelhouse(entries, stage, platform_tags=platform_tags,
+                          python_tag=python_tag)
+        verify_closure_complete(artifacts, stage, target=target)
+        for artifact in artifacts:
+            shutil.copyfile(stage / artifact.filename, wheelhouse / artifact.filename)
+    verify_wheelhouse(entries, wheelhouse, platform_tags=platform_tags,
+                      python_tag=python_tag)
+    print(f"Reviewed closure hydrated: {len(artifacts)} pinned wheels -> {wheelhouse}")
+
 def add_local_wheels(paths: list[Path], wheelhouse: Path, *,
                      platform_tags: tuple[str, ...], python_tag: str,
                      provenance: dict[str, str]) -> list[Artifact]:
