@@ -1,5 +1,11 @@
 # H02 — Process watchdog operation and physical limitations
 
+> For new agent-run physical HIL **tests** use the PIN-only admission
+> procedure in [HIL_PIN_RUNBOOK.md](HIL_PIN_RUNBOOK.md). A 24-hour PIN
+> does not change the physical watchdog requirements or the historical H02
+> permit-based *application runtime* described below. Never use this
+> command-level process-kill wrapper to supervise an energized chamber.
+
 ## Bounded development/test execution
 
 Use the standalone standard-library process supervisor:

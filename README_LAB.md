@@ -1,6 +1,9 @@
-# Isolated-lab mode: full-range chamber operation without the permit workflow
+# Isolated-lab mode: full-range chamber operation (PIN-gated agent HIL tests)
 
-For a **closed lab network** (server, laptop and chamber only). It replaces
+For **agent-operated physical HIL tests**, follow the [24-hour PIN runbook](docs/HIL_PIN_RUNBOOK.md): operator `bash scripts/hil_pin.sh setup`, then launch test commands under `bash scripts/hil_pin.sh run -- ...`. This replaces the old agent-facing signed-permit/witness checklist. The existing standalone lab-mode server itself does **not** validate this test PIN; agents must not launch it as a workaround. Physical interlocks, identity, safe STOP and bounded watchdog deadlines remain obligatory.
+
+For a **closed lab network** (server, laptop and chamber only), this optional
+application runtime mode replaces
 the supervised H02 workflow (signed permit, witness, pinned revisions,
 per-shift STOP confirmation, watchdog process) with a single launch-time
 switch, so profiles run unattended across the full temperature range.
@@ -110,10 +113,10 @@ original setpoint and gradients are restored over an independent connection.
 python scripts/hil_lab_acceptance.py --simulate --evidence /tmp/lab-sim
 
 # 2. Read-only plan and time estimate against the chamber (nothing moves)
-python scripts/hil_lab_acceptance.py --plan-only --evidence hil-evidence/lab-plan
+bash scripts/hil_pin.sh run -- python scripts/hil_lab_acceptance.py --plan-only --evidence hil-evidence/lab-plan
 
-# 3. Full run (VT 4011, -40..130 °C, 10 min dwell: roughly 3-4 h)
-nohup python scripts/hil_lab_acceptance.py --evidence hil-evidence/lab-$(date +%F) &
+# 3. Full run (site-appropriate envelope and dwell; physical STOP required)
+bash scripts/hil_pin.sh run -- python scripts/hil_lab_acceptance.py --evidence hil-evidence/lab-$(date +%F) --deadline-hours 6
 ```
 
 Useful options:
@@ -126,7 +129,7 @@ Useful options:
 - `--gradient 1.0` sets the declared gradient for the gradient phase.
 - `--deadline-hours N` sets a hard limit for the whole run.
 
-Start from a **stopped** chamber. Ctrl-C/SIGTERM cancels and cleans up. A dropped SSH
+Start from an independently verified **stopped** chamber; the operator PIN is mandatory for physical tests, including `--plan-only`. Ctrl-C/SIGTERM cancels and cleans up. A dropped SSH
 session (SIGHUP) does not stop the run. Evidence directory: `timeline.jsonl`,
 `samples.jsonl`, `runs/` (journal), `summary.json`, `summary.md`. Exit code 0
 only if every phase passed.
