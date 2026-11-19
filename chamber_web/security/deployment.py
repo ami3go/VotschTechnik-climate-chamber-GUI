@@ -67,6 +67,10 @@ class DeploymentPolicy:
     def is_lan(self) -> bool:
         return self.mode == "lan"
 
+    @property
+    def is_lab(self) -> bool:
+        return self.mode == "lab"
+
     def allows_client(self, address: str | None) -> bool:
         if not address:
             return False
@@ -80,8 +84,8 @@ class DeploymentPolicy:
     def from_env(cls, env: dict[str, str] | None = None) -> "DeploymentPolicy":
         config = os.environ if env is None else env
         mode = config.get("CHAMBER_NETWORK_MODE", "localhost").strip().lower()
-        if mode not in {"localhost", "lan"}:
-            raise DeploymentError("CHAMBER_NETWORK_MODE must be localhost or lan")
+        if mode not in {"localhost", "lan", "lab"}:
+            raise DeploymentError("CHAMBER_NETWORK_MODE must be localhost, lan or lab")
         try:
             port = int(config.get("CHAMBER_PORT", "8080"))
         except ValueError as exc:
@@ -114,6 +118,8 @@ class DeploymentPolicy:
             networks = (ipaddress.ip_network("127.0.0.0/8"),
                         ipaddress.ip_network("::1/128"))
             return cls(mode, host, port, origins, networks)
+        if mode == "lab":
+            return cls._isolated_lab(config, host, bind, port)
 
         if bind.is_loopback or bind.is_multicast or bind.is_unspecified and not (
                 config.get("CHAMBER_ALLOWED_CLIENT_CIDRS")):
@@ -170,3 +176,52 @@ class DeploymentPolicy:
             raise DeploymentError("TLS certificate does not match public origin") from exc
         return cls(mode, host, port, frozenset({raw_origin}), networks,
                    certfile, keyfile)
+
+    @classmethod
+    def _isolated_lab(cls, config, host: str, bind, port: int) -> "DeploymentPolicy":
+        """Plain HTTP for a closed lab network (server, laptop, chamber only).
+
+        No TLS. Host/Origin binding, the client allowlist (default: private
+        and loopback networks) and G08 sign-in still apply. Origins are
+        ``CHAMBER_PUBLIC_ORIGIN`` (comma-separated) or, for a specific bind
+        address, ``http://<bind>:<port>``; loopback origins are always added.
+        """
+        if bind.is_multicast or (not bind.is_private and not bind.is_unspecified):
+            raise DeploymentError("Lab mode binds only private, loopback or 0.0.0.0")
+        if config.get("CHAMBER_TLS_CERT") or config.get("CHAMBER_TLS_KEY"):
+            raise DeploymentError("Lab mode is plain HTTP; use lan mode for TLS")
+        origins = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
+        raw = [v.strip().rstrip("/") for v in
+               config.get("CHAMBER_PUBLIC_ORIGIN", "").split(",") if v.strip()]
+        for origin in raw:
+            try:
+                parts = urlsplit(origin)
+                valid = (parts.scheme == "http" and bool(parts.hostname) and
+                         not parts.username and not parts.password and not parts.path and
+                         not parts.query and not parts.fragment and parts.port == port)
+            except ValueError as exc:
+                raise DeploymentError("Invalid lab origin") from exc
+            if not valid:
+                raise DeploymentError(
+                    f"Lab origins must look like http://<server-ip>:{port}")
+            origins.add(origin)
+        if not raw:
+            if bind.is_unspecified:
+                raise DeploymentError(
+                    "Lab mode on 0.0.0.0 needs CHAMBER_PUBLIC_ORIGIN="
+                    f"http://<server-ip>:{port} (the address the laptop opens)")
+            if not bind.is_loopback:
+                origins.add(f"http://{host}:{port}")
+        cidrs = config.get("CHAMBER_ALLOWED_CLIENT_CIDRS", "")
+        try:
+            networks = tuple(ipaddress.ip_network(s.strip(), strict=True)
+                             for s in cidrs.split(",") if s.strip()) or tuple(
+                ipaddress.ip_network(net) for net in (
+                    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+                    "169.254.0.0/16", "127.0.0.0/8", "::1/128", "fc00::/7"))
+        except ValueError as exc:
+            raise DeploymentError("Invalid client CIDR allowlist") from exc
+        if any(net.prefixlen == 0 or not (net.is_private or net.is_loopback)
+               for net in networks):
+            raise DeploymentError("Lab client networks must be private")
+        return cls("lab", host, port, frozenset(origins), networks)

@@ -101,10 +101,11 @@ def evidence_events(records) -> list[str]:
 def armed_heartbeat(**overrides) -> dict:
     message = {
         "type": wp.HEARTBEAT, "seq": 0, "state": wp.STATE_ARMED,
+        "run_id": "run-1",
         "generation": 3, "expected_generation": 3,
         "step_index": 0, "step_remaining_s": 0.4, "whole_remaining_s": 3.0,
         "telemetry_age_s": 0.1, "owner_ok": True, "recorder_ok": True,
-        "temp_ok": True,
+        "temp_ok": True, "stop_verified": None,
     }
     message.update(overrides)
     return message
@@ -350,6 +351,64 @@ class WatchdogChildTests(unittest.TestCase):
         self.assertIn("step deadline exceeded", stops[0]["reason"])
         expired.send({"type": wp.SHUTDOWN})
         expired.expect_exit(0)
+
+    def test_expected_stop_fence_is_bounded_and_rearms_for_next_run(self):
+        harness = self._harness()
+        harness.send(armed_heartbeat(seq=0))
+        self.assertEqual(harness.receive(), {"type": wp.ACK, "seq": 0})
+
+        stopping = armed_heartbeat(
+            seq=1, state=wp.STATE_STOPPING, generation=4,
+            owner_ok=False, stop_verified=False,
+        )
+        harness.send(stopping)
+        self.assertEqual(harness.receive(), {"type": wp.ACK, "seq": 1})
+        self.assertEqual(harness.collect(timeout=0.1), [])
+        harness.send({**stopping, "seq": 2, "stop_verified": True})
+        self.assertEqual(harness.receive(), {"type": wp.ACK, "seq": 2})
+        self.assertEqual(harness.collect(timeout=0.1), [])
+
+        # A fresh run after a verified STOP receives a fresh one-shot alarm.
+        harness.send(armed_heartbeat(seq=3, run_id="run-2"))
+        self.assertEqual(harness.receive(), {"type": wp.ACK, "seq": 3})
+        harness.send(armed_heartbeat(seq=4, run_id="run-2", temp_ok=False))
+        messages = harness.collect()
+        stops = [m for m in messages if m.get("type") == wp.STOP_REQUEST]
+        self.assertEqual(len(stops), 1, messages)
+        self.assertIn("temperature outside", stops[0]["reason"])
+        harness.send({"type": wp.SHUTDOWN})
+        harness.expect_exit(0)
+
+    def test_stop_fence_and_verification_deadline_remain_fail_closed(self):
+        wrong_fence = self._harness()
+        wrong_fence.send(armed_heartbeat(
+            seq=0, state=wp.STATE_STOPPING, generation=5,
+            owner_ok=False, stop_verified=False,
+        ))
+        messages = wrong_fence.collect()
+        stops = [m for m in messages if m.get("type") == wp.STOP_REQUEST]
+        self.assertEqual(len(stops), 1, messages)
+        self.assertIn("unexpected controller generation", stops[0]["reason"])
+        wrong_fence.send({"type": wp.SHUTDOWN})
+        wrong_fence.expect_exit(0)
+
+        timeout = self._harness(limits={
+            **child_limits_dict(), "process_heartbeat_s": 3.0,
+        })
+        pending = armed_heartbeat(
+            seq=0, state=wp.STATE_STOPPING, generation=4,
+            owner_ok=False, stop_verified=False,
+        )
+        timeout.send(pending)
+        self.assertEqual(timeout.receive(), {"type": wp.ACK, "seq": 0})
+        time.sleep(1.1)
+        timeout.send({**pending, "seq": 1})
+        messages = timeout.collect()
+        stops = [m for m in messages if m.get("type") == wp.STOP_REQUEST]
+        self.assertEqual(len(stops), 1, messages)
+        self.assertIn("STOP verification deadline", stops[0]["reason"])
+        timeout.send({"type": wp.SHUTDOWN})
+        timeout.expect_exit(0)
 
     def test_parent_loss_exits_three(self):
         harness = self._harness()
@@ -704,6 +763,81 @@ class SupervisedDispatchTests(unittest.TestCase):
 class RealHostIntegrationTests(unittest.TestCase):
     """Runner supervised by the real watchdog process; mock backend only."""
 
+    def test_normal_completion_stop_is_verified_without_watchdog_fault(self):
+        tmp = TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        backend = PhysicalLikeFake(CHAMBER)
+        manager = ChamberManager(
+            [ChamberConfig(CHAMBER, "fake")],
+            backend_factory=lambda config, **kwargs: backend,
+            lease_directory=root / "ownership",
+        )
+        self.addCleanup(manager.disconnect, CHAMBER)
+        manager.connect(CHAMBER)
+        store = ProfileStore(root / "profiles.sqlite")
+        profile_id = store.create_profile(
+            CHAMBER, ParsedProfile((profile_step(),), name="normal-stop")
+        ).profile_id
+        host = SupervisionHost(
+            fast_limits(), evidence_dir=root / "watchdog",
+            chamber_id=CHAMBER, serial_number=SERIAL,
+        )
+        self.addCleanup(host.close)
+        host.start()
+        self.assertTrue(wait_for(host.alive), host.error)
+        runner = ProfileRunner(
+            manager, store,
+            authorize=lambda action, chamber: "test-operator",
+            sink=CaptureSink(), clock=VirtualClock(),
+            supervised=SupervisedRun(
+                "c" * 64, "test-operator", lambda: None,
+                supervisor_alive=host.alive,
+            ),
+        )
+        self.addCleanup(runner.close)
+        snapshot = runner.start(CHAMBER, profile_id, revision=1)
+
+        def state_provider():
+            health = manager.health(CHAMBER)
+            status = manager.status(CHAMBER)
+            return {
+                **runner.supervision_state(),
+                "generation": health.generation,
+                "telemetry_age_s": 0.05,
+                "owner_ok": bool(health.connected and not health.stop_latched),
+                "recorder_ok": True,
+                "temp_ok": True,
+                "stop_verified": bool(
+                    health.state == "VERIFIED_STOPPED" and
+                    status.operation_state is OperationState.STOPPED and
+                    status.quality is ReadingQuality.GOOD
+                ),
+            }
+
+        host.arm_run(
+            run_id=snapshot.run_id, permit_sha256="d" * 64,
+            generation=snapshot.controller_generation,
+            manager=manager, state_provider=state_provider,
+            fault_notify=runner.notify_supervisor_fault,
+        )
+        deadline = time.monotonic() + 6
+        while time.monotonic() < deadline and runner.state not in TERMINAL:
+            runner.advance()
+            time.sleep(0.01)
+        self.assertEqual(runner.state, RunState.COMPLETED, runner.reason)
+        self.assertTrue(wait_for(
+            lambda: "RUN_DISARM" in evidence_events(
+                read_jsonl(host.timeline_path)), timeout=3.0,
+        ), read_jsonl(host.timeline_path))
+        host_events = evidence_events(read_jsonl(host.timeline_path))
+        child_events = evidence_events(read_jsonl(
+            host.timeline_path.with_name("watchdog-child.jsonl")))
+        self.assertNotIn("STOP_REQUEST", host_events)
+        self.assertNotIn("FAULT", child_events)
+        self.assertFalse(host.latched)
+        self.assertTrue(host.alive())
+
     def test_child_fault_stops_the_runner_before_dispatch(self):
         tmp = TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -869,6 +1003,8 @@ class SupervisedServiceWatchdogTests(unittest.TestCase):
             simulation=False, supervised=runtime,
             parameters=RunParameters(poll_s=0.05, max_gap_s=1, max_age_s=1),
         )
+        service.confirm_physical_stop_procedure(
+            self.operator.session, self.operator.csrf)
 
         def close_runner():
             runner = service.runner

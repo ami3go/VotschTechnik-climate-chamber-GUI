@@ -135,6 +135,26 @@ class HardenedIdentityTests(unittest.TestCase):
         with self.assertRaises(AuthenticationError):
             self.store.authenticate(other.session)
 
+    def test_user_listing_is_admin_only_and_contains_no_credentials(self):
+        self.store.create_user(
+            self.tokens.session, self.tokens.csrf,
+            "viewer_1", "VeryLongStrongPassword#456", Role.VIEWER,
+        )
+        accounts = self.store.list_users(self.tokens.session)
+        self.assertEqual(
+            [(account.username, account.role, account.enabled)
+             for account in accounts],
+            [("admin_1", Role.ADMIN, True), ("viewer_1", Role.VIEWER, True)],
+        )
+        self.assertFalse(any(
+            hasattr(account, field)
+            for account in accounts
+            for field in ("password", "password_hash", "pin", "pin_hash")
+        ))
+        viewer = self.store.login("viewer_1", "VeryLongStrongPassword#456")
+        with self.assertRaises(AuthorizationError):
+            self.store.list_users(viewer.session)
+
     def test_configurable_lockout_does_not_extend_locked_interval(self):
         for _ in range(3):
             with self.assertRaises(AuthenticationError):

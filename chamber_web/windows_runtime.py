@@ -25,19 +25,34 @@ import webbrowser
 APP_ID = "climate-chamber-w01-demo"
 DEFAULT_PORT = 8080
 LOCK_WAIT_SECONDS = 35
+READY_PATH = "/__w01_ready"
 
 
-def state_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA")
-    if not root:
-        root = str(Path.home() / "AppData" / "Local")
-    result = Path(root) / "ClimateChamber" / "W01"
+def state_dir(name: str = "W01") -> Path:
+    """Per-variant process-owned state directory.
+
+    ``CHAMBER_STATE_DIR`` overrides the location for portable deployments; the
+    default keeps the historical ``%LOCALAPPDATA%\\ClimateChamber\\W01`` path so
+    existing W01 installations and their journals are not moved.
+    """
+    override = os.environ.get("CHAMBER_STATE_DIR", "").strip()
+    if override:
+        result = Path(override).expanduser()
+    else:
+        root = os.environ.get("LOCALAPPDATA")
+        if not root:
+            if os.name == "nt":
+                root = str(Path.home() / "AppData" / "Local")
+            else:
+                root = str(Path(os.environ.get(
+                    "XDG_STATE_HOME", Path.home() / ".local" / "state")))
+        result = Path(root) / "ClimateChamber" / name
     result.mkdir(parents=True, exist_ok=True)
     return result
 
 
-def configured_port() -> int:
-    raw = os.environ.get("CHAMBER_PORT", str(DEFAULT_PORT))
+def configured_port(default: int = DEFAULT_PORT) -> int:
+    raw = os.environ.get("CHAMBER_PORT", str(default))
     try:
         port = int(raw)
     except ValueError as exc:
@@ -48,17 +63,36 @@ def configured_port() -> int:
 
 
 @contextmanager
-def process_lock(name: str, *, wait_seconds: float = 0):
-    """Windows kernel byte-range lock (released even after abrupt process exit)."""
-    if os.name != "nt":
-        raise RuntimeError("W01 launcher is Windows-only")
-    import msvcrt  # Windows only
-
-    path = state_dir() / name
+def process_lock(name: str, *, wait_seconds: float = 0,
+                 state_name: str = "W01"):
+    """Kernel lock released even after abrupt exit (Windows byte range, flock)."""
+    path = state_dir(state_name) / name
     handle = open(path, "a+b")
     try:
-        handle.seek(0)
-        if handle.read(1) == b"":
+        if os.name != "nt":
+            import fcntl
+
+            end = time.monotonic() + wait_seconds
+            while True:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError as exc:
+                    if time.monotonic() >= end:
+                        raise RuntimeError(
+                            "A Climate Chamber process already owns " + name) from exc
+                    time.sleep(0.2)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            return
+        import msvcrt  # Windows only
+
+        # Ensure the locked byte exists without reading it: another handle may
+        # already hold a byte-range lock, which makes even a read fail with
+        # PermissionError on Windows. File size is metadata, not locked I/O.
+        if os.fstat(handle.fileno()).st_size == 0:
             handle.write(b"0")
             handle.flush()
         end = time.monotonic() + wait_seconds
@@ -80,14 +114,14 @@ def process_lock(name: str, *, wait_seconds: float = 0):
         handle.close()
 
 
-def instance_path() -> Path:
-    return state_dir() / "instance.json"
+def instance_path(name: str = "W01") -> Path:
+    return state_dir(name) / "instance.json"
 
 
-def read_instance() -> dict | None:
+def read_instance(name: str = "W01") -> dict | None:
     try:
-        data = json.loads(instance_path().read_text(encoding="utf-8"))
-        if (data.get("app") == APP_ID and isinstance(data.get("token"), str)
+        data = json.loads(instance_path(name).read_text(encoding="utf-8"))
+        if (data.get("app") and isinstance(data.get("token"), str)
                 and isinstance(data.get("port"), int) and isinstance(data.get("pid"), int)):
             return data
     except (OSError, ValueError, AttributeError):
@@ -95,12 +129,13 @@ def read_instance() -> dict | None:
     return None
 
 
-def probe(instance: dict | None) -> bool:
-    if not instance or instance.get("app") != APP_ID or not 1024 <= instance["port"] <= 65535:
+def probe(instance: dict | None, *, app_id: str = APP_ID,
+          host: str = "127.0.0.1") -> bool:
+    if not instance or instance.get("app") != app_id or not 1024 <= instance["port"] <= 65535:
         return False
     challenge = secrets.token_hex(16)
-    url = ("http://127.0.0.1:" + str(instance["port"])
-           + "/__w01_ready?" + urlencode({"challenge": challenge}))
+    url = ("http://" + host + ":" + str(instance["port"])
+           + READY_PATH + "?" + urlencode({"challenge": challenge}))
     try:
         # Never consult an OS/corporate HTTP proxy for loopback, including in
         # a disconnected Windows installation. Bound foreign-port responses.
@@ -113,7 +148,7 @@ def probe(instance: dict | None) -> bool:
         result = json.loads(payload)
         expected = hmac.new(instance["token"].encode("ascii"),
                             challenge.encode("ascii"), hashlib.sha256).hexdigest()
-        return (result.get("app") == APP_ID
+        return (result.get("app") == app_id
                 and result.get("pid") == instance["pid"]
                 and hmac.compare_digest(result.get("proof", ""), expected))
     except (OSError, ValueError, TypeError, KeyError, UnicodeError, HTTPError, URLError):
@@ -136,12 +171,18 @@ def server_executable() -> Path:
     return base / "server" / "ClimateChamberServer.exe"
 
 
-def launch(*, open_browser: bool = True, check_only: bool = False) -> int:
+def launch(*, open_browser: bool = True, check_only: bool = False,
+           app_id: str = APP_ID, state_name: str = "W01",
+           executable: Path | None = None, url: str | None = None,
+           host: str = "127.0.0.1", command: list[str] | None = None,
+           env: dict[str, str] | None = None,
+           default_port: int = DEFAULT_PORT) -> int:
     """Attach only after HMAC proof from this user's installed server."""
-    port = configured_port()
-    with process_lock("launcher.lock", wait_seconds=LOCK_WAIT_SECONDS):
-        instance = read_instance()
-        if probe(instance):
+    port = configured_port(default_port)
+    with process_lock("launcher.lock", wait_seconds=LOCK_WAIT_SECONDS,
+                      state_name=state_name):
+        instance = read_instance(state_name)
+        if probe(instance, app_id=app_id, host=host):
             if instance["port"] != port:
                 raise RuntimeError("Existing server uses another CHAMBER_PORT")
         else:
@@ -149,31 +190,36 @@ def launch(*, open_browser: bool = True, check_only: bool = False) -> int:
                 raise RuntimeError("No authenticated Climate Chamber server is running")
             if port_occupied(port):
                 raise RuntimeError("Port is occupied by an unrecognized application: " + str(port))
-            executable = server_executable()
-            if not executable.is_file():
-                raise RuntimeError("Missing bundled server: " + str(executable))
-            log_path = state_dir() / "server.log"
+            if command is None:
+                server_exe = executable or server_executable()
+                if not server_exe.is_file():
+                    raise RuntimeError("Missing bundled server: " + str(server_exe))
+                command = [str(server_exe), "--port", str(port)]
+            log_path = state_dir(state_name) / "server.log"
+            child_env = dict(os.environ)
+            child_env.update(env or {})
             with open(log_path, "ab", buffering=0) as logfile:
                 proc = subprocess.Popen(
-                    [str(executable), "--port", str(port)],
-                    cwd=str(state_dir()), stdin=subprocess.DEVNULL,
-                    stdout=logfile, stderr=subprocess.STDOUT,
+                    command,
+                    cwd=str(state_dir(state_name)), stdin=subprocess.DEVNULL,
+                    stdout=logfile, stderr=subprocess.STDOUT, env=child_env,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                     close_fds=True,
                 )
             deadline = time.monotonic() + 30
             while time.monotonic() < deadline:
-                instance = read_instance()
-                if instance and instance["port"] == port and probe(instance):
+                instance = read_instance(state_name)
+                if (instance and instance["port"] == port
+                        and probe(instance, app_id=app_id, host=host)):
                     break
                 if proc.poll() is not None:
                     raise RuntimeError("Server exited; see " + str(log_path))
                 time.sleep(0.25)
             else:
                 raise RuntimeError("Server readiness timed out; see " + str(log_path))
-        if open_browser and not webbrowser.open("http://127.0.0.1:" + str(port) + "/"):
+        if open_browser and not webbrowser.open(url or ("http://127.0.0.1:" + str(port) + "/")):
             raise RuntimeError("No default Windows browser could be opened")
-        print("Authenticated simulator server PID", instance["pid"], flush=True)
+        print("Authenticated server PID", instance["pid"], flush=True)
     return 0
 
 
@@ -245,7 +291,7 @@ def serve(*, port: int) -> int:
             import chamber_web.main  # noqa: F401 - register demo page/assets
             from chamber_web.security.nicegui import cookie_secret
 
-            @app.get("/__w01_ready")
+            @app.get(READY_PATH)
             def ready(challenge: str = "") -> dict:
                 if len(challenge) != 32 or any(c not in "0123456789abcdef" for c in challenge):
                     return {"error": "invalid challenge"}
@@ -282,61 +328,19 @@ def launcher_main() -> int:
 
 
 def server_main() -> int:
+    from chamber_web import maintenance
     parser = argparse.ArgumentParser(description="W01 simulated NiceGUI server")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--self-test", action="store_true")
-    parser.add_argument("--bootstrap-admin", action="store_true",
-                        help="Interactive offline first administrator")
-    parser.add_argument("--issue-recovery-token", action="store_true")
-    parser.add_argument("--recover-admin", action="store_true")
-    parser.add_argument("--reset-credentials", action="store_true")
-    parser.add_argument("--backup-security", type=Path)
-    parser.add_argument("--verify-security", type=Path)
-    parser.add_argument("--stage-restore-security", type=Path)
-    parser.add_argument("--restore-directory", type=Path)
     parser.add_argument("--require-module", action="append", default=[])
+    maintenance.add_arguments(parser)
     args = parser.parse_args()
     try:
-        modes = (args.bootstrap_admin, args.issue_recovery_token,
-                 args.recover_admin, args.reset_credentials,
-                 args.backup_security is not None,
-                 args.verify_security is not None,
-                 args.stage_restore_security is not None, args.self_test)
-        if sum(bool(mode) for mode in modes) > 1:
-            raise ValueError("Choose only one server operation")
-        if args.bootstrap_admin:
-            from chamber_web.security.bootstrap import interactive_bootstrap
-            return interactive_bootstrap()
-        if args.issue_recovery_token or args.recover_admin:
-            from chamber_web.security.bootstrap import interactive_recovery
-            return interactive_recovery(issue=args.issue_recovery_token)
-        if args.reset_credentials:
-            from chamber_web.security.bootstrap import interactive_reset_credentials
-            return interactive_reset_credentials()
-        if args.backup_security or args.verify_security or args.stage_restore_security:
-            if not sys.stdin.isatty():
-                raise RuntimeError("Security backup/restore requires a local terminal")
-            from chamber_web.security.paths import security_directory
-            from chamber_web.security.backup import (
-                backup_security_database, verify_security_backup,
-                stage_security_restore,
-            )
-            root = security_directory()
-            if args.backup_security:
-                output, manifest = backup_security_database(root, args.backup_security)
-                print("Security backup and signed manifest:", output, manifest)
-            elif args.verify_security:
-                verify_security_backup(root, args.verify_security)
-                print("Security backup verified")
-            else:
-                if args.restore_directory is None:
-                    raise ValueError("--restore-directory required")
-                output = stage_security_restore(
-                    root, args.stage_restore_security, args.restore_directory)
-                print("Staged restore with all sessions revoked:", output)
-            return 0
         if args.self_test:
             return frozen_self_test(required_modules=tuple(args.require_module))
+        result = maintenance.run(args)
+        if result is not None:
+            return result
         return serve(port=args.port)
     except Exception as exc:
         print("W01 server error:", str(exc), file=sys.stderr)

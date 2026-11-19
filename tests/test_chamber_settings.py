@@ -4,6 +4,7 @@ No physical hardware is contacted; settings only take effect at server start.
 """
 from __future__ import annotations
 
+import ast
 import json
 import tempfile
 import unittest
@@ -14,6 +15,7 @@ from chamber_web.domain.chamber import ChamberSafetyError
 from chamber_web.hil.chamber_settings import (
     ChamberSettings, effective_hil_environment, load_settings, save_settings,
 )
+from chamber_web.hil.lab_mode import LAB_ACKNOWLEDGEMENT, lab_mode_from_env
 from chamber_web.hil.physical import ACKNOWLEDGEMENT, hil_authorization_from_env
 from chamber_web.security.auth import AuthorizationError, Role, SecurityStore
 
@@ -55,6 +57,48 @@ class ChamberSettingsTests(unittest.TestCase):
                    if "chamber.settings.save" in row]
         self.assertTrue(actions)
 
+    def test_main_composes_h02_from_effective_settings_environment(self):
+        """Saved H02 fields must reach the runtime, not only CHAMBER_HIL fields."""
+        source = (Path(__file__).resolve().parents[1] / "chamber_web" / "main.py").read_text(
+            encoding="utf-8"
+        )
+        tree = ast.parse(source)
+        calls = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "supervised_runtime_from_env"
+        ]
+        self.assertEqual(len(calls), 1)
+        self.assertIsInstance(calls[0].args[0], ast.Name)
+        self.assertEqual(calls[0].args[0].id, "_HIL_ENV")
+
+    def test_saved_lab_mode_enables_unattended_physical_profiles(self):
+        settings = replace(PHYSICAL, person_present_acknowledged=False, lab_mode=True)
+        stored = self.save(settings)
+        self.assertTrue(stored.lab_mode)
+        env, source = effective_hil_environment({}, self.path)
+        self.assertEqual(source, "chamber settings")
+        self.assertEqual(env["CHAMBER_LAB_MODE"], LAB_ACKNOWLEDGEMENT)
+        self.assertEqual(env["CHAMBER_HIL_ACK"], ACKNOWLEDGEMENT)
+        lab = lab_mode_from_env(env, hil_present=True)
+        self.assertIsNotNone(lab)
+        self.assertTrue(lab.gradients)
+        self.assertIsNotNone(hil_authorization_from_env(env))
+
+    def test_lab_mode_ignores_legacy_h02_configuration(self):
+        settings = replace(PHYSICAL, lab_mode=True, h02_permit_file="/old/permit.json",
+                           h02_trusted_key="old-key", h02_witness="old-witness")
+        self.assertEqual(settings.h02_environment(), {})
+        env = {**settings.hil_environment(), **settings.lab_environment()}
+        self.assertNotIn("CHAMBER_H02_PERMIT_FILE", env)
+        self.assertIsNotNone(lab_mode_from_env(env, hil_present=True))
+
+    def test_lab_mode_requires_a_physical_chamber(self):
+        with self.assertRaises(ChamberSafetyError):
+            self.save(ChamberSettings(lab_mode=True))
+        self.assertFalse(self.path.exists())
+
     def test_simulator_and_missing_file_stay_simulated(self):
         self.assertEqual(effective_hil_environment({}, self.path), ({}, "default"))
         self.save(ChamberSettings())
@@ -72,7 +116,7 @@ class ChamberSettingsTests(unittest.TestCase):
             replace(PHYSICAL, address="8.8.8.8"),
             replace(PHYSICAL, address="127.0.0.1"),
             replace(PHYSICAL, expected_serial=""),
-            replace(PHYSICAL, temperature_min_c=0.0, temperature_max_c=60.0),
+            replace(PHYSICAL, temperature_min_c=-41.0, temperature_max_c=60.0),
             replace(PHYSICAL, temperature_max_c=10.0),
             replace(PHYSICAL, person_present_acknowledged=False),
             replace(PHYSICAL, chamber_id="bad id"),

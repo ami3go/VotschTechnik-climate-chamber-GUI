@@ -2,7 +2,11 @@
 
 NiceGUI browser-based interface for a single Vötsch environmental chamber. The maintained entry point is `main.py`, which launches `chamber_web.main`; the browser UI uses server-owned services and the separate [Vötsch Python driver](https://github.com/ami3go/VotschTechnik-climate-chamber-Python) for authorized physical communication.
 
-The application includes a dashboard, manual chamber controls, persistent temperature profiles, profile execution, run recording and operator authorization. Simulation is the default. **Physical HIL is explicitly opt-in, not certified production use**; signed site safety authorization and outstanding hardware/offline release gates remain required. See the [detailed remaining development and release plan](docs/REMAINING_DEVELOPMENT_TASKS.md), [web setup and operating limitations](README_WEB.md), [development sequence](docs/DEVELOPMENT_SEQUENCE.md), [hardware safety acceptance](docs/H01_HARDWARE_ACCEPTANCE_CHECKLIST.md), the [canonical readiness findings and release blockers](docs/READINESS_FINDINGS.md) and the [W02 offline release gates](docs/W02_OFFLINE_RELEASE.md).
+The application includes a dashboard, manual chamber controls, persistent temperature profiles, profile execution, run recording and operator authorization. Simulation is the default. **Physical HIL is explicitly opt-in, not certified production use**. Agent-operated hardware **tests** use a locally issued 24-hour operator PIN rather than per-run signed permits. Historical H02 supervised *runtime* permit support and the separate production/offline release gates remain; see [the PIN runbook](docs/HIL_PIN_RUNBOOK.md). See the [detailed remaining development and release plan](docs/REMAINING_DEVELOPMENT_TASKS.md), [web setup and operating limitations](README_WEB.md), [development sequence](docs/DEVELOPMENT_SEQUENCE.md), [hardware safety acceptance](docs/H01_HARDWARE_ACCEPTANCE_CHECKLIST.md), the [canonical readiness findings and release blockers](docs/READINESS_FINDINGS.md) and the [W02 offline release gates](docs/W02_OFFLINE_RELEASE.md).
+
+## Current execution and pending tasks (November 2026)
+
+The **[authoritative Chamber execution tracker](docs/CHAMBER_EXECUTION_TRACKER.md)** links the ten current GitHub work packages, open emulator PRs, legacy driver PR, exact-head CI gates, mandatory watchdogs, and separate software/HIL/release acceptance criteria. Use the tracker and [linked issues](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues) for current execution status; the older dated Stage 2 plan and readiness findings remain historical evidence and design/release contracts.
 
 ## Current engineering phase — Stage 2 (2026-10-19)
 
@@ -12,6 +16,19 @@ advanced its **design and engineering work queue** to
 [Stage 2 — Pre-production hardening and controlled pilot readiness](docs/STAGE_2_PILOT_READINESS_PLAN.md).
 This does not assert signed site acceptance, independently accepted H02
 physical profile runs, W02 air-gap certification, or R01 release approval.
+
+## Isolated lab: full-range unattended operation
+
+For agent-managed physical HIL tests, first use `bash scripts/hil_pin.sh setup` at an operator terminal, then `bash scripts/hil_pin.sh run -- COMMAND` (see [runbook](docs/HIL_PIN_RUNBOOK.md)). This PIN does not replace physical STOP, chamber limits or bench ownership.
+
+On a closed lab network, administrators can enable **Settings → Physical
+profile runs → isolated lab mode**, which launches the server with
+`CHAMBER_LAB_MODE=ISOLATED-LAB-UNATTENDED` and lets the physical chamber run
+profiles across the full envelope without the H02 permit workflow. The same
+variable can be set directly in the server environment. Separately,
+`CHAMBER_NETWORK_MODE=lab` serves the UI to the lab laptop over plain HTTP. `scripts/hil_lab_acceptance.py` is the unattended full-range HIL
+acceptance run (`--simulate` validates it without hardware). See
+[README_LAB.md](README_LAB.md).
 
 ## Install and run (Windows / Linux)
 

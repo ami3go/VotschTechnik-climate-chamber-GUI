@@ -220,7 +220,7 @@ async def test_dashboard_physical_execution_remains_locked(
     user.find("Password").type("StrongAdminPassword#1")
     user.find("Sign in").click()
     await user.open("/")
-    await user.should_see("Physical HIL: profile execution disabled")
+    await user.should_see("Physical HIL: enable isolated lab mode")
     assert not isolated.view(
         security.login("test_admin", "StrongAdminPassword#1").session
     ).can_start

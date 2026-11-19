@@ -3,7 +3,8 @@
 Test ID/requirement: ________; report ID/date: ________; SIMULATION or separately permitted PHYSICAL HIL: ________
 Chamber manufacturer/model/serial/firmware: ________; manual revision and section: ________
 GUI SHA: ________; pinned driver SHA: ________; Windows package SHA-256: ________
-Site approval permit/expiry: ________; operator: ________; supervisor/witness: ________
+HIL authorization: PIN VALID at start? ________; UTC expiry (no PIN value): ________;
+operator present: ________; separately applicable production/site permit (if any): ________
 Approved certified envelope/tolerances and supporting evidence: ________
 Emergency/local STOP readiness, independent calibrated equipment: ________
 Preconditions and safe initial status: ________; expected behavior: ________

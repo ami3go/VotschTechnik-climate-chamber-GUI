@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from chamber_web.domain.chamber import ChamberSafetyError
+from chamber_web.hil.commits import detect_driver_commit, detect_gui_commit
 from chamber_web.hil.profile_admission import (
     AdmissionDenied, H02LiveChecks, H02WatchdogLimits, verify_signed_permit,
 )
@@ -126,14 +127,15 @@ class SupervisedProfileRuntime:
 
     def live_checks(self, *, authenticated_authorized: bool,
                     connected: bool, verified_stopped: bool, no_stop_latch: bool,
-                    recording_healthy: bool):
+                    recording_healthy: bool,
+                    physical_stop_confirmed: bool):
         return H02LiveChecks(
             g04_exclusive_owner=connected,
             g04_verified_stopped=verified_stopped,
             no_stop_latch=no_stop_latch,
             g07_reconciled_writable=recording_healthy,
             g08_authenticated_authorized=authenticated_authorized,
-            physical_stop_procedure_confirmed=self.hil_acknowledged,
+            physical_stop_procedure_confirmed=bool(physical_stop_confirmed),
             operator_present=authenticated_authorized,
             witness_present=bool(self.witness.strip()),
             supervisor_alive=bool(self.supervisor_alive()),
@@ -155,12 +157,24 @@ def supervised_runtime_from_env(
     permit = load_supervised_permit(env)
     if permit is None:
         return None
+    installed_gui = detect_gui_commit()
+    installed_driver = detect_driver_commit()
+    configured_gui = env.get(ENV_GUI_COMMIT, "").strip()
+    configured_driver = env.get(ENV_DRIVER_COMMIT, "").strip()
+    for name, installed, configured, expected in (
+        ("GUI", installed_gui, configured_gui, permit.data["gui_commit"]),
+        ("driver", installed_driver, configured_driver, permit.data["driver_commit"]),
+    ):
+        if not installed or installed != configured or installed != expected:
+            raise ChamberSafetyError(
+                f"H02 {name} revision is unknown, dirty or does not match the "
+                "configured signed permit")
     return SupervisedProfileRuntime(
         permit=permit,
         witness=env.get(ENV_WITNESS, "").strip(),
         hil_acknowledged=True,
         supervisor_alive=supervisor_alive or (lambda: False),
-        gui_commit=env.get(ENV_GUI_COMMIT, "").strip(),
-        driver_commit=env.get(ENV_DRIVER_COMMIT, "").strip(),
+        gui_commit=installed_gui,
+        driver_commit=installed_driver,
         supervision=supervision,
     )

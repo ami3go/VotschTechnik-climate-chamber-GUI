@@ -18,16 +18,31 @@ from chamber_web.domain.chamber import (
     finite_temperature,
 )
 
+# Gradient ranges accepted by the pinned driver's 11068/11072 setters (K/min).
+GRADIENT_UP_RANGE_C_PER_MIN = (0.01, 5.0)
+GRADIENT_DOWN_RANGE_C_PER_MIN = (0.01, 3.5)
+
+
+def _optional_float(value) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
 
 class VotschBackend:
     def __init__(self, chamber_id: str, ip: str, *, mock_driver_factory: Callable | None = None,
-                 hil=None, hil_driver_factory: Callable | None = None):
+                 hil=None, hil_driver_factory: Callable | None = None,
+                 gradient_writes: bool = False):
         if mock_driver_factory is not None and hil is not None:
             raise ChamberSafetyError("A backend is either simulated or physical HIL, never both")
         if hil is not None and (hil.chamber_id != chamber_id or hil.address != ip):
             raise ChamberSafetyError("HIL authorization does not match this chamber/endpoint")
         if hil is None and hil_driver_factory is not None:
             raise ChamberSafetyError("HIL driver factory requires a HIL authorization")
+        if gradient_writes and hil is None:
+            raise ChamberSafetyError("Gradient writes require a HIL authorization")
         self._chamber_id = chamber_id
         self._ip = ip
         self._factory = mock_driver_factory
@@ -36,6 +51,9 @@ class VotschBackend:
         self._driver = None
         self._identity: ChamberIdentity | None = None
         self._ramp: tuple[float, float] | None = None
+        # Isolated-lab mode only: profile gradients write 11068/11072.
+        self._gradient_writes = bool(gradient_writes)
+        self._digital_outputs: tuple[tuple[int, str], ...] = ()
 
     @property
     def simulation_only(self) -> bool:
@@ -69,10 +87,31 @@ class VotschBackend:
             if not all(math.isfinite(rate) and 0 < rate <= 60 for rate in ramp):
                 raise ChamberSafetyError("Chamber setpoint gradients unavailable or invalid")
             self._ramp = ramp
+            try:
+                self._digital_outputs = self._enumerate_digital_outputs(driver)
+            except ChamberSafetyError:
+                raise
+            except Exception as exc:
+                raise ChamberSafetyError(
+                    "Chamber digital outputs unavailable or invalid") from exc
         except BaseException:
             driver.disconnect()
             raise
         self._driver = driver
+
+    @staticmethod
+    def _enumerate_digital_outputs(driver) -> tuple[tuple[int, str], ...]:
+        """Advertise only outputs the device reports; never assume a count."""
+        count = driver.number_of_digital_outputs
+        if type(count) is not int or not 1 <= count <= 64:
+            raise ChamberSafetyError("Chamber digital output count unavailable or invalid")
+        outputs = []
+        for number in range(1, count + 1):
+            name = driver.digital_output_name(number)
+            if not isinstance(name, str) or not name.strip():
+                raise ChamberSafetyError("Chamber digital output name unavailable or invalid")
+            outputs.append((number, name.strip()))
+        return tuple(outputs)
 
     def _default_hil_driver(self):
         from VotschTechnikClimateChamber import ClimateChamber
@@ -87,6 +126,7 @@ class VotschBackend:
             finally:
                 self._driver = None
                 self._identity = None
+                self._digital_outputs = ()
 
     def _require(self):
         if self._driver is None:
@@ -105,9 +145,16 @@ class VotschBackend:
         # Mock limits are for contract tests ONLY, not a physical certification.
         if self._hil is not None:
             # Software envelope from the HIL authorization; NOT a chamber certification.
+            writes = self._gradient_writes
             return ChamberCapabilities(self._hil.temperature_min_c,
                                        self._hil.temperature_max_c, True, True, True,
-                                       setpoint_readback_ramp_c_per_min=self._ramp)
+                                       supports_ramp_up=writes, supports_ramp_down=writes,
+                                       ramp_up_range_c_per_min=(
+                                           GRADIENT_UP_RANGE_C_PER_MIN if writes else None),
+                                       ramp_down_range_c_per_min=(
+                                           GRADIENT_DOWN_RANGE_C_PER_MIN if writes else None),
+                                       setpoint_readback_ramp_c_per_min=self._ramp,
+                                       digital_outputs=self._digital_outputs)
         if self._factory is None:
             return ChamberCapabilities(0, 1, False, False, False)
         return ChamberCapabilities(-20, 80, True, True, True)
@@ -122,6 +169,10 @@ class VotschBackend:
             float(driver.temperature_set_point),
             OperationState.RUNNING if driver.is_running else OperationState.STOPPED,
             ReadingQuality.GOOD, datetime.now(timezone.utc),
+            gradient_up_c_per_min=_optional_float(
+                getattr(driver, "gradient_up", None)),
+            gradient_down_c_per_min=_optional_float(
+                getattr(driver, "gradient_down", None)),
         )
 
     def set_temperature(self, target_c: float) -> None:
@@ -139,21 +190,50 @@ class VotschBackend:
     def read_digital_output(self, number: int) -> bool:
         if type(number) is not int or not 1 <= number <= 64:
             raise UnsupportedCapability("Digital output number must be 1..64")
-        value = self._require().query("GET DIGITAL_OUT VALUE", number)[0]
-        if value not in ("0", "1"):
+        driver = self._require()
+        self._require_verified_output(number)
+        value = driver.read_digital_output(number)
+        if type(value) is not bool:
             raise ChamberSafetyError("Digital output readback was not boolean")
-        return value == "1"
+        return value
 
     def set_digital_output(self, number: int, state: bool) -> None:
         if type(number) is not int or not 1 <= number <= 64 or type(state) is not bool:
             raise UnsupportedCapability("Digital output number/state invalid")
-        self._require().query("SET DIGITAL_OUT VALUE", number, 1 if state else 0)
+        driver = self._require()
+        self._require_verified_output(number)
+        driver.set_digital_output(number, state)
+
+    def _require_verified_output(self, number: int) -> None:
+        if self._hil is None:
+            return
+        if number not in {item[0] for item in self._digital_outputs}:
+            raise UnsupportedCapability(
+                "Digital output is not verified on this physical chamber")
+
+    def _set_gradient(self, direction: str, rate_c_per_min: float) -> None:
+        if not self._gradient_writes:
+            raise UnsupportedCapability("Ramp units and support are not HIL certified")
+        low, high = (GRADIENT_UP_RANGE_C_PER_MIN if direction == "up"
+                     else GRADIENT_DOWN_RANGE_C_PER_MIN)
+        if (isinstance(rate_c_per_min, bool) or
+                not isinstance(rate_c_per_min, (int, float)) or
+                not math.isfinite(rate_c_per_min) or not low <= rate_c_per_min <= high):
+            raise UnsupportedCapability(f"Gradient {direction} must be {low}..{high} °C/min")
+        driver = self._require()
+        setattr(driver, "gradient_" + direction, float(rate_c_per_min))
+        # The 11002 readback now ramps at the new rate; keep it current so
+        # setpoint waits are sized from what the chamber will actually do.
+        if self._ramp is not None:
+            up, down = self._ramp
+            self._ramp = ((float(rate_c_per_min), down) if direction == "up"
+                          else (up, float(rate_c_per_min)))
 
     def set_ramp_up(self, rate_c_per_min: float) -> None:
-        raise UnsupportedCapability("Ramp units and support are not HIL certified")
+        self._set_gradient("up", rate_c_per_min)
 
     def set_ramp_down(self, rate_c_per_min: float) -> None:
-        raise UnsupportedCapability("Ramp units and support are not HIL certified")
+        self._set_gradient("down", rate_c_per_min)
 
 
 def verify_bundled_driver_import() -> str:

@@ -106,6 +106,10 @@ class ChamberSnapshot:
     operation_state: OperationState
     quality: ReadingQuality
     sampled_at_utc: datetime | None
+    # Independently read back device gradient settings; None means the
+    # backend has no verified gradient readback contract.
+    gradient_up_c_per_min: float | None = None
+    gradient_down_c_per_min: float | None = None
 
 
 class ChamberBackend(Protocol):
