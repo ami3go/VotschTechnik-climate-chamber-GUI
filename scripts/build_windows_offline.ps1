@@ -72,9 +72,10 @@ try {
     $wheelhouse = if ($WheelhouseDir) { $WheelhouseDir } else { Join-Path $work "wheelhouse" }
     if ($UseReviewedClosure) {
         # The reviewed closure: hash-locked, complete, and installed with NO
-        # index access. The frozen bundle then contains exactly the artifacts
-        # that were reviewed, and the build fails closed if the closure can no
-        # longer be reproduced from the pinned requirements.
+        # index access. Hydrate the exact audited wheel URLs and SHA-256 values
+        # rather than re-resolving latest transitive versions from PyPI. The
+        # vendored driver is still rebuilt from its pinned commit, and verified
+        # against its committed hash before freezing.
         if (-not (Test-Path $closureLock)) { throw "The reviewed closure lock is missing" }
         if (-not (Test-Path $closureManifest)) { throw "The reviewed closure manifest is missing" }
         New-Item -Path $wheelhouse -ItemType Directory -Force | Out-Null
@@ -87,14 +88,14 @@ try {
                             "-r", (Join-Path $repo "requirements-w02-build.txt"))
         Push-Location $repo
         try {
-            Native $closurePy @("-m", "scripts.w02_closure", "build",
+            Native $closurePy @("-m", "scripts.w02_closure", "hydrate",
                                 "--requirements", (Join-Path $repo "requirements-web.txt"),
                                 "--vcs-requirement", (Join-Path $repo "requirements-hardware.txt"),
                                 "--wheelhouse", $wheelhouse,
-                                "--lock", (Join-Path $work "closure.lock"),
-                                "--manifest", (Join-Path $work "closure-manifest.json"),
-                                "--target", "win_amd64-cp312", "--version", $Version)
-            # Fail closed unless the rebuilt closure IS the reviewed one.
+                                "--lock", $closureLock,
+                                "--manifest", $closureManifest,
+                                "--target", "win_amd64-cp312")
+            # Fail closed unless every wheel matches the reviewed closure.
             Native $closurePy @("-m", "scripts.w02_closure", "verify",
                                 "--wheelhouse", $wheelhouse, "--lock", $closureLock,
                                 "--manifest", $closureManifest, "--target", "win_amd64-cp312")
