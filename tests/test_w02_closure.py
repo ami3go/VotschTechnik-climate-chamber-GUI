@@ -10,6 +10,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import shutil
+import subprocess
+from unittest.mock import patch
 import sys
 from pathlib import Path
 import tempfile
@@ -594,6 +597,117 @@ class ClosureToolTests(unittest.TestCase):
             closure.main(["sbom", "--lock", str(lock), "--manifest", str(manifest),
                           "--sbom-out", str(self.root / "sbom.json"),
                           "--licenses-out", str(self.root / "licenses.csv")])
+
+
+
+class ReviewedHydrationTests(unittest.TestCase):
+    """No network: ensure reviewed hashes, not resolver output, drive builds."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.requirements = self.root / "requirements-web.txt"
+        self.requirements.write_text("starlette==0.47.2\n", encoding="utf-8")
+        self.filename = "starlette-0.47.2-py3-none-any.whl"
+        self.source = self.root / self.filename
+        digest = _write_wheel(self.source, "starlette", "0.47.2")
+        self.artifact = closure.Artifact(
+            name="starlette", version="0.47.2", filename=self.filename,
+            sha256=digest,
+            url="https://files.pythonhosted.org/packages/aa/bb/" + self.filename,
+            requires_python=">=3.10", license="MIT")
+        self.lock = self.root / "reviewed.lock"
+        self.lock.write_text(closure.render_lock(
+            [self.artifact], target="win_amd64-cp312",
+            python_version="3.12",
+            requirements_sha256=closure.canonical_sha256(self.requirements)),
+            encoding="utf-8")
+        self.manifest = self.root / "manifest.json"
+        self.payload = {
+            "schema": closure.SCHEMA,
+            "target": "win_amd64-cp312",
+            "platform": ["win_amd64"],
+            "python_tag": "cp312",
+            "requirements": self.requirements.name,
+            "requirements_sha256": closure.canonical_sha256(self.requirements),
+            "artifacts": [vars(self.artifact)],
+        }
+        self._write_manifest()
+        self.wheelhouse = self.root / "wheelhouse"
+
+    def _write_manifest(self):
+        self.manifest.write_text(json.dumps(self.payload), encoding="utf-8")
+
+    def test_hydrate_does_not_resolve_latest_packages(self):
+        downloads = []
+
+        def fake_download(arguments, **_unused):
+            self.assertEqual(arguments[:4], [
+                "download", "--no-deps", "--no-cache-dir", "--dest"])
+            self.assertEqual(arguments[-1], self.artifact.url)
+            downloads.append(arguments[-1])
+            shutil.copyfile(self.source, Path(arguments[4]) / self.filename)
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+
+        with patch.object(closure, "require_native_target"), \
+             patch.object(closure, "resolve_closure",
+                          side_effect=AssertionError("resolver must not run")), \
+             patch.object(closure, "_pip_run", side_effect=fake_download):
+            closure.hydrate_reviewed_closure(
+                self.requirements, self.lock, self.manifest, self.wheelhouse,
+                target="win_amd64-cp312", vcs_sources=[])
+        self.assertEqual(downloads, [self.artifact.url])
+        self.assertEqual(closure.sha256_file(self.wheelhouse / self.filename),
+                         self.artifact.sha256)
+
+    def test_changed_requirements_refused_before_download(self):
+        self.requirements.write_text("starlette==0.99.0\n", encoding="utf-8")
+        with self.assertRaisesRegex(closure.ClosureError, "current requirements"):
+            closure.reviewed_artifacts(
+                self.requirements, self.lock, self.manifest,
+                target="win_amd64-cp312", vcs_sources=[])
+
+    def test_unreviewed_wheel_url_refused(self):
+        self.payload["artifacts"][0]["url"] = "https://example.com/" + self.filename
+        self._write_manifest()
+        with self.assertRaisesRegex(closure.ClosureError, "trusted wheel URL"):
+            closure.reviewed_artifacts(
+                self.requirements, self.lock, self.manifest,
+                target="win_amd64-cp312", vcs_sources=[])
+
+    def test_unexpected_version_and_hash_refused(self):
+        self.payload["artifacts"][0]["sha256"] = "f" * 64
+        self._write_manifest()
+        with self.assertRaisesRegex(closure.ClosureError, "manifest and lock disagree"):
+            closure.reviewed_artifacts(
+                self.requirements, self.lock, self.manifest,
+                target="win_amd64-cp312", vcs_sources=[])
+
+    def test_wrong_download_digest_refused_and_not_installed(self):
+        def damaged_download(arguments, **_unused):
+            (Path(arguments[4]) / self.filename).write_bytes(b"tampered wheel")
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+
+        with patch.object(closure, "require_native_target"), \
+             patch.object(closure, "_pip_run", side_effect=damaged_download):
+            with self.assertRaisesRegex(closure.ClosureError, "digest mismatch"):
+                closure.hydrate_reviewed_closure(
+                    self.requirements, self.lock, self.manifest, self.wheelhouse,
+                    target="win_amd64-cp312", vcs_sources=[])
+        self.assertEqual(list(self.wheelhouse.iterdir()), [])
+
+    def test_missing_pinned_vcs_artifact_refused(self):
+        vcs = self.root / "requirements-hardware.txt"
+        vcs.write_text(
+            "VotschTechnikClimateChamber @ git+https://github.com/ami3go/"
+            "VotschTechnik-climate-chamber-Python.git@" + "a" * 40 + "\n",
+            encoding="utf-8")
+        with self.assertRaisesRegex(closure.ClosureError, "pinned inputs"):
+            closure.reviewed_artifacts(
+                self.requirements, self.lock, self.manifest,
+                target="win_amd64-cp312", vcs_sources=[vcs])
+
 
 
 if __name__ == "__main__":
