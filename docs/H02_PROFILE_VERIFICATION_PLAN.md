@@ -1,4 +1,10 @@
-# H02 — Physical profile execution and verification
+# H02 — Physical profile execution and verification (historical evidence)
+
+> Automated HIL **test** authorization was simplified in November 2026:
+> see [HIL_PIN_RUNBOOK.md](HIL_PIN_RUNBOOK.md) for the 24-hour operator
+> PIN setup/reset/run. Historical H02 signed permits remain documented
+> here; they are still implemented by the legacy supervised runtime,
+> not a requirement imposed by the new test wrapper.
 
 **Current status (2026-10-21): ENGINEERING PHYSICAL PROFILE PASS EVIDENCED;
 INDEPENDENT/SITE ACCEPTANCE AND R01 RELEASE REMAIN NO-GO.**
