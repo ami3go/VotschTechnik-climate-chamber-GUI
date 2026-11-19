@@ -55,7 +55,8 @@ if str(ROOT) not in sys.path:
 
 from chamber_web.domain.chamber import OperationState, ReadingQuality  # noqa: E402
 from chamber_web.hil.lab_mode import LabMode, lab_mode_from_env  # noqa: E402
-from chamber_web.hil.physical import HilAuthorization, hil_authorization_from_env  # noqa: E402
+from chamber_web.hil.physical import HilAuthorization, hil_authorization_from_env
+from chamber_web.hil.pin import HilPinError, require_hil_pin  # noqa: E402
 
 ADMIN = ("lab_admin", "StrongLabAdminPassword#1")
 OPERATOR = ("lab_operator", "StrongLabOperatorPassword#2")
@@ -811,6 +812,7 @@ def main(argv: list[str] | None = None) -> int:
                         gradient=5.0, gradient_delta=3.0)
     else:
         try:
+            require_hil_pin(os.environ)
             hil = hil_authorization_from_env(os.environ)
             lab = lab_mode_from_env(os.environ, hil_present=hil is not None)
         except Exception as exc:  # noqa: BLE001 - configuration errors are fatal
