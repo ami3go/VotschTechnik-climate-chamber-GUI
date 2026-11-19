@@ -1,0 +1,47 @@
+name: HIL operator PIN (software only)
+
+on:
+  pull_request:
+    paths:
+      - 'chamber_web/hil/pin.py'
+      - 'scripts/hil_pin.sh'
+      - 'tests/test_hil_pin.py'
+      - 'docs/HIL_PIN_RUNBOOK.md'
+      - 'ai-manifest.json'
+      - '.github/workflows/hil-pin-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'chamber_web/hil/pin.py'
+      - 'scripts/hil_pin.sh'
+      - 'tests/test_hil_pin.py'
+      - '.github/workflows/hil-pin-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pin-tests:
+    name: PIN unit tests (no device access)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.10', '3.12']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile PIN module and unit tests
+        run: python -m compileall -q chamber_web/hil/pin.py tests/test_hil_pin.py
+      - name: Run PIN tests
+        run: python -m unittest discover -s tests -p test_hil_pin.py -v
+      - name: Validate manifest
+        run: python -m json.tool ai-manifest.json
+      - name: Validate Bash syntax (Ubuntu)
+        if: runner.os == 'Linux'
+        run: bash -n scripts/hil_pin.sh
