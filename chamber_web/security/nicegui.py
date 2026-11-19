@@ -61,11 +61,22 @@ def cookie_secret() -> str:
             output.write(secrets.token_hex(32))
             output.flush()
             os.fsync(output.fileno())
+    # The cookie signing key is as sensitive as the G08 backup/audit keys:
+    # never accept a symlink, a directory/device, or another POSIX user's
+    # file even when its target happens to contain a valid hex secret.
+    import stat
+    if path.is_symlink():
+        raise RuntimeError("Symlink NiceGUI cookie signing key; startup refused")
+    info = path.stat()
+    if not stat.S_ISREG(info.st_mode):
+        raise RuntimeError("Nonregular NiceGUI cookie signing key; startup refused")
+    if os.name != "nt":
+        if info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise PermissionError(
+                "Insecure cookie key ownership or permissions; startup refused")
     secret = path.read_text(encoding="ascii").strip()
     if len(secret) != 64 or any(ch not in "0123456789abcdef" for ch in secret):
         raise RuntimeError("Invalid persistent cookie signing key; startup refused")
-    if os.name != "nt" and path.stat().st_mode & 0o077:
-        raise PermissionError("Insecure cookie key permissions; startup refused")
     return secret
 
 
