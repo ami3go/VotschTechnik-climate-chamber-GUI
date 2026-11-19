@@ -32,7 +32,7 @@
     "legacy_h02_runtime_signed_permit_still_present": true,
     "status": "test-tool migration; legacy runtime unchanged"
   },
-  "software_only_verification": "python -m unittest -v tests.test_hil_pin",
+  "software_only_verification": "python -m unittest discover -s tests -p test_hil_pin.py -v",
   "long_task_watchdog": "Use bounded watchdog for software tasks; physical tasks require controlled STOP and verified STOPPED",
   "instrument_transport_repository": "ami3go/VotschTechnik-climate-chamber-Python",
   "ui_framework": "NiceGUI"
