@@ -160,8 +160,7 @@ class ChamberController:
         with self._state_lock:
             if (not self._connected or self._stop_latched or
                     self._state != "VERIFIED_STOPPED" or
-                    self._generation != expected_generation or
-                    self._last_snapshot is not snapshot):
+                    self._generation != expected_generation):
                 raise ChamberSafetyError(
                     "Admin takeover requires reconciled STOPPED state and unchanged generation")
             self._operator_token = None
