@@ -477,23 +477,17 @@ class ProfileRunner:
                     bool(status.identity.serial_number))
             admin_override = (
                 self._supervised is not None and self._supervised.admin_override)
-            if admin_override:
-                # Explicit ADMIN lab override: ownership and the pre-run
-                # STOP/restart gate were cleared by the service. Still require
-                # a live, identifiable chamber with GOOD telemetry.
-                if (not health.connected or
-                        status.quality is not ReadingQuality.GOOD or
-                        status.identity.chamber_id != self._id or
-                        not identity_allowed):
-                    raise ChamberSafetyError(
-                        "Admin override requires connected GOOD telemetry")
-            elif (not health.connected or health.stop_latched or
-                  health.state not in ("VERIFIED_STOPPED",) or
-                  status.quality is not ReadingQuality.GOOD or
-                  status.operation_state is not OperationState.STOPPED or
-                  status.identity.chamber_id != self._id or
-                  not identity_allowed):
-                raise ChamberSafetyError("Profile requires reconciled simulated STOPPED chamber")
+            # A role-based lease takeover never exempts a profile from fresh
+            # STOPPED admission. G04 and this final runner preflight must both
+            # refuse an uncertain or already-running chamber.
+            if (not health.connected or health.stop_latched or
+                    health.state != "VERIFIED_STOPPED" or
+                    status.quality is not ReadingQuality.GOOD or
+                    status.operation_state is not OperationState.STOPPED or
+                    status.identity.chamber_id != self._id or
+                    not identity_allowed):
+                raise ChamberSafetyError(
+                    "Profile requires reconciled GOOD/STOPPED chamber")
             if not (caps.supports_start_stop and caps.supports_running_readback and
                     caps.supports_setpoint_readback):
                 raise ChamberSafetyError("Missing mandatory verified control/readback capability")
@@ -558,12 +552,10 @@ class ProfileRunner:
             try:
                 # Guard a handover/STOP race between preflight and lease grant.
                 latest = self._manager.health(self._id)
-                if admin_override:
-                    if latest.generation != health.generation:
-                        raise ChamberSafetyError(
-                            "Controller generation changed during preparation")
-                elif latest.stop_latched or latest.generation != health.generation:
-                    raise ChamberSafetyError("Controller generation changed during preparation")
+                if (latest.stop_latched or latest.state != "VERIFIED_STOPPED" or
+                        latest.generation != health.generation):
+                    raise ChamberSafetyError(
+                        "Controller STOP/generation changed during preparation")
                 self._t0 = self._now()
                 self._scheduled_steps = enabled * record.profile.repeat_count
                 self._snapshot = ExecutionSnapshot(
@@ -600,10 +592,7 @@ class ProfileRunner:
                 self._last_source_timestamp = None
                 self._stable_count = 0
                 self._dwell_elapsed = 0.0
-                self._profile_running = (
-                    admin_override and
-                    status.operation_state is OperationState.RUNNING
-                )
+                self._profile_running = False
                 self._setpoint_best = math.inf
                 self._setpoint_observed = None
                 self._setpoint_frozen = 0

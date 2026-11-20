@@ -31,7 +31,7 @@ from .hil.supervision import SupervisionHost
 from .security.nicegui import (active_tokens, cookie_secret, current_actor, deployment_policy,
                                get_security, logout, require_authenticated_page)
 from .security.auth import AuthenticationError, AuthorizationError, Role, SecurityProfile
-from .services.run_readers import RunStoreReader
+from .services.run_readers import RunExportService, RunStoreReader
 from .ui_pages import (NavigationContext, install_navigation_resolver,
                        register_pages, render_navigation)
 from .ui_state import (project_capabilities, project_chamber_identity,
@@ -206,6 +206,7 @@ register_pages(
     get_dashboard_service,
     history_reader=RunStoreReader(_run_journal_store),
     event_reader=RunStoreReader(_run_journal_store),
+    run_exporter=RunExportService(_run_journal_store, get_security),
     discovery_provider=lambda network: discover_votsch_chambers(network),
 )
 
