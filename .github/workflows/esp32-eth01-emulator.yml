@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ami3go/VotschTechnik-climate-chamber-Python
-          ref: b56cfbd54570e66cddf83106505487d3b19d9677
+          ref: d22dc05687cac4c5cdef440fb52b05965ed3d146
           path: external-driver
       - uses: actions/setup-python@v5
         with:

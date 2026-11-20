@@ -72,6 +72,19 @@ class Integration(unittest.TestCase):
             c.gradient_down = 2.0
             self.assertEqual(c.gradient_up, 3.0)
             self.assertEqual(c.gradient_down, 2.0)
+            self.assertEqual(c.gradient_up_range, (0.01, 5.0))
+            self.assertEqual(c.gradient_down_range, (0.01, 3.5))
+            self.assertEqual(c.number_of_digital_outputs, 8)
+            self.assertEqual(
+                [c.digital_output_name(n) for n in range(1, 9)],
+                ["Running", "Digital output 2", "Digital output 3",
+                 "Digital output 4", "Digital output 5", "Digital output 6",
+                 "Compressed air", "Dryer"],
+            )
+            c.set_digital_output(2, True)
+            self.assertIs(c.read_digital_output(2), True)
+            c.set_digital_output(2, False)
+            self.assertIs(c.read_digital_output(2), False)
             for _ in range(3):
                 c.start()
                 self.assertTrue(c.is_running)
@@ -82,6 +95,14 @@ class Integration(unittest.TestCase):
         c = self.chamber()
         try:
             self.assertFalse(c.is_running)
+        finally:
+            c.disconnect()
+
+    def test_bounded_repeated_tcp_queries_remain_live(self):
+        c = self.chamber()
+        try:
+            for _ in range(1000):
+                self.assertEqual(c.query("GET CONTROL_VARIABLE ACTUAL_VALUE", 1), ["23.000"])
         finally:
             c.disconnect()
 
@@ -114,6 +135,60 @@ class AmbiguousStop(unittest.TestCase):
             try: process.communicate(timeout=3)
             except subprocess.TimeoutExpired:
                 process.kill(); process.communicate(timeout=3)
+
+
+class FaultFraming(unittest.TestCase):
+    def run_server(self, scenario):
+        process = subprocess.Popen([BIN, scenario], stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True)
+        ready = process.stdout.readline().strip()
+        self.assertEqual(ready, "REFERENCE TCP 2049 READY")
+        return process
+
+    def stop_server(self, process):
+        process.terminate()
+        try:
+            process.communicate(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate(timeout=3)
+
+    def test_partial_reply_is_transport_failure(self):
+        process = self.run_server("--partial-reply")
+        try:
+            c = ClimateChamber("127.0.0.1", -40, 180, timeout=0.5)
+            try:
+                with self.assertRaises((ChamberTransportError, RuntimeError, ValueError)):
+                    _ = c.serial_number
+            finally:
+                c.disconnect()
+        finally:
+            self.stop_server(process)
+
+    def test_invalid_sensor_reply_is_not_temperature(self):
+        process = self.run_server("--invalid-sensor")
+        try:
+            c = ClimateChamber("127.0.0.1", -40, 180, timeout=0.5)
+            try:
+                with self.assertRaises((ChamberTransportError, RuntimeError, ValueError)):
+                    _ = c.temperature_measured
+            finally:
+                c.disconnect()
+        finally:
+            self.stop_server(process)
+
+    def test_sticky_stop_is_never_reported_as_stopped(self):
+        process = self.run_server("--sticky-stop")
+        try:
+            c = ClimateChamber("127.0.0.1", -40, 180, timeout=0.5)
+            try:
+                c.start()
+                with self.assertRaises(StopNotVerified):
+                    c.stop(verify_timeout=0.6)
+            finally:
+                c.disconnect()
+        finally:
+            self.stop_server(process)
 
 
 if __name__ == "__main__":

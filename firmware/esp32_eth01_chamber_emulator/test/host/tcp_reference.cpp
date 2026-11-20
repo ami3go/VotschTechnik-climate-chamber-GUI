@@ -17,7 +17,9 @@ static volatile std::sig_atomic_t running = 1;
 static void stop(int) { running = 0; }
 struct Client { int fd=-1; std::string request; };
 int main(int argc, char **argv) {
-    bool drop_stop = argc > 1 && std::string(argv[1]) == "--drop-stop-reply";
+    const std::string scenario = argc > 1 ? argv[1] : "";
+    const bool drop_stop = scenario == "--drop-stop-reply";
+    const bool partial_reply = scenario == "--partial-reply";
     std::signal(SIGTERM, stop);
     std::signal(SIGINT, stop);
     int listener = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -34,6 +36,8 @@ int main(int argc, char **argv) {
     std::array<Client,4> clients{};
     emu::Chamber model;
     emu::Faults faults;
+    faults.invalid_sensor = scenario == "--invalid-sensor";
+    faults.sticky_stop = scenario == "--sticky-stop";
     std::cout << "REFERENCE TCP 2049 READY" << std::endl;
     while (running) {
         fd_set readfds;
@@ -65,6 +69,11 @@ int main(int argc, char **argv) {
                     const bool is_stop = c.request == std::string("14001") + char(0xB6) + "1" + char(0xB6) + "1" + char(0xB6) + "0\r";
                     auto response=emu::handle_frame(c.request,model,faults);
                     if(drop_stop && is_stop) { close(c.fd);c.fd=-1; }
+                    else if (partial_reply) {
+                        const std::string partial = std::string("1") + char(0xB6);
+                        (void)send(c.fd, partial.data(), partial.size(), MSG_NOSIGNAL);
+                        close(c.fd); c.fd=-1;
+                    }
                     else if (send(c.fd,response.data(),response.size(),MSG_NOSIGNAL)!=ssize_t(response.size())) {
                         close(c.fd);c.fd=-1;
                     }

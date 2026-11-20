@@ -4,7 +4,7 @@
 independent human review or sign-off. Independent reviewer remains required
 before draft PR #84 can merge. Reviewed branch:
 `feat/esp32-eth01-chamber-emulator` and current S!MPAC Python driver
-commit `b56cfbd54570e66cddf83106505487d3b19d9677`.
+commit `d22dc05687cac4c5cdef440fb52b05965ed3d146`.
 
 ## Correctness evidence
 
@@ -13,7 +13,8 @@ commit `b56cfbd54570e66cddf83106505487d3b19d9677`.
   manual start/stop, auxiliary digital values, and temperature dynamics.
 - Reference TCP endpoint compiles the exact same portable C++ command source
   as firmware; Python integration makes real socket calls through the
-  maintained driver, including read-only discovery and repeated STOP readback.
+  maintained driver, including typed outputs 1..8, read-only discovery,
+  repeated STOP readback, 1,000-query liveness, partial frames and fault replies.
 - Compiler enforces C++17 and host warnings-as-errors. PlatformIO version,
   framework, PHY reference pin mapping and external driver SHA are pinned.
 - Serial console controls faults without allowing unauthenticated test

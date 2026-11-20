@@ -5,7 +5,9 @@
 A. **HOST**: native g++ and golden frames from same ESP firmware command
 engine; Linux TCP reference endpoint (not a Python transport mock).
 B. **DRIVER**: pinned external driver makes actual TCP connects, reads,
-setpoint changes, repeated start/stop, reconnect and private network discovery.
+setpoint changes, typed output enumeration/read/write, repeated start/stop,
+1,000-query liveness, reconnect, private network discovery, and negative
+partial/sensor/sticky-STOP fault handling.
 C. **BUILD**: pinned PlatformIO compiles firmware; archive `.bin` and SHA256.
 D. **FLASHED**: operator records verified board marking, UART reset log,
 programming and electrical measurements.
