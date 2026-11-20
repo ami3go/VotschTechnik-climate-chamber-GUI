@@ -2,6 +2,7 @@
 // Independent of Arduino so this exact command engine can be tested on a host.
 #include <string>
 #include <vector>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -45,8 +46,10 @@ public:
     double min_temp = -40.0;
     double max_temp = 180.0;
     bool running = false;
-    bool dryer = false;
-    bool compressed_air = false;
+    // Output 1 is the chamber RUN state. Outputs 2..8 are independent
+    // simulated auxiliary lines so the driver-reported count and the
+    // readable/nameable address space cannot disagree.
+    std::array<bool, 9> auxiliary_outputs{};
     bool passive_relaxation = false;
 
     bool set_temperature(double temperature);

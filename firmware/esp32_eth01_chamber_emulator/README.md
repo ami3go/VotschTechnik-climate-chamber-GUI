@@ -39,7 +39,8 @@ python scripts/h02_watchdog_command.py --timeout-s 120 --idle-timeout-s 60 --log
 
 The driver integration suite requires an external driver checkout in
 `external-driver/` at
-`b56cfbd54570e66cddf83106505487d3b19d9677`.
+`d22dc05687cac4c5cdef440fb52b05965ed3d146`, matching the GUI's reviewed
+`requirements-hardware.txt` dependency.
 It is tested against real TCP, not a monkeypatched driver transport.
 
 ## UART console

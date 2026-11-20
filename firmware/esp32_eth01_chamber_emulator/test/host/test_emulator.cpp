@@ -25,6 +25,18 @@ int main() {
     assert(call(cmd("11072", "1\xB6" "3.5")) == "1\r");
     assert(call(cmd("11066", "1")) == "1\xB6" "5.000\r");
     assert(call(cmd("11070", "1")) == "1\xB6" "3.500\r");
+    assert(call(cmd("14007")) == "1\xB6" "8\r");
+    for (int output = 1; output <= 8; ++output) {
+        const std::string number = std::to_string(output);
+        assert(call(cmd("14010", number)).rfind("1\xB6", 0) == 0);
+        assert(call(cmd("14003", number)) ==
+               (output == 1 ? "1\xB6" "1\r" : "1\xB6" "0\r"));
+        if (output > 1) {
+            assert(call(cmd("14001", number + "\xB6" "1")) == "1\r");
+            assert(call(cmd("14003", number)) == "1\xB6" "1\r");
+            assert(call(cmd("14001", number + "\xB6" "0")) == "1\r");
+        }
+    }
     assert(call(cmd("14001", "7\xB6" "1")) == "1\r");
     assert(call(cmd("14003", "7")) == "1\xB6" "1\r");
     assert(call(cmd("14001", "8\xB6" "1")) == "1\r");
@@ -42,6 +54,8 @@ int main() {
     assert(call(cmd("11001", "2\xB6" "25")).rfind("0\xB6", 0) == 0);
     assert(call(cmd("99998")).rfind("0\xB6", 0) == 0);
     assert(call("11004\xB6" "1\n").rfind("0\xB6", 0) == 0);
+    assert(call("11004\xB6" "1\xB6\r").rfind("0\xB6", 0) == 0);
+    assert(call("11004\xB6" "1\xB6" "1\x01\r").rfind("0\xB6", 0) == 0);
     assert(call(std::string(200, 'A') + "\r").rfind("0\xB6", 0) == 0);
     assert(call(cmd("14001", "1\xB6" "2")).rfind("0\xB6", 0) == 0);
     faults.sticky_stop = true;
@@ -72,5 +86,15 @@ int main() {
     assert(std::abs(m.noise_offset) <= 0.2);
     faults.invalid_sensor = true;
     assert(call(cmd("11004", "1")).rfind("0\xB6", 0) == 0);
+    faults.invalid_sensor = false;
+    // Bounded long-run liveness/regression: repeated valid and invalid frames
+    // must not grow state, corrupt framing, or make the model non-finite.
+    for (int i = 0; i < 100000; ++i) {
+        assert(call(cmd("11004", "1")).rfind("1\xB6", 0) == 0);
+        if ((i % 1000) == 0)
+            assert(call("11004\xB6" "1\n").rfind("0\xB6", 0) == 0);
+        m.advance(0.01, faults);
+        assert(std::isfinite(m.actual));
+    }
     std::cout << "PASS: golden framing, rejects, thermal dynamics, STOP, fault flags\n";
 }

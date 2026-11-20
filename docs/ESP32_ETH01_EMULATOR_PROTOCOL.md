@@ -3,7 +3,8 @@
 Authoritative executable baseline: external Python driver
 `VotschTechnikClimateChamber/ClimateChamber.py`,
 `transport.py`, `discovery.py`, commit
-`b56cfbd54570e66cddf83106505487d3b19d9677`.
+`d22dc05687cac4c5cdef440fb52b05965ed3d146` (driver 0.3.0), matching the
+GUI's reviewed hardware dependency.
 
 Wire grammar: `ASCII 5-digit cmd` + `B6` + `1` + zero to four
 `B6<argument>` fields + `0D`; **B6 is one literal byte, NOT UTF-8**
@@ -25,9 +26,9 @@ vendor error codes.
 | 11004 | GET CONTROL_VARIABLE ACTUAL_VALUE | 1 | measured °C |
 | 11001 | SET CONTROL_VARIABLE SET_POINT | 1, float | success; -40..180 finite only |
 | 14007 | GET DIGITAL_OUT NUMBER_OF | none | 8 |
-| 14010 | GET DIGITAL_OUT NAME | 1/7/8 | Running/Compressed air/Dryer |
-| 14003 | GET DIGITAL_OUT VALUE | 1/7/8 | 0 or 1 |
-| 14001 | START MANUAL_MODE / SET DIGITAL_OUT VALUE | 1/7/8, 0 or 1 | index 1 stop/start; index 7 compressed air; 8 dryer |
+| 14010 | GET DIGITAL_OUT NAME | 1..8 | non-empty device-reported name |
+| 14003 | GET DIGITAL_OUT VALUE | 1..8 | strict 0 or 1 |
+| 14001 | START MANUAL_MODE / SET DIGITAL_OUT VALUE | 1..8, 0 or 1 | index 1 stop/start; indices 2..8 auxiliary outputs |
 | 11066, 11070 | GET GRADIENT_UP/DOWN VALUE | 1 | rates °C/min |
 | 11068, 11072 | SET GRADIENT_UP/DOWN VALUE | 1, float | finite 0.01..5/3.5 °C/min |
 
@@ -50,6 +51,6 @@ oversized frames and invalid indices. Unsupported commands explicitly reject.
 **Missing:** program commands, message/alarm lists, most ancillary I/O,
 physical firmware captures, certified semantics for 10012. The driver uses
 numeric command 14001 for both manual start/stop (output 1) and auxiliary
-digital writes (outputs 7/8); emulator distinguishes these by output index.
+digital writes (outputs 2..8); emulator distinguishes these by output index.
 The exact auxiliary behavior still needs actual-chamber capture before being
 considered certified.

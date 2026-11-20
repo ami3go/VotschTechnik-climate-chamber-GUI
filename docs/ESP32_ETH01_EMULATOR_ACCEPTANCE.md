@@ -6,11 +6,11 @@ Date: 2026-10-22. Feature branch:
 
 | Gate | Status | Justification |
 | --- | --- | --- |
-| Upstream driver wire format inspected | VERIFIED | Driver main b56cfbd; command numbering and CR/B6 confirmed |
+| Upstream driver wire format inspected | VERIFIED | Driver main d22dc05; typed output/gradient API, command numbering and CR/B6 confirmed |
 | Core + TCP reference implementation | HOST PASS | Native C++ golden tests and TCP reference, [CI run 39765797547](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39765797547) |
 | Original WT32-ETH01 board revision inspected | NOT RUN | Purchased board not available for marking/schematic comparison |
 | Firmware PlatformIO compile | BUILD PASS (reference target only) | Pinned PlatformIO build, [CI 39765797547](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39765797547), SHA-256 `de09d42e2d4ebfdb743796785775b82ab07840b96931dae03866dc078b7da6bc` |
-| Driver discovery, start/stop, gradients | DRIVER PASS (host TCP) | Maintained external driver b56cfbd; direct/private subnet discovery and repeated STOP, [CI 39765797547](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/39765797547) |
+| Driver discovery, start/stop, typed outputs, gradients | REQUALIFICATION PENDING | Maintained external driver d22dc05; exact-head CI required after current-main reconciliation |
 | LAN8720 link/DHCP/static, reset, NVS | NOT RUN ON BOARD | Requires fitted hardware and wired LAN |
 | WDT trigger and recovery | NOT RUN ON BOARD | Code present; deliberate hang test not yet authorized |
 | Realistic thermal inertia and noise | HOST PASS | Three thermal modes, deterministic lag/noise and runaway faults covered in host tests; not physically validated |

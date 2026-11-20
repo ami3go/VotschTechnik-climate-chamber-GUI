@@ -276,18 +276,64 @@ class LabProfileExecutionTests(unittest.TestCase):
         self.assertEqual(stack.drain(), RunState.COMPLETED,
                          stack.service.runner.reason)
 
-    def test_admin_override_can_take_over_an_already_running_chamber(self):
+    def test_admin_override_refuses_an_already_running_chamber(self):
         stack = self.stack()
         token = stack.manager.claim_operator(stack.chamber_id, "pre-admin")
         stack.manager.start(stack.chamber_id, operator_token=token)
         stack.manager.release_operator(stack.chamber_id, token)
         self.assertEqual(stack.manager.health(stack.chamber_id).state, "RUNNING")
-        self.assertTrue(stack.service.view(stack.admin.session).can_start)
-        stack.service.start(
-            stack.admin.session, stack.admin.csrf,
-            stack.profile({"target": 23}), 1)
+        self.assertFalse(stack.service.view(stack.admin.session).can_start)
+        before = list(stack.driver.calls)
+        with self.assertRaisesRegex(ChamberSafetyError, "stopped"):
+            stack.service.start(
+                stack.admin.session, stack.admin.csrf,
+                stack.profile({"target": 23}), 1)
+        self.assertEqual(before, stack.driver.calls)
+        self.assertEqual(stack.manager.health(stack.chamber_id).state, "RUNNING")
+
+    def test_admin_restart_fence_reconciles_before_manual_lease_takeover(self):
+        stack = self.stack()
+        claimed = stack.manual.command(
+            stack.operator.session, stack.operator.csrf, stack.chamber_id, "claim")
+        self.assertEqual(claimed.state, ManualState.CONFIRMED)
+        stack.manager.stop(stack.chamber_id)
+        self.assertTrue(stack.manager.health(stack.chamber_id).stop_latched)
+        original_reconcile = stack.manager.reconcile_stop
+        calls = []
+
+        def supervised_reconcile(chamber_id):
+            calls.append("reconciled")
+            return original_reconcile(chamber_id)
+
+        with patch.object(stack.manager, "reconcile_stop",
+                          side_effect=supervised_reconcile):
+            stack.service.start(
+                stack.admin.session, stack.admin.csrf,
+                stack.profile({"target": 23}), 1)
+        self.assertEqual(calls, ["reconciled"])
         self.assertEqual(stack.drain(), RunState.COMPLETED,
                          stack.service.runner.reason)
+
+    def test_admin_refuses_fault_and_does_not_clear_manual_owner(self):
+        stack = self.stack()
+        claimed = stack.manual.command(
+            stack.operator.session, stack.operator.csrf, stack.chamber_id, "claim")
+        self.assertEqual(claimed.state, ManualState.CONFIRMED)
+        faulted = replace(stack.manager.health(stack.chamber_id),
+                          state="FAULT", stop_latched=True)
+        with (patch.object(stack.manager, "health", return_value=faulted),
+              patch.object(stack.manager, "admin_override") as override,
+              patch.object(stack.manager, "reconcile_stop") as reconcile):
+            self.assertFalse(stack.service.view(stack.admin.session).can_start)
+            with self.assertRaises(ChamberSafetyError):
+                stack.service.start(
+                    stack.admin.session, stack.admin.csrf,
+                    stack.profile({"target": 23}), 1)
+            override.assert_not_called()
+            reconcile.assert_not_called()
+        self.assertEqual(
+            stack.manual._authorized.ownership_view(
+                stack.operator.session, stack.chamber_id)[0], "test_operator")
 
     def test_operator_cannot_bypass_a_foreign_manual_lease(self):
         stack = self.stack()

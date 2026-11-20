@@ -486,14 +486,56 @@ class RunStore:
             last = run["sample_count"] if last_sample is None else last_sample
             if type(last) is not int or last < first_sample:
                 raise ValueError("Invalid last sample")
-            stride = max(1, (last - first_sample + 1 + limit - 1) // limit)
+            columns = ("sample_index,observed_at_utc,source_sampled_at_utc,"
+                       "elapsed_s,step_index,temperature_c,intended_setpoint_c,quality,"
+                       "state")
+            count = last - first_sample + 1
+            if count <= limit:
+                return [dict(row) for row in db.execute(
+                    f"SELECT {columns} FROM events WHERE run_id=? "
+                    "AND sample_index>=? AND sample_index<=? "
+                    "ORDER BY sample_index LIMIT ?",
+                    (run_id, first_sample, last, limit),
+                )]
+            # Preserve BOTH measured temperature extrema in each interval
+            # rather than dropping narrow spikes on a fixed sampling stride.
+            # Reserve two slots for the first/last sample and two slots per
+            # interior bucket; duplicates are selected only once.
+            # For limit <4 the budget cannot show both extrema and both edges.
+            if limit < 4:
+                rows = [dict(row) for row in db.execute(
+                    f"SELECT {columns} FROM events WHERE run_id=? "
+                    "AND sample_index>=? AND sample_index<=? "
+                    "AND (sample_index=? OR sample_index=?) "
+                    "ORDER BY sample_index",
+                    (run_id, first_sample, last, first_sample, last),
+                )]
+                return rows[:1] if limit == 1 else rows
+            buckets = max(1, (limit - 2) // 2)
+            # SQLite integer division maps ordered samples into buckets
+            # non-overlapping chronological segments. Windowed rank returns
+            # the earliest minimum and maximum sample for each segment while
+            # preserving chronological order and a strict <=limit result.
             return [dict(row) for row in db.execute(
-                "SELECT sample_index,observed_at_utc,source_sampled_at_utc,"
-                "elapsed_s,step_index,temperature_c,intended_setpoint_c,quality,"
-                "state FROM events WHERE run_id=? AND sample_index>=? "
-                "AND sample_index<=? AND (sample_index-?)%?=0 "
+                "WITH windowed AS ("
+                f"SELECT {columns}, "
+                "((sample_index-?)*? / ?) AS bucket "
+                "FROM events WHERE run_id=? AND sample_index>=? "
+                "AND sample_index<=? AND kind='SAMPLE'"
+                "), ranked AS ("
+                "SELECT *,"
+                "ROW_NUMBER() OVER (PARTITION BY bucket "
+                "ORDER BY temperature_c ASC, sample_index ASC) AS low_rank,"
+                "ROW_NUMBER() OVER (PARTITION BY bucket "
+                "ORDER BY temperature_c DESC, sample_index ASC) AS high_rank "
+                "FROM windowed"
+                ") "
+                f"SELECT {columns} FROM ranked "
+                "WHERE low_rank=1 OR high_rank=1 "
+                "OR sample_index=? OR sample_index=? "
                 "ORDER BY sample_index LIMIT ?",
-                (run_id, first_sample, last, first_sample, stride, limit),
+                (first_sample, buckets, count, run_id, first_sample, last,
+                 first_sample, last, limit),
             )]
 
     @staticmethod

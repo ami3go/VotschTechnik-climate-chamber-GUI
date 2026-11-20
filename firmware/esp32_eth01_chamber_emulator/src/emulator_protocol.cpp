@@ -31,6 +31,20 @@ bool number(const std::string &text, double &value) {
 bool index(const Request &r, size_t count, const char *expected = "1") {
     return r.args.size() == count && r.args[0] == expected;
 }
+constexpr size_t DIGITAL_OUTPUT_COUNT = 8;
+const char *digital_output_name(size_t number) {
+    static constexpr const char *NAMES[DIGITAL_OUTPUT_COUNT + 1] = {
+        "", "Running", "Digital output 2", "Digital output 3",
+        "Digital output 4", "Digital output 5", "Digital output 6",
+        "Compressed air", "Dryer"
+    };
+    return number <= DIGITAL_OUTPUT_COUNT ? NAMES[number] : nullptr;
+}
+bool output_number(const std::string &text, size_t &number) {
+    if (text.size() != 1 || text[0] < '1' || text[0] > '8') return false;
+    number = static_cast<size_t>(text[0] - '0');
+    return true;
+}
 } // namespace
 
 bool Chamber::set_temperature(double value) {
@@ -119,6 +133,7 @@ std::string handle_frame(const std::string &frame, Chamber &m, const Faults &fau
     if (!parse_request(frame, r)) return error("MALFORMED");
     double value = 0;
     bool boolean = false;
+    size_t output = 0;
     switch (r.command) {
         case 99997: // GET CHAMBER INFO: 1=model, 2=year, 3=serial
             if (r.args.size() != 1) return error("ARG");
@@ -145,23 +160,18 @@ std::string handle_frame(const std::string &frame, Chamber &m, const Faults &fau
             return ok();
         case 14007: if (!r.args.empty()) return error("ARG"); return ok("8");
         case 14010:
-            if (!index(r, 1) && !index(r, 1, "7") && !index(r, 1, "8")) return error("INDEX");
-            return ok(r.args[0] == "1" ? "Running" : (r.args[0] == "7" ? "Compressed air" : "Dryer"));
+            if (r.args.size() != 1 || !output_number(r.args[0], output)) return error("INDEX");
+            return ok(digital_output_name(output));
         case 14003:
-            if (r.args.size() != 1) return error("ARG");
-            if (r.args[0] == "1") return ok(m.running ? "1" : "0");
-            if (r.args[0] == "7") return ok(m.compressed_air ? "1" : "0");
-            if (r.args[0] == "8") return ok(m.dryer ? "1" : "0");
-            return error("INDEX");
+            if (r.args.size() != 1 || !output_number(r.args[0], output)) return error("INDEX");
+            return ok((output == 1 ? m.running : m.auxiliary_outputs[output]) ? "1" : "0");
         case 14001:
             // Same numeric opcode for START MANUAL_MODE (output 1) and
-            // SET DIGITAL_OUT VALUE (aux outputs 7/8). Index disambiguates.
-            if (r.args.size() != 2 ||
-                (r.args[0] != "1" && r.args[0] != "7" && r.args[0] != "8") ||
+            // SET DIGITAL_OUT VALUE (aux outputs 2..8). Index disambiguates.
+            if (r.args.size() != 2 || !output_number(r.args[0], output) ||
                 (r.args[1] != "0" && r.args[1] != "1")) return error("ARG");
             boolean = r.args[1] == "1";
-            if (r.args[0] == "7") { m.compressed_air = boolean; return ok(); }
-            if (r.args[0] == "8") { m.dryer = boolean; return ok(); }
+            if (output != 1) { m.auxiliary_outputs[output] = boolean; return ok(); }
             if (!boolean && faults.sticky_stop) return ok();
             m.running = boolean;
             return ok();

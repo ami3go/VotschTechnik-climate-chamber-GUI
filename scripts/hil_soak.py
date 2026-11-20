@@ -2,7 +2,9 @@
 
 Uses the same G04/G08/G05 composition root as the web server (no browser),
 so it runs locally without internet. Requires the complete CHAMBER_HIL_*
-authorization (README_WEB.md). A person must stay at the chamber.
+authorization (README_WEB.md) and the operator-issued 24-hour HIL PIN
+(see docs/HIL_PIN_RUNBOOK.md). Start under `bash scripts/hil_pin.sh run --`
+for exclusive bench access. A person must stay at the chamber.
 
     python scripts/hil_soak.py --evidence DIR [--plan 25:600,26:360,24:360] [--restart 24:180]
 
@@ -30,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 
 from chamber_web.domain.chamber import OperationState, ReadingQuality  # noqa: E402
 from chamber_web.hil.physical import hil_authorization_from_env  # noqa: E402
+from chamber_web.hil.pin import HilPinError, require_hil_pin  # noqa: E402
 
 ADMIN = ("soak_admin", "StrongAdminPassword#1")
 OPERATOR = ("soak_operator", "StrongOperatorPassword#2")
@@ -217,7 +220,7 @@ def parse_plan(text: str) -> list[tuple[float, float]]:
     return steps
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--plan", default="25:600,26:360,24:360",
@@ -225,7 +228,16 @@ def main() -> int:
     parser.add_argument("--stopped-pause", type=float, default=60.0)
     parser.add_argument("--restart", default="24:180", help="target:seconds after STOP/restart")
     parser.add_argument("--deadline", type=float, default=2400.0, help="hard limit, seconds")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    # Standalone invocation must not bypass the PIN gate by avoiding the Bash
+    # runner. Validate before config discovery, independent driver readback,
+    # creation of an evidence directory or any physical chamber connection.
+    try:
+        require_hil_pin(os.environ)
+    except HilPinError as exc:
+        print(f"Physical HIL operator PIN denied: {exc}", file=sys.stderr)
+        return 2
 
     hil = hil_authorization_from_env(os.environ)
     if hil is None:
