@@ -424,12 +424,16 @@ class ControllerTests(unittest.TestCase):
         recovered.reconcile_stop("device-1")
         recovered.start("device-1")
 
-    def test_admin_override_clears_stop_latch_and_forces_ownership(self):
+    def test_admin_override_requires_reconciliation_and_fences_old_owner(self):
         backend = CountingBackend("device-1")
         manager = self.manager(backend)
         old = manager.claim_operator("device-1", "operator-a")
         manager.stop("device-1")
         self.assertTrue(manager.health("device-1").stop_latched)
+        with self.assertRaisesRegex(ChamberSafetyError, "reconciled STOPPED"):
+            manager.admin_override("device-1")
+        self.assertTrue(manager.health("device-1").stop_latched)
+        manager.reconcile_stop("device-1")
         manager.admin_override("device-1")
         health = manager.health("device-1")
         self.assertFalse(health.stop_latched)
@@ -439,6 +443,18 @@ class ControllerTests(unittest.TestCase):
         replacement = manager.force_claim_operator("device-1", "admin")
         manager.set_temperature("device-1", 31, operator_token=replacement)
         self.assertEqual(backend.log[-1], ("set", 31.0))
+
+    def test_admin_override_refuses_running_without_fencing_operator(self):
+        manager = self.manager(CountingBackend("device-1"))
+        old = manager.claim_operator("device-1", "operator-a")
+        manager.start("device-1", operator_token=old)
+        self.assertEqual(manager.health("device-1").state, "RUNNING")
+        generation = manager.health("device-1").generation
+        with self.assertRaisesRegex(ChamberSafetyError, "GOOD/STOPPED"):
+            manager.admin_override("device-1")
+        self.assertEqual(manager.health("device-1").generation, generation)
+        self.assertEqual(manager.health("device-1").state, "RUNNING")
+        manager.stop("device-1")
 
     def test_operator_conflict_does_not_block_stop(self):
         backend = CountingBackend("device-1")

@@ -6,13 +6,16 @@ never synthesize, infer or recompute evidence: missing values stay missing, a
 chamber's rows are scoped by chamber, and an unavailable journal returns an
 unavailable page rather than an empty (fabricated) success.
 
-Authorization is NOT implemented here. G08-min must guard every read at the
-page/service boundary; these are server-service APIs only, never HTTP routes.
-The journal is synchronous SQLite, so callers must offload these reads off the
-NiceGUI event loop (the pages use ``asyncio.to_thread``).
+History/log projection authorization remains at the G08 page boundary. Evidence
+downloads additionally pass through ``RunExportService``, which revalidates
+session, CSRF and READ permission and audits each attempt. These are
+server-service APIs only, never direct file routes. The journal is synchronous
+SQLite, so callers must offload reads off the NiceGUI event loop (the pages use
+``asyncio.to_thread``).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -28,9 +31,11 @@ from chamber_web.persistence.runs import (
 from chamber_web.services.web_read_models import (
     EventRecord,
     RecordPage,
+    RunExportArtifact,
     RunRecord,
     bounded_search,
 )
+from chamber_web.security.guards import Permission, require_permission
 
 # The pages request up to 50 rows; RecordPage rejects more than 100 in total.
 _MAX_RECORDS = 100
@@ -219,3 +224,73 @@ class RunStoreReader:
 def run_record_reader(store_provider) -> RunStoreReader:
     """One adapter serves both the HistoryReader and EventReader protocols."""
     return RunStoreReader(store_provider)
+
+
+class RunExportService:
+    """Authorized, audited boundary for immutable run evidence downloads.
+
+    The RunStore verifies the final manifest and every artifact checksum before
+    returning bytes. Fixed format choices and fixed byte ceilings prevent a
+    browser from selecting arbitrary paths or requesting an unbounded payload.
+    """
+
+    _FORMATS = {
+        "evidence_zip": ("evidence.zip", "application/zip", 32 * 1024 * 1024),
+        "events_csv": ("events.csv", "text/csv; charset=utf-8", 16 * 1024 * 1024),
+        "samples_csv": ("samples.csv", "text/csv; charset=utf-8", 16 * 1024 * 1024),
+    }
+
+    def __init__(self, store_provider, security) -> None:
+        self._store_provider = store_provider
+        self._security_provider = security
+
+    def _security(self):
+        return (self._security_provider()
+                if callable(self._security_provider)
+                else self._security_provider)
+
+    def export_run(self, session: str | None, csrf: str | None,
+                   chamber_id: str, run_id: str, export_format: str
+                   ) -> RunExportArtifact:
+        actor = None
+        security = self._security()
+        try:
+            actor = security.authenticate(
+                session, csrf=csrf, mutation=True)
+            require_permission(actor, Permission.READ)
+        except Exception:
+            security.audit(actor, "run.export", "DENIED", chamber_id)
+            raise
+
+        security.audit(
+            actor, "run.export", "INTENT", chamber_id,
+            detail=f"format={str(export_format)[:40]}",
+        )
+        try:
+            if export_format not in self._FORMATS:
+                raise ValueError("Unsupported run export format")
+            suffix, media_type, max_bytes = self._FORMATS[export_format]
+            store = self._store_provider()
+            if not isinstance(store, RunStore):
+                raise RuntimeError("Run evidence store unavailable")
+            if export_format == "evidence_zip":
+                content = store.read_zip(
+                    chamber_id, run_id, max_bytes=max_bytes)
+            else:
+                content = store.read_csv(
+                    chamber_id, run_id, name=suffix, max_bytes=max_bytes)
+            digest = hashlib.sha256(content).hexdigest()
+            security.audit(
+                actor, "run.export", "SUCCESS", chamber_id,
+                detail=f"format={export_format} bytes={len(content)} sha256={digest}",
+            )
+            return RunExportArtifact(
+                filename=f"{run_id}-{suffix}", media_type=media_type,
+                content=content, sha256=digest,
+            )
+        except Exception as exc:
+            security.audit(
+                actor, "run.export", "FAILED", chamber_id,
+                detail=f"format={str(export_format)[:40]} error={type(exc).__name__}",
+            )
+            raise

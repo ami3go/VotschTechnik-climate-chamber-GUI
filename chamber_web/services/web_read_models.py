@@ -47,6 +47,16 @@ class RecordPage:
             raise ValueError("Unavailable providers cannot return invented records")
 
 
+@dataclass(frozen=True)
+class RunExportArtifact:
+    """One integrity-checked, size-bounded evidence download."""
+
+    filename: str
+    media_type: str
+    content: bytes
+    sha256: str
+
+
 class HistoryReader(Protocol):
     def list_runs(self, chamber_id: str, *, search: str = "",
                   limit: int = 50) -> RecordPage: ...
@@ -55,6 +65,12 @@ class HistoryReader(Protocol):
 class EventReader(Protocol):
     def list_events(self, chamber_id: str, *, severity: str = "ALL",
                     search: str = "", limit: int = 50) -> RecordPage: ...
+
+
+class RunExporter(Protocol):
+    def export_run(self, session: str | None, csrf: str | None,
+                   chamber_id: str, run_id: str, export_format: str
+                   ) -> RunExportArtifact: ...
 
 
 class UnavailableHistoryReader:
@@ -67,6 +83,13 @@ class UnavailableEventReader:
     def list_events(self, chamber_id: str, *, severity: str = "ALL",
                     search: str = "", limit: int = 50) -> RecordPage:
         return RecordPage(False, detail="G07 persistent event/audit log service is not installed.")
+
+
+class UnavailableRunExporter:
+    def export_run(self, session: str | None, csrf: str | None,
+                   chamber_id: str, run_id: str, export_format: str
+                   ) -> RunExportArtifact:
+        raise RuntimeError("G07 run evidence export service is not installed.")
 
 
 def bounded_search(value: str) -> str:

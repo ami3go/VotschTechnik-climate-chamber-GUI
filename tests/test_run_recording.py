@@ -10,7 +10,9 @@ import errno
 from concurrent.futures import ThreadPoolExecutor
 import io
 import json
+import multiprocessing
 import os
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -23,6 +25,18 @@ from zipfile import ZipFile
 
 from chamber_web.domain.chamber import ChamberSafetyError
 from chamber_web.persistence.runs import RunIntegrityError, RunNotFoundError, RunRecorder, RunStore
+
+
+def _open_store_after_signal(root, ready, start, result):
+    """Spawn-safe concurrent startup probe used on Linux and Windows CI."""
+    ready.put(True)
+    start.wait(20)
+    try:
+        RunStore(root)
+    except Exception as exc:
+        result.put((type(exc).__name__, str(exc)))
+    else:
+        result.put(("OK", ""))
 
 
 @dataclass(frozen=True)
@@ -162,6 +176,12 @@ class RecorderTests(unittest.TestCase):
         self.assertEqual(self.store.plot_samples(self.chamber, self.run)[0]["intended_setpoint_c"], 25.0)
         text = self.store.read_csv(self.chamber, self.run, name="events.csv").decode()
         self.assertIn("'=HYPERLINK", text)
+        samples = self.store.read_csv(
+            self.chamber, self.run, name="samples.csv").decode().splitlines()
+        self.assertIn("temperature_c", samples[0])
+        self.assertIn("intended_setpoint_c", samples[0])
+        self.assertIn("24.5", samples[1])
+        self.assertIn("25.0", samples[1])
         archive_bytes = self.store.read_zip(self.chamber, self.run)
         self.assertTrue(archive_bytes.startswith(b"PK"))
         with ZipFile(io.BytesIO(archive_bytes)) as archive:
@@ -323,6 +343,59 @@ class RecorderTests(unittest.TestCase):
             self.store.reconcile_startup()
         self.assertEqual(self.store.get_run(self.chamber, self.run)["lifecycle"], "COMPLETED")
 
+    def test_plot_preserves_short_hot_and_cold_excursions(self):
+        self.start()
+        events = []
+        for i in range(120):
+            temp = 28.0 if i == 12 else 18.0 if i == 16 else 24.5
+            events.append(self.evt(
+                i + 5, "SAMPLE", state="REACHING",
+                sample_index=i + 1, temperature_c=temp, quality="GOOD",
+                monotonic_elapsed_s=float(i + 1),
+                source_sampled_at_utc=TIME))
+        self.store.emit_batch(events)
+        points = self.store.plot_samples(self.chamber, self.run, limit=9)
+        samples = [p["sample_index"] for p in points]
+        self.assertLessEqual(len(points), 9)
+        self.assertEqual(samples, sorted(set(samples)))
+        self.assertEqual((samples[0], samples[-1]), (1, 120))
+        self.assertIn(13, samples, "Hot spike between uniform strides was dropped")
+        self.assertIn(17, samples, "Cold spike between uniform strides was dropped")
+        self.assertEqual(
+            [p["temperature_c"] for p in points if p["sample_index"] in (13, 17)],
+            [28.0, 18.0])
+
+    def test_plot_restricts_small_budget_and_preserves_full_small_trace(self):
+        self.start()
+        self.store.emit_batch([self.sample(i + 5, i + 1) for i in range(7)])
+        for limit in (1, 2, 3):
+            plotted = self.store.plot_samples(self.chamber, self.run, limit=limit)
+            self.assertLessEqual(len(plotted), limit)
+            self.assertEqual(plotted[0]["sample_index"], 1)
+            if limit >= 2:
+                self.assertEqual(plotted[-1]["sample_index"], 7)
+        all_points = self.store.plot_samples(self.chamber, self.run, limit=7)
+        self.assertEqual([p["sample_index"] for p in all_points],
+                         list(range(1, 8)))
+
+    def test_plot_window_preserves_extrema_and_chronology(self):
+        self.start()
+        self.store.emit_batch([
+            self.evt(i + 5, "SAMPLE", state="REACHING",
+                     sample_index=i + 1,
+                     temperature_c=(17.0 if i == 43 else 33.0 if i == 47 else 25.0),
+                     quality="GOOD", monotonic_elapsed_s=float(i + 1),
+                     source_sampled_at_utc=TIME)
+            for i in range(75)])
+        points = self.store.plot_samples(
+            self.chamber, self.run, first_sample=30, last_sample=60, limit=8)
+        indices = [row["sample_index"] for row in points]
+        self.assertLessEqual(len(indices), 8)
+        self.assertEqual(indices, sorted(set(indices)))
+        self.assertIn(44, indices)
+        self.assertIn(48, indices)
+        self.assertEqual((indices[0], indices[-1]), (30, 60))
+
     def test_bounded_views_and_downloads(self):
         self.start()
         self.store.emit_batch([self.sample(i + 5, i + 1) for i in range(100)])
@@ -390,6 +463,64 @@ class RecorderTests(unittest.TestCase):
             RunStore(self.temp.name)
         self.assertNotEqual(self.store.database.read_bytes(), original_bytes)
         self.assertTrue(self.store.database.read_bytes().startswith(b"CORRUPTED_SQLITE!"))
+
+    def test_concurrent_process_startup_rejects_corrupt_journal(self):
+        original = self.store.database.read_bytes()
+        self.assertGreater(len(original), 100)
+        with self.store.database.open("r+b") as stream:
+            stream.seek(0)
+            stream.write(b"CORRUPTED_SQLITE!")
+            stream.flush()
+        corrupted = self.store.database.read_bytes()
+
+        context = multiprocessing.get_context("spawn")
+        ready = context.Queue()
+        start = context.Event()
+        result = context.Queue()
+        processes = [
+            context.Process(
+                target=_open_store_after_signal,
+                args=(self.temp.name, ready, start, result),
+            )
+            for _ in range(2)
+        ]
+        for process in processes:
+            process.start()
+        for _ in processes:
+            self.assertTrue(ready.get(timeout=20))
+        start.set()
+        outcomes = [result.get(timeout=20) for _ in processes]
+        for process in processes:
+            process.join(timeout=20)
+            self.assertEqual(process.exitcode, 0)
+
+        self.assertEqual(
+            [name for name, _ in outcomes],
+            ["RunIntegrityError", "RunIntegrityError"],
+        )
+        self.assertEqual(self.store.database.read_bytes(), corrupted)
+
+    def test_older_database_backup_cannot_validate_newer_artifacts(self):
+        self.start()
+        self.sink.emit(self.sample(5, 1))
+        backup = Path(self.temp.name) / "older-runs.sqlite3"
+        source = sqlite3.connect(self.store.database)
+        destination = sqlite3.connect(backup)
+        try:
+            source.backup(destination)
+        finally:
+            destination.close()
+            source.close()
+        self.terminal(6)
+
+        shutil.copyfile(backup, self.store.database)
+        restored = RunStore(self.temp.name)
+        with self.assertRaisesRegex(RunIntegrityError, "Existing immutable artifact"):
+            restored.reconcile_startup()
+        self.assertEqual(
+            restored.get_run(self.chamber, self.run)["lifecycle"],
+            "FINALIZING",
+        )
 
     def test_unknown_schema_refused(self):
         db = sqlite3.connect(self.store.database)

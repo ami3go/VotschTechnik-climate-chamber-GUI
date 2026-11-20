@@ -1,7 +1,7 @@
 # Chamber execution tracker — work packages CH-WP-01…10
 
 **Status:** active software engineering execution plan (not a certification or authority to energize hardware)  
-**Audit timestamp:** 2026-11-19 UTC  
+**Audit timestamp:** 2026-11-19 UTC (baseline); updated checkpoint: 2026-11-20  
 **GUI baseline:** [main d971a34](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/d971a34a425570571a68dd6e6c6e121f1a13ed65) (GUI [PR #89](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/89) merged 2026-11-19)  
 **Driver baseline:** [main d22dc05](https://github.com/ami3go/VotschTechnik-climate-chamber-Python/commit/d22dc05687cac4c5cdef440fb52b05965ed3d146)  
 **Canonical execution state:** this tracker and its linked GitHub issues. **Live state verification:** always refresh GitHub main, issues, open PRs, exact-head CI, and actual test evidence before marking any item complete. This table is a dated snapshot, not an automatic GitHub status feed.
@@ -64,6 +64,27 @@ Do **not** copy a historical green CI state onto later head commits; test eviden
 | 10 #99 | Initial tracker [PR #100](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/100) **MERGED** `fbc150f2c8d6aea70eec42956f1d47eaabd612c0`; [issue #99](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/99) **CLOSED** | All 10 issue links and documentation links verified; docs-only CI passed | Documentation closure only; other gates remain OPEN |
 
 Software work has **not** earned R01 approval. Close each remaining issue only after its own exact final-head tests, review, merge and separately applicable HIL/site gates. The active PR branches listed above are staged and intentionally not merge-claimed while final-head CI is pending.
+
+## Verified issue/CI reconciliation — 2026-11-20
+
+**Current source of truth:** [GUI main `aad7bbbf8`](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/aad7bbbf8fbd4a8a8200563dfd18fb19979413bf), [driver main `d22dc0568`](https://github.com/ami3go/VotschTechnik-climate-chamber-Python/commit/d22dc05687cac4c5cdef440fb52b05965ed3d146). The original 19-Nov table and checkpoint above are **historical**, not present-tense issue state. Verify live GitHub again before execution.
+
+| WP | Live tracker issue | Verified software / PR disposition | Remaining independent gate |
+|---|---|---|---|
+| 01 [#90](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/90) | **CLOSED** | #101 merged; [main W01](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44808676609) and [S2-02](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44808676583) completed successfully on `aad7bbbf8` | No hardware implication |
+| 02 [#91](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/91) | **CLOSED** | PIN admission #103 merged and issue software-only closure recorded | Existing product H02 authorization and physical bench acceptance remain separate |
+| 03 [#92](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/92) | **CLOSED** | Verified STOPPED preflight #102 merged | Real STOP/restart hardware qualification not inferred |
+| 04 [#93](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/93) | **CLOSED** | Maintained driver supersedes obsolete driver PR #1; closed without merge | Real gradient/output conformance requires physical evidence |
+| 05 [#94](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/94) | **CLOSED** | G07 extrema-preserving plots #104 merged; [main G07 CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44808676786) success | Windows crash/power-loss durability, off-device audit acceptance |
+| 06 [#95](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/95) | **CLOSED** | ESP32 [draft #84](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/84) remains unmerged; [exact-head emulator CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44810984040) success | Actual WT32-ETH01 board, Ethernet/WDT, independent review **NOT RUN** |
+| 07 [#96](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/96) | **OPEN** | Leonardo stacked [draft #88](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/88) remains unmerged; [exact-head emulator CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44813347988) success; physical runbook documented | Depends on #84; real Leonardo/W5500 flash, link recovery/WDT, GUI trust gate **NOT RUN** |
+| 08 [#97](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/97) | **OPEN** | Reviewed runtime wheelhouse CI fixed via #101; builder lock, signed target policy and staging remain unfinished | Clean disconnected Win10/11, publisher signing/key custody, license approvals, R01 **NO-GO** |
+| 09 [#98](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/98) | **OPEN** | Cookie-key integrity [PR #105](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/105) updated to `af2d7f6bd`: POSIX `O_NOFOLLOW`/descriptor-read fix and additional tests; **new exact-head CI pending**, no merge claim | Session/WS/ACL, off-device audit and independent security review OPEN |
+| 10 [#99](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/99) | **CLOSED** | Authoritative initial tracker #100 merged; this reconciliation is PR #106, pending final CI/merge | Documentation only |
+
+**Main CI checkpoint:** at GUI SHA `aad7bbbf8`, all eight reported latest-main workflows for the commit completed with `success` (G07, W01, S2-02, NiceGUI scaffold, discovery, profile readiness, identity, credential persistence). The older PR #105 S2-02 Windows failures **cannot** be relabeled PASS: only CI at its new head can prove the reconciliation.
+
+**Merge policy:** PRs #84 and #88 remain hardware-gated draft by explicit acceptance contract. #105 and #106 may merge only after current exact-head checks and independent diff review. The 24-hour PIN admits operator-supervised *physical test procedures*; it is not a release authorization and it is unnecessary for offline emulators. **R01 RELEASE NO-GO.**
 
 ## 2. Execution dependency and sequencing
 

@@ -10,11 +10,11 @@ from typing import Callable
 
 from nicegui import ui
 
-from chamber_web.security.nicegui import require_authenticated_page
+from chamber_web.security.nicegui import active_tokens, require_authenticated_page
 
 from chamber_web.services.web_read_models import (
-    EventReader, HistoryReader, RecordPage, UnavailableEventReader,
-    UnavailableHistoryReader, bounded_search,
+    EventReader, HistoryReader, RecordPage, RunExporter, UnavailableEventReader,
+    UnavailableHistoryReader, UnavailableRunExporter, bounded_search,
 )
 from chamber_web.ui_state import project_capabilities, project_telemetry, safe_view
 
@@ -154,11 +154,13 @@ def register_pages(
     get_dashboard_service: Callable,
     *, history_reader: HistoryReader | None = None,
     event_reader: EventReader | None = None,
+    run_exporter: RunExporter | None = None,
     discovery_provider: Callable | None = None,
 ) -> None:
     """Composition root may inject G07 readers later, without vendor logic."""
     history = history_reader or UnavailableHistoryReader()
     events = event_reader or UnavailableEventReader()
+    exporter = run_exporter or UnavailableRunExporter()
 
     # /profiles is registered by G03-C with G08 guards in pages/profiles.py.
 
@@ -211,6 +213,47 @@ def register_pages(
                         _status_panel(page, empty_text="No recorded runs match this search.")
                     table.update_rows(rows)
                 ui.button("Search", icon="search", on_click=reload).props("outline no-caps")
+                ui.separator()
+                ui.label("Verified run evidence").classes("text-subtitle2")
+                ui.label(
+                    "Downloads are checksum-verified, size-bounded and security-audited."
+                ).classes("text-xs text-grey-7")
+                with ui.row().classes("items-center gap-3 w-full flex-wrap"):
+                    export_run_id = ui.input(label="Recorded run ID").props(
+                        "outlined dense").classes("min-w-80")
+                    export_format = ui.select(
+                        {
+                            "evidence_zip": "Evidence archive (.zip)",
+                            "events_csv": "Events (.csv)",
+                            "samples_csv": "Samples (.csv)",
+                        }, value="evidence_zip", label="Format",
+                    ).props("outlined dense")
+
+                    async def download_evidence():
+                        if not require_authenticated_page(touch=False):
+                            return
+                        session, csrf = active_tokens()
+                        try:
+                            artifact = await asyncio.to_thread(
+                                exporter.export_run, session, csrf,
+                                service.chamber_id, export_run_id.value,
+                                export_format.value,
+                            )
+                        except Exception:
+                            ui.notify(
+                                "Evidence download denied or failed integrity check",
+                                color="negative",
+                            )
+                            return
+                        ui.download.content(
+                            artifact.content, artifact.filename,
+                            media_type=artifact.media_type,
+                        )
+
+                    ui.button(
+                        "Download verified evidence", icon="download",
+                        on_click=download_evidence,
+                    ).props("outline no-caps")
                 await reload()
 
     @ui.page("/logs")

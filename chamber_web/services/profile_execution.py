@@ -356,16 +356,43 @@ class ProfileExecutionService:
         admin_override = (
             self._lab is not None and actor.role is Role.ADMIN)
         if admin_override:
-            # Explicit ADMIN-only lab override: discard any manual owner and
-            # clear the controller STOP/restart fence without a fresh STOPPED
-            # precondition. Telemetry, identity and mid-run STOP supervision
-            # remain enforced by G04/G06.
+            # ADMIN may take over a foreign manual lease only AFTER proving
+            # fresh STOPPED state. The role cannot adopt RUNNING or bypass an
+            # UNKNOWN/FAULT restart fence. Reconcile the latter separately.
+            health = self._manager.health(self._chamber_id)
+            if not health.connected or (
+                    health.state != "VERIFIED_STOPPED" and
+                    not self._lab_restart_recoverable(health)):
+                raise ChamberSafetyError(
+                    "Admin profile takeover requires a stopped, connected chamber")
+            if health.stop_latched:
+                self._security.audit(
+                    actor, "profile.stop_rearm", "INTENT", self._chamber_id)
+                try:
+                    self._manager.reconcile_stop(self._chamber_id)
+                except BaseException as exc:
+                    self._security.audit(
+                        actor, "profile.stop_rearm", "FAILED",
+                        self._chamber_id, type(exc).__name__)
+                    raise
+                self._security.audit(
+                    actor, "profile.stop_rearm", "SUCCESS", self._chamber_id)
+            status = self._manager.status(self._chamber_id)
+            health = self._manager.health(self._chamber_id)
+            if (health.state != "VERIFIED_STOPPED" or health.stop_latched or
+                    not health.connected or
+                    status.quality is not ReadingQuality.GOOD or
+                    status.operation_state is not OperationState.STOPPED):
+                raise ChamberSafetyError(
+                    "Admin profile takeover requires fresh GOOD/STOPPED readback")
             self._security.audit(
                 actor, "profile.admin_override", "INTENT", self._chamber_id)
             try:
                 if self._manual_guard is not None:
                     self._manual_guard.admin_forget_manual_lease(
                         session, csrf, self._chamber_id)
+                # G04 double-checks fresh readback, generation, STOP and lease
+                # before invalidating the previous manual owner token.
                 self._manager.admin_override(self._chamber_id)
             except BaseException as exc:
                 self._security.audit(
@@ -543,8 +570,7 @@ class ProfileExecutionService:
                     self._supervised.supervision is not None and
                     self._supervised.supervision.alive())) and
             not blocker and not active and health.connected and
-            (admin_override or health.state == "VERIFIED_STOPPED" or
-             lab_restart_ready),
+            (health.state == "VERIFIED_STOPPED" or lab_restart_ready),
             may_run and active and state is not RunState.STOP_REQUESTED,
             may_run and mine and state in (
                 RunState.REACHING, RunState.STABILIZING, RunState.DWELLING,
