@@ -33,12 +33,18 @@ param(
     [switch]$SimulationOnly,
     [switch]$UseReviewedClosure,
     [string]$WheelhouseDir = "",
-    [ValidateSet("W01", "PreProduction")][string]$Variant = "W01"
+    [ValidateSet("W01", "PreProduction")][string]$Variant = "W01",
+    [string]$BuilderLockFile = "",
+    [string]$BuilderWheelhouseDir = ""
 )
 $ErrorActionPreference = "Stop"
 if ($env:OS -ne "Windows_NT") { throw "Build offline bundle natively on Windows." }
 if (-not [Environment]::Is64BitOperatingSystem) { throw "Windows x64 is required." }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+if ([bool]$BuilderLockFile -xor [bool]$BuilderWheelhouseDir) {
+    throw "Both -BuilderLockFile and -BuilderWheelhouseDir are required together"
+}
+$lockedBuilder = [bool]$BuilderLockFile
 if ([IO.Path]::IsPathRooted($OutputDir)) { $output = [IO.Path]::GetFullPath($OutputDir) }
 else { $output = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $OutputDir)) }
 New-Item -Path $output -ItemType Directory -Force | Out-Null
@@ -62,6 +68,15 @@ function Native([string]$command, [string[]]$arguments) {
     if ($LASTEXITCODE -ne 0) { throw "Native command failed ($LASTEXITCODE): $command $($arguments -join ' ')" }
 }
 try {
+    if ($lockedBuilder) {
+        # Preflight is standard library only; reject unexpected, missing or
+        # damaged wheels before any venv or package installation.
+        Native $Python @((Join-Path $repo "scripts/w02_build_tools.py"),
+                         "--lock", $BuilderLockFile,
+                         "--wheelhouse", $BuilderWheelhouseDir,
+                         "--require", "pyinstaller", "--require", "setuptools",
+                         "--require", "packaging", "--require", "cryptography")
+    }
     $bundle = Join-Path $work $name
     $server = Join-Path $bundle "server"
     New-Item -Path $server -ItemType Directory -Force | Out-Null
@@ -84,8 +99,14 @@ try {
         # is frozen into the bundle.
         Native $Python @("-m", "venv", (Join-Path $work "closure-venv"))
         $closurePy = Join-Path $work "closure-venv/Scripts/python.exe"
-        Native $closurePy @("-m", "pip", "install", "--disable-pip-version-check",
-                            "-r", (Join-Path $repo "requirements-w02-build.txt"))
+        if ($lockedBuilder) {
+            Native $closurePy @("-m", "pip", "install", "--disable-pip-version-check",
+                                "--no-index", "--find-links", $BuilderWheelhouseDir,
+                                "--require-hashes", "-r", $BuilderLockFile)
+        } else {
+            Native $closurePy @("-m", "pip", "install", "--disable-pip-version-check",
+                                "-r", (Join-Path $repo "requirements-w02-build.txt"))
+        }
         Push-Location $repo
         try {
             Native $closurePy @("-m", "scripts.w02_closure", "hydrate",
@@ -114,7 +135,14 @@ try {
                          (Join-Path $repo "requirements-hardware.txt"))
         }
     }
-    Native $py @("-m", "pip", "install", "--disable-pip-version-check", "pyinstaller==6.16.0")
+    if ($lockedBuilder) {
+        Native $py @("-m", "pip", "install", "--disable-pip-version-check",
+                     "--no-index", "--find-links", $BuilderWheelhouseDir,
+                     "--require-hashes", "-r", $BuilderLockFile)
+    } else {
+        Native $py @("-m", "pip", "install", "--disable-pip-version-check",
+                     "pyinstaller==6.16.0")
+    }
     if ($preProduction) {
         # H02 admission binds the exact GUI and driver revisions. A frozen
         # bundle has no git checkout (and a hash-locked wheelhouse may lose the
@@ -150,7 +178,20 @@ try {
     Native $serverExe $testFlags
 
     # Script A is a genuinely separate maintained thin-launcher build.
-    & (Join-Path $repo "scripts/build_windows_launcher.ps1") -Clean -OutputDir $bundle -Configuration $Configuration -Version $Version -Python $Python -Entry $(if ($preProduction) { "scripts/preproduction_launcher.py" } else { "scripts/windows_launcher.py" }) -Variant $variantKey
+    $launcherParams = @{
+        Clean = $true
+        OutputDir = $bundle
+        Configuration = $Configuration
+        Version = $Version
+        Python = $Python
+        Entry = $(if ($preProduction) { "scripts/preproduction_launcher.py" } else { "scripts/windows_launcher.py" })
+        Variant = $variantKey
+    }
+    if ($lockedBuilder) {
+        $launcherParams.BuilderLockFile = $BuilderLockFile
+        $launcherParams.BuilderWheelhouseDir = $BuilderWheelhouseDir
+    }
+    & (Join-Path $repo "scripts/build_windows_launcher.ps1") @launcherParams
     if (-not $?) { throw "Launcher build failed" }
     if ($preProduction) {
         Copy-Item (Join-Path $repo "README_PREPRODUCTION_WINDOWS.md") $bundle
@@ -185,6 +226,9 @@ try {
         Write-Host "Pre-production runtime: supervised physical capability included; NOT certified"
     } else {
         Write-Host "Simulation-only runtime: physical chamber I/O DISABLED"
+    }
+    if (-not $lockedBuilder) {
+        Write-Warning "Connected/unverified builder toolchain: not a qualified W02 release"
     }
     Write-Host "Offline bundle: $zip"
     Write-Host "SHA256: $checksum"
