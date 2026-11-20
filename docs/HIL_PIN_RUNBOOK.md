@@ -63,6 +63,22 @@ PINs unattended.
    apply a blind process-kill watchdog to an energized chamber: a killed
    process may leave the chamber running.
 
+## Test-tool admission matrix
+
+| Physical test entry point | Independent PIN gate before device I/O | Exclusive bench lock | Negative regression |
+|---|---|---|---|
+| `tests/hardware/` via `tests/hardware/hil_support.py:authorization` | Yes | `hil_pin.sh run` required | missing/invalid PIN exits collection before authorization |
+| `scripts/hil_soak.py:main` | Yes | `hil_pin.sh run` required | missing/wrong PIN cannot parse HIL configuration or create evidence |
+| `scripts/hil_lab_acceptance.py:main` without `--simulate` | Yes | `hil_pin.sh run` required | missing PIN cannot parse HIL configuration or create evidence |
+| pytest-owned NiceGUI subprocess in `chamber_web/main.py` | Yes when `CHAMBER_HIL_RUN_TESTS=1` | inherited wrapper lock | missing/invalid PIN aborts before service construction |
+| `scripts/hil_lab_acceptance.py --simulate` and ordinary unit/GUI tests | Not applicable; simulation stays PIN-free | Not applicable | simulation regression runs without state or PIN |
+
+The ordinary product GUI and legacy signed H02 application runtime are not
+agent test entry points and are intentionally outside this PIN migration.
+Windows runs the software-only negative matrix, but Windows-native physical
+test admission remains NO-GO until an equivalent qualified cross-process lock
+and operator runner replace the POSIX Bash/`flock` wrapper.
+
 ## Example invocations
 
 ```bash
@@ -114,8 +130,14 @@ after explicit handoff; this is less resistant to leakage.
 - Isolated lab mode is an existing separate configuration that can run
   physical profiles without this test PIN gate. Agents **must not** start or
   use that mode as an alternative to the PIN wrapper during HIL work.
-- `scripts/hil_soak.py` should be invoked via the wrapper. Its internal
-  PIN check is tracked separately until confirmed in code.
+- `scripts/hil_soak.py` independently checks the PIN before configuring or
+  connecting to a physical chamber, even when invoked directly. The Bash
+  wrapper remains mandatory for agent HIL operations because it additionally
+  holds the POSIX bench lock for the entire test command. A bare valid PIN is
+  not a substitute for serialized ownership or an independently verified STOP.
+- The Bash/flock runner targets POSIX hosts. A Windows-native operator/PIN
+  runner and equivalent cross-process lock must be qualified separately before
+  claiming Windows hardware-test admission; software-only Windows CI stays PIN-free.
 - PIN expiry or rotation blocks **new** admission. It does not prove that
   an already-running physical process has stopped. Verify chamber state
   and end runs gracefully; use local physical controls on any doubt.
