@@ -13,9 +13,9 @@ UPS hardware reference: `USB-UPS-Simulator` master
 | Original UPS Leonardo/W5500 wiring audited | VERIFIED FROM REPO | ICSP SPI, W5500 D10, SD D4 HIGH, native USB and Serial1 |
 | S!MPAC core and finite frame buffers | IMPLEMENTED | 80-byte ingress, 64-byte response, explicit error replies |
 | Thermal model and start/stop semantics | HOST PASS | fixed-point Basic, 10x accelerated, STOP readback in golden tests |
-| Host C++ golden tests | PASS | Native C++11 warnings-as-errors, [CI 44287212844](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44287212844) |
-| External driver direct/subnet discovery and control | PASS (host TCP) | Current pinned driver d22dc05 against actual C++ core, [CI 44287212844](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44287212844); no Python transport mock |
-| Leonardo flash/RAM budget and firmware.hex | BUILD PASS | AVR 28,116/28,672 flash; 1,571/2,560 SRAM. 556 bytes flash / 989 SRAM free, [CI 44287212844](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44287212844) |
+| Host C++ golden tests | REQUALIFICATION PENDING | Current stacked head adds full 1..8 output coverage and 100,000-frame liveness; exact-head CI required |
+| External driver direct/subnet discovery and control | REQUALIFICATION PENDING | Current pinned driver d22dc05, typed outputs and negative TCP faults; exact-head CI required |
+| Leonardo flash/RAM budget and firmware.hex | REQUALIFICATION PENDING | Prior build left only 556 flash / 989 static SRAM bytes; current exact-head resource gate must pass |
 | Real Leonardo+W5500 flash / UART log | NOT RUN | no physical board connected |
 | Real TCP 2049, DHCP/static, link reconnection | NOT RUN | hardware integration required |
 | WDT reset/STOPPED persistence and fault recovery | NOT RUN ON HARDWARE | code implementation alone not sufficient |

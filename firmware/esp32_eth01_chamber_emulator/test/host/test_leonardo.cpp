@@ -41,6 +41,17 @@ int main() {
     assert(response(req("99997", "2"),c,f) == ok_value("2026"));
     assert(response(req("99997", "3"),c,f) == ok_value("SIMLEO0001"));
     assert(response(req("14003", "1"),c,f) == ok_value("0"));
+    assert(response(req("14007"),c,f) == ok_value("8"));
+    for (uint8_t output=1; output<=8; ++output) {
+        const char number[] = {static_cast<char>('0' + output), 0};
+        assert(response(req("14010", number),c,f).find("1\xB6") == 0);
+        assert(response(req("14003", number),c,f) == ok_value("0"));
+        if (output > 1) {
+            assert(response(req("14001", number, "1"),c,f) == "1\r");
+            assert(response(req("14003", number),c,f) == ok_value("1"));
+            assert(response(req("14001", number, "0"),c,f) == "1\r");
+        }
+    }
     assert(response(req("11018"),c,f) == ok_value("1"));
     assert(response(req("11026", "1"),c,f) == ok_value("Temperature"));
     assert(response(req("11023", "1"),c,f) == ok_value("C"));
@@ -89,7 +100,8 @@ int main() {
     rejected(req("11068","1","5.01"),c,f);
     rejected(req("11072","1","3.51"),c,f);
     rejected(req("14001","1","2"),c,f);
-    rejected(req("14003","2"),c,f);
+    rejected(req("14003","0"),c,f);
+    rejected(req("14003","9"),c,f);
     rejected(req("11001","1","--1"),c,f);
     rejected(req("11001","1","1e999"),c,f);
     rejected("11004\xB6" "1\n",c,f);
@@ -126,5 +138,11 @@ int main() {
     c.heating_centi_min=200; c.reset_thermal_accumulator();
     for(int i=0;i<600;++i) c.advance(100,f);
     assert(c.actual_centi==2500);
+    // Long-run bounded parser/model liveness with periodic malformed frames.
+    for(uint32_t i=0;i<100000UL;++i) {
+        assert(response(req("11004","1"),c,f).find("1\xB6") == 0);
+        if (!(i % 1000UL)) rejected("11004\xB6" "1\n",c,f);
+        c.advance(10,f);
+    }
     std::cout << "PASS Leonardo S!MPAC: frames, identity, gradients, start/stop, faults, tick/accumulator\n";
 }

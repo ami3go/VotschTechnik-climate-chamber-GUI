@@ -126,7 +126,8 @@ STOP STATE  14003 B6 1 B6 1 0D -> 1 B6 0 0D
 Success is `1\r` or `1\xB6<value>\r`; error is `0\xB6<error>\r`.
 Command coverage mirrors the ESP32 prototype: chamber info/status,
 temperature setpoint/actual, control-variable metadata/limits,
-digital output 1/7/8 read/write, gradients and repeated Start/Stop.
+digital outputs 1..8 read/write (with compact generated names for 2..6),
+gradients and repeated Start/Stop.
 Unsupported or malformed commands fail explicitly. Chamber status
 `10012` is **provisional** (unverified against physical controller).
 No vendor program-management commands are implemented.

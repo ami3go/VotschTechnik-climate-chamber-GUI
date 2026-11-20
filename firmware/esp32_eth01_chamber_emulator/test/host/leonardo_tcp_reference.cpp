@@ -18,7 +18,9 @@ static volatile std::sig_atomic_t running=1;
 static void stop(int) { running=0; }
 struct Client { int fd=-1; std::string input; };
 int main(int argc,char** argv) {
-    const bool lost_stop=(argc>1 && std::string(argv[1])=="--drop-stop-reply");
+    const std::string scenario=argc>1 ? argv[1] : "";
+    const bool lost_stop=scenario=="--drop-stop-reply";
+    const bool partial_reply=scenario=="--partial-reply";
     std::signal(SIGTERM,stop); std::signal(SIGINT,stop);
     int listener=::socket(AF_INET,SOCK_STREAM,0);
     if(listener<0) return 2;
@@ -31,6 +33,8 @@ int main(int argc,char** argv) {
     std::array<Client,4> clients{};
     leonardo::Chamber chamber;
     leonardo::Faults faults;
+    faults.invalid_sensor=scenario=="--invalid-sensor";
+    faults.sticky_stop=scenario=="--sticky-stop";
     auto prior=std::chrono::steady_clock::now();
     std::cout<<"LEONARDO REFERENCE TCP 2049 READY"<<std::endl;
     while(running) {
@@ -67,6 +71,11 @@ int main(int argc,char** argv) {
                         reinterpret_cast<const uint8_t*>(c.input.data()),c.input.size(),
                         chamber,faults,result,sizeof(result));
                     if(lost_stop && is_stop) {close(c.fd);c.fd=-1;}
+                    else if(partial_reply) {
+                        const uint8_t partial[]={'1',0xB6};
+                        (void)send(c.fd,partial,sizeof(partial),MSG_NOSIGNAL);
+                        close(c.fd);c.fd=-1;
+                    }
                     else if(!count || send(c.fd,result,count,MSG_NOSIGNAL)!=ssize_t(count)){
                         close(c.fd);c.fd=-1;
                     }

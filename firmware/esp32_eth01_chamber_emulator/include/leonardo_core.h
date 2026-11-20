@@ -38,8 +38,8 @@ struct Chamber {
     uint16_t cooling_centi_min = 200;
     uint8_t thermal_speed = 1; // 1x Basic or 10x Accelerated
     bool running = false;
-    bool dryer = false;
-    bool compressed_air = false;
+    // Outputs 2..8 are packed into bits 0..6. Output 1 is `running`.
+    uint8_t auxiliary_outputs = 0;
     uint32_t fractional_movement = 0;
     int8_t previous_direction = 0;
 

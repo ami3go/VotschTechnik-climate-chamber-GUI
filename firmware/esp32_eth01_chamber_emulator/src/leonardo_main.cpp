@@ -134,11 +134,11 @@ void console_command(char* text, Print& out) {
     if (!strcmp(text, "status")) {
         print_status(out);
     } else if (!strcmp(text, "help")) {
-        out.println(F("status | fault <name>|clear | fault delay N"));
-        out.println(F("speed 1|10 | identity serial ID | net dhcp|static | net mac N | eeprom reset"));
+        out.println(F("status|fault NAME|clear|delay N"));
+        out.println(F("speed|identity|net|eeprom (see docs)"));
     } else if (!strcmp(text, "fault clear")) {
         faults = leonardo::Faults{};
-        out.println(F("FAULTS CLEAR"));
+        out.println(F("FAULT CLEAR"));
     } else if (!strncmp(text, "fault ", 6)) {
         leonardo::Faults f; // one active scenario at a time
         const char* mode = text + 6;
@@ -156,25 +156,25 @@ void console_command(char* text, Print& out) {
             char* end = 0;
             unsigned long delay_ms = strtoul(mode + 6, &end, 10);
             if (end == mode + 6 || *end || delay_ms > 2000) {
-                out.println(F("ERR delay range")); return;
+                out.println(F("ERR delay")); return;
             }
             f.delay_ms = static_cast<uint16_t>(delay_ms);
         } else { out.println(F("ERR fault")); return; }
         faults = f;
-        out.println(F("FAULT ENABLED"));
+        out.println(F("FAULT ON"));
     } else if (!strncmp(text, "speed ", 6)) {
         if (!strcmp(text + 6, "1")) chamber.thermal_speed = 1;
         else if (!strcmp(text + 6, "10")) chamber.thermal_speed = 10;
         else { out.println(F("ERR speed 1|10")); return; }
         chamber.reset_thermal_accumulator();
-        out.println(F("OK thermal speed, GUI dwell remains wall-clock"));
+        out.println(F("OK speed"));
     } else if (!strncmp(text, "identity serial ", 16)) {
         const char* serial = text + 16;
-        if (!valid_serial(serial)) { out.println(F("ERR serial 1..16 alphanumeric")); return; }
+        if (!valid_serial(serial)) { out.println(F("ERR serial")); return; }
         strcpy(cfg.serial, serial);
         strcpy(chamber.serial, serial);
         save_config();
-        out.println(F("OK serial persisted; reconnect to discover new identity"));
+        out.println(F("OK serial saved; reconnect"));
     } else if (!strcmp(text, "net dhcp")) {
         cfg.static_network = 0; save_config(); out.println(F("OK DHCP reset")); reset_board();
     } else if (!strncmp(text, "net static ", 11)) {
@@ -188,10 +188,10 @@ void console_command(char* text, Print& out) {
             !parse_ip(parts[1], candidate.mask) ||
             !parse_ip(parts[2], candidate.gateway) ||
             !parse_ip(parts[3], candidate.dns) || !valid_network(candidate)) {
-            out.println(F("ERR net static IP MASK GW DNS")); return;
+            out.println(F("ERR static IP MASK GW DNS")); return;
         }
         cfg = candidate; cfg.static_network = 1; save_config();
-        out.println(F("OK static config saved; reboot")); reset_board();
+        out.println(F("OK static reboot")); reset_board();
     } else if (!strncmp(text, "net mac ", 8)) {
         char* end = 0;
         unsigned long tail = strtoul(text + 8, &end, 10);
@@ -199,10 +199,10 @@ void console_command(char* text, Print& out) {
             out.println(F("ERR MAC tail 1..254")); return;
         }
         cfg.mac_tail = static_cast<uint8_t>(tail); save_config();
-        out.println(F("OK MAC saved; reboot")); reset_board();
+        out.println(F("OK MAC reboot")); reset_board();
     } else if (!strcmp(text, "eeprom reset")) {
         default_config(); save_config(); out.println(F("OK EEPROM reset")); reset_board();
-    } else if (*text) out.println(F("ERR unknown; try help"));
+    } else if (*text) out.println(F("ERR help"));
 }
 void poll_console(Stream& input, Print& output, char* buffer, uint8_t& len) {
     for (uint8_t count = 0; count < 16 && input.available(); ++count) {
@@ -211,7 +211,7 @@ void poll_console(Stream& input, Print& output, char* buffer, uint8_t& len) {
             if (len) { buffer[len] = 0; console_command(buffer, output); len = 0; }
         } else if (c >= 0x20 && c <= 0x7E) {
             if (len < 99) buffer[len++] = static_cast<char>(c);
-            else { len = 0; output.println(F("ERR console overflow")); }
+            else { len = 0; output.println(F("ERR console")); }
         }
     }
 }
@@ -257,19 +257,19 @@ void schedule_response(uint8_t size, uint32_t now, bool is_stop) {
     reply_at_ms = now + faults.delay_ms;
     close_after_reply = false;
     if (faults.drop_stop_reply && is_stop) {
-        Serial.println(F("FAULT STOP executed; acknowledgement lost"));
+        Serial.println(F("FAULT STOP reply lost"));
         close_client(); return;
     }
     if (faults.suppress_reply) {
         response_len = 0;
         close_after_reply = true;
         reply_at_ms = now + 1500;
-        Serial.println(F("FAULT timeout response"));
+        Serial.println(F("FAULT timeout"));
     } else if (faults.partial_reply) {
         response[0] = '1'; response[1] = 0xB6;
         response_len = 2;
         close_after_reply = true;
-        Serial.println(F("FAULT partial response (missing CR)"));
+        Serial.println(F("FAULT partial"));
     }
 }
 void poll_network(uint32_t now) {
@@ -315,7 +315,7 @@ void poll_network(uint32_t now) {
             pending = false; last_client_ms = now;
             if (close_after_reply) close_client();
         } else if (static_cast<uint32_t>(now - write_started_ms) > WRITE_DEADLINE_MS) {
-            Serial.println(F("TCP reply write deadline exceeded"));
+            Serial.println(F("TCP write timeout"));
             close_client();
         }
         return;
@@ -325,7 +325,7 @@ void poll_network(uint32_t now) {
         if (c < 0) break;
         last_client_ms = now;
         if (request_len >= leonardo::MAX_REQUEST) {
-            Serial.println(F("TCP frame too long"));
+            Serial.println(F("TCP frame long"));
             close_client(); return;
         }
         request[request_len++] = static_cast<uint8_t>(c);
@@ -335,7 +335,7 @@ void poll_network(uint32_t now) {
                                     chamber, faults, response, sizeof(response));
             request_len = 0;
             if (faults.reset_on_command) {
-                Serial.println(F("FAULT reset-on-command"));
+                Serial.println(F("FAULT reset"));
                 reset_board();
             }
             if (!len) { close_client(); return; }

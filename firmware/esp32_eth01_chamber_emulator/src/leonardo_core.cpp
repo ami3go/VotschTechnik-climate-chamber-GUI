@@ -162,12 +162,13 @@ size_t number_reply(uint8_t* out, size_t cap, int32_t n) {
     return value(out, cap, text);
 }
 
+bool output_number(const char* text, uint8_t& output) {
+    if (!text || text[0] < '1' || text[0] > '8' || text[1]) return false;
+    output = static_cast<uint8_t>(text[0] - '0');
+    return true;
+}
 bool boolean_arg(const Request& req, uint8_t& output, bool& state) {
-    if (req.nargs != 2) return false;
-    if (!strcmp(req.args[0], "1")) output = 1;
-    else if (!strcmp(req.args[0], "7")) output = 7;
-    else if (!strcmp(req.args[0], "8")) output = 8;
-    else return false;
+    if (req.nargs != 2 || !output_number(req.args[0], output)) return false;
     if (!strcmp(req.args[1], "0")) state = false;
     else if (!strcmp(req.args[1], "1")) state = true;
     else return false;
@@ -263,21 +264,30 @@ size_t handle_frame(const uint8_t* frame, size_t size, Chamber& chamber,
             return ok(out, cap);
         case 14007: if (!without_args(req)) return error(out, cap, "ARG");
                     return value(out, cap, "8");
-        case 14010:
-            if (single(req)) return value(out, cap, "Running");
-            if (single(req, "7")) return value(out, cap, "Compressed air");
-            if (single(req, "8")) return value(out, cap, "Dryer");
-            return error(out, cap, "INDEX");
-        case 14003:
-            if (single(req)) return value(out, cap, chamber.running ? "1" : "0");
-            if (single(req, "7")) return value(out, cap, chamber.compressed_air ? "1" : "0");
-            if (single(req, "8")) return value(out, cap, chamber.dryer ? "1" : "0");
-            return error(out, cap, "INDEX");
+        case 14010: {
+            if (req.nargs != 1 || !output_number(req.args[0], output))
+                return error(out, cap, "INDEX");
+            if (output == 1) return value(out, cap, "Running");
+            if (output == 7) return value(out, cap, "Compressed air");
+            if (output == 8) return value(out, cap, "Dryer");
+            char name[] = "Output 0";
+            name[7] = static_cast<char>('0' + output);
+            return value(out, cap, name);
+        }
+        case 14003: {
+            if (req.nargs != 1 || !output_number(req.args[0], output))
+                return error(out, cap, "INDEX");
+            const bool enabled = output == 1 ? chamber.running :
+                (chamber.auxiliary_outputs & static_cast<uint8_t>(1U << (output - 2)));
+            return value(out, cap, enabled ? "1" : "0");
+        }
         case 14001:
             if (!boolean_arg(req, output, state)) return error(out, cap, "ARG");
-            if (output == 7) chamber.compressed_air = state;
-            else if (output == 8) chamber.dryer = state;
-            else if (!(!state && faults.sticky_stop)) {
+            if (output != 1) {
+                const uint8_t mask = static_cast<uint8_t>(1U << (output - 2));
+                if (state) chamber.auxiliary_outputs |= mask;
+                else chamber.auxiliary_outputs &= static_cast<uint8_t>(~mask);
+            } else if (!(!state && faults.sticky_stop)) {
                 chamber.running = state;
                 chamber.reset_thermal_accumulator();
             }
