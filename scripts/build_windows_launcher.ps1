@@ -25,11 +25,17 @@ param(
     [ValidatePattern('^[0-9A-Za-z][0-9A-Za-z.+-]{0,48}$')][string]$Version = "0.1.0-w01",
     [string]$Python = "python",
     [string]$Entry = "scripts/windows_launcher.py",
-    [ValidateSet("w01", "preproduction")][string]$Variant = "w01"
+    [ValidateSet("w01", "preproduction")][string]$Variant = "w01",
+    [string]$BuilderLockFile = "",
+    [string]$BuilderWheelhouseDir = ""
 )
 $ErrorActionPreference = "Stop"
 if ($env:OS -ne "Windows_NT") { throw "Build launcher natively on Windows." }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+if ([bool]$BuilderLockFile -xor [bool]$BuilderWheelhouseDir) {
+    throw "Both -BuilderLockFile and -BuilderWheelhouseDir are required together"
+}
+$lockedBuilder = [bool]$BuilderLockFile
 if ([IO.Path]::IsPathRooted($OutputDir)) { $output = [IO.Path]::GetFullPath($OutputDir) }
 else { $output = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $OutputDir)) }
 if (-not (Test-Path $output)) { New-Item -ItemType Directory -Path $output -Force | Out-Null }
@@ -47,7 +53,17 @@ function Native([string]$command, [string[]]$arguments) {
 try {
     Native $Python @("-m", "venv", (Join-Path $work "venv"))
     $py = Join-Path $work "venv/Scripts/python.exe"
-    Native $py @("-m", "pip", "install", "--disable-pip-version-check", "pyinstaller==6.16.0")
+    if ($lockedBuilder) {
+        Native $Python @((Join-Path $repo "scripts/w02_build_tools.py"),
+                         "--lock", $BuilderLockFile,
+                         "--wheelhouse", $BuilderWheelhouseDir,
+                         "--require", "pyinstaller")
+        Native $py @("-m", "pip", "install", "--disable-pip-version-check",
+                     "--no-index", "--find-links", $BuilderWheelhouseDir,
+                     "--require-hashes", "-r", $BuilderLockFile)
+    } else {
+        Native $py @("-m", "pip", "install", "--disable-pip-version-check", "pyinstaller==6.16.0")
+    }
     Native $py @(
         "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--windowed",
         "--name", "ClimateChamberLauncher", "--paths", $repo,
