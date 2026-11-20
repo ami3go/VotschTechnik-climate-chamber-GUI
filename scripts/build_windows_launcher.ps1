@@ -57,7 +57,7 @@ try {
         Native $Python @((Join-Path $repo "scripts/w02_build_tools.py"),
                          "--lock", $BuilderLockFile,
                          "--wheelhouse", $BuilderWheelhouseDir,
-                         "--require", "pyinstaller")
+                         "--require", "pyinstaller==6.16.0")
         Native $py @("-m", "pip", "install", "--disable-pip-version-check",
                      "--no-index", "--find-links", $BuilderWheelhouseDir,
                      "--require-hashes", "-r", $BuilderLockFile)
