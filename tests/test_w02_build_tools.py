@@ -60,6 +60,20 @@ class BuildWheelhouseTests(unittest.TestCase):
             verify_build_wheelhouse(
                 self.lock, self.wheelhouse, required=("setuptools",))
 
+    def test_wrong_version_is_refused(self):
+        self._wheel()
+        with self.assertRaisesRegex(ValueError, "required version"):
+            verify_build_wheelhouse(
+                self.lock, self.wheelhouse, required=("pyinstaller==6.15.0",))
+
+    def test_same_distribution_two_versions_refused(self):
+        self._wheel()
+        other_digest = hashlib.sha256(b"x").hexdigest()
+        with self.lock.open("a", encoding="utf-8") as out:
+            out.write(f"pyinstaller==6.15.0 --hash=sha256:{other_digest}\n")
+        with self.assertRaisesRegex(ValueError, "Duplicate build distribution"):
+            verify_build_wheelhouse(self.lock, self.wheelhouse)
+
     def test_duplicate_distribution(self):
         self._wheel()
         (self.wheelhouse / "pyinstaller-6.16.0-py2-none-any.whl").write_bytes(b"x")
