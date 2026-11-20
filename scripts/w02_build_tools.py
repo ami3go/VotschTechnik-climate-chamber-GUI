@@ -47,13 +47,18 @@ def verify_build_wheelhouse(
         if not match:
             raise ValueError("Build lock requires exact version and SHA-256 per line")
         identity = normalized(match["name"]), match["version"]
-        if identity in expected:
+        if any(name == identity[0] for name, _ in expected):
             raise ValueError("Duplicate build distribution in lock")
         expected[identity] = match["digest"]
     if not expected:
         raise ValueError("Build lock is empty")
-    if not {normalized(n) for n in required}.issubset({n for n, _ in expected}):
-        raise ValueError("Build lock lacks required distributions")
+    for requirement in required:
+        if "==" in requirement:
+            name, version = requirement.split("==", 1)
+            if (normalized(name), version) not in expected:
+                raise ValueError(f"Build lock lacks required version: {requirement}")
+        elif normalized(requirement) not in {n for n, _ in expected}:
+            raise ValueError(f"Build lock lacks required distributions: {requirement}")
     seen: set[tuple[str, str]] = set()
     for artifact in wheelhouse.iterdir():
         if artifact.is_symlink() or not artifact.is_file():
