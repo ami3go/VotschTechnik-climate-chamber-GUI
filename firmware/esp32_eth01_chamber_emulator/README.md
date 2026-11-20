@@ -3,7 +3,8 @@
 > **Additional target:** Arduino Leonardo R3 + W5500 Shield V2.0
 > (the USB-UPS-Simulator hardware stack). Build with
 > `pio run -d firmware/esp32_eth01_chamber_emulator -e leonardo-w5500`.
-> See [Leonardo hardware, flash and test guide](../../docs/LEONARDO_W5500_CHAMBER_EMULATOR.md).
+> See [Leonardo hardware, flash and test guide](../../docs/LEONARDO_W5500_CHAMBER_EMULATOR.md)
+> and the [end-to-end operator runbook](../../docs/LEONARDO_W5500_FULL_TEST_RUNBOOK.md).
 > The Leonardo fixed-buffer codec is separate from the ESP32 implementation;
 > both speak to the **same unmodified external Python chamber driver**.
 
