@@ -15,6 +15,11 @@ What still applies in lab mode:
   convergence supervision and a STOP on any uncertainty;
 * G07 run journal (a broken journal still refuses starts).
 
+ADMIN may take over a foreign manual lease for a profile, but only after
+G04 has independently verified GOOD/STOPPED state and reconciled any restart
+fence. A RUNNING, FAULT or unverified UNKNOWN chamber is never rearmed by an
+administrator profile start.
+
 The chamber's own limits and emergency stop remain the primary safety layer.
 An administrator can enable it in Settings (saved server-side, applied at the
 next server start) or set the environment variable directly; a browser request

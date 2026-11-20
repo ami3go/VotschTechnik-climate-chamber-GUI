@@ -142,21 +142,27 @@ class ChamberController:
             return self._operator_token
 
     def admin_override(self, chamber_id: str) -> None:
-        """ADMIN-only lab override of the durable STOP/restart fence and owner.
+        """ADMIN-only takeover of an already reconciled, STOPPED chamber.
 
-        Still requires a connected chamber with GOOD telemetry. The durable
-        lease is fenced and immediately reconciled as an explicit, audited
-        operator decision; mid-run telemetry/identity/STOP supervision is not
-        disabled. Callers must authorize Role.ADMIN before invoking this.
+        This method may invalidate a foreign manual lease but must never
+        clear an UNKNOWN/FAULT/STOP latch or adopt a RUNNING chamber. Recover
+        a restart fence through reconcile_stop() first; its fresh independent
+        GOOD/STOPPED readback is the sole route to clearing uncertainty.
         """
         self._check_id(chamber_id)
-        snapshot = self.status(chamber_id)
-        if snapshot.quality is not ReadingQuality.GOOD:
-            raise ChamberSafetyError(
-                "Admin override requires GOOD authoritative telemetry")
         with self._state_lock:
-            if not self._connected:
-                raise ChamberSafetyError("Admin override requires a connected chamber")
+            expected_generation = self._generation
+        snapshot = self.status(chamber_id)
+        if (snapshot.quality is not ReadingQuality.GOOD or
+                snapshot.operation_state is not OperationState.STOPPED):
+            raise ChamberSafetyError(
+                "Admin takeover requires fresh GOOD/STOPPED chamber readback")
+        with self._state_lock:
+            if (not self._connected or self._stop_latched or
+                    self._state != "VERIFIED_STOPPED" or
+                    self._generation != expected_generation):
+                raise ChamberSafetyError(
+                    "Admin takeover requires reconciled STOPPED state and unchanged generation")
             self._operator_token = None
             self._operator_name = None
             self._operator_generation += 1
@@ -166,15 +172,12 @@ class ChamberController:
             except Exception as exc:
                 self._stop_latched = True
                 self._state = "FAULT"
-                self._reason = "Admin override fencing failed"
+                self._reason = "Admin takeover fencing failed"
                 raise ChamberSafetyError(
-                    "Admin override could not reset durable fencing") from exc
+                    "Admin takeover could not reconcile durable fencing") from exc
             self._stop_latched = False
             self._last_snapshot = snapshot
-            self._state = (
-                "RUNNING" if snapshot.operation_state is OperationState.RUNNING
-                else "VERIFIED_STOPPED"
-            )
+            self._state = "VERIFIED_STOPPED"
             self._reason = None
 
     def _check_operator(self, token: str | None) -> None:
