@@ -10,7 +10,9 @@ import errno
 from concurrent.futures import ThreadPoolExecutor
 import io
 import json
+import multiprocessing
 import os
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -23,6 +25,18 @@ from zipfile import ZipFile
 
 from chamber_web.domain.chamber import ChamberSafetyError
 from chamber_web.persistence.runs import RunIntegrityError, RunNotFoundError, RunRecorder, RunStore
+
+
+def _open_store_after_signal(root, ready, start, result):
+    """Spawn-safe concurrent startup probe used on Linux and Windows CI."""
+    ready.put(True)
+    start.wait(20)
+    try:
+        RunStore(root)
+    except Exception as exc:
+        result.put((type(exc).__name__, str(exc)))
+    else:
+        result.put(("OK", ""))
 
 
 @dataclass(frozen=True)
@@ -162,6 +176,12 @@ class RecorderTests(unittest.TestCase):
         self.assertEqual(self.store.plot_samples(self.chamber, self.run)[0]["intended_setpoint_c"], 25.0)
         text = self.store.read_csv(self.chamber, self.run, name="events.csv").decode()
         self.assertIn("'=HYPERLINK", text)
+        samples = self.store.read_csv(
+            self.chamber, self.run, name="samples.csv").decode().splitlines()
+        self.assertIn("temperature_c", samples[0])
+        self.assertIn("intended_setpoint_c", samples[0])
+        self.assertIn("24.5", samples[1])
+        self.assertIn("25.0", samples[1])
         archive_bytes = self.store.read_zip(self.chamber, self.run)
         self.assertTrue(archive_bytes.startswith(b"PK"))
         with ZipFile(io.BytesIO(archive_bytes)) as archive:
@@ -443,6 +463,64 @@ class RecorderTests(unittest.TestCase):
             RunStore(self.temp.name)
         self.assertNotEqual(self.store.database.read_bytes(), original_bytes)
         self.assertTrue(self.store.database.read_bytes().startswith(b"CORRUPTED_SQLITE!"))
+
+    def test_concurrent_process_startup_rejects_corrupt_journal(self):
+        original = self.store.database.read_bytes()
+        self.assertGreater(len(original), 100)
+        with self.store.database.open("r+b") as stream:
+            stream.seek(0)
+            stream.write(b"CORRUPTED_SQLITE!")
+            stream.flush()
+        corrupted = self.store.database.read_bytes()
+
+        context = multiprocessing.get_context("spawn")
+        ready = context.Queue()
+        start = context.Event()
+        result = context.Queue()
+        processes = [
+            context.Process(
+                target=_open_store_after_signal,
+                args=(self.temp.name, ready, start, result),
+            )
+            for _ in range(2)
+        ]
+        for process in processes:
+            process.start()
+        for _ in processes:
+            self.assertTrue(ready.get(timeout=20))
+        start.set()
+        outcomes = [result.get(timeout=20) for _ in processes]
+        for process in processes:
+            process.join(timeout=20)
+            self.assertEqual(process.exitcode, 0)
+
+        self.assertEqual(
+            [name for name, _ in outcomes],
+            ["RunIntegrityError", "RunIntegrityError"],
+        )
+        self.assertEqual(self.store.database.read_bytes(), corrupted)
+
+    def test_older_database_backup_cannot_validate_newer_artifacts(self):
+        self.start()
+        self.sink.emit(self.sample(5, 1))
+        backup = Path(self.temp.name) / "older-runs.sqlite3"
+        source = sqlite3.connect(self.store.database)
+        destination = sqlite3.connect(backup)
+        try:
+            source.backup(destination)
+        finally:
+            destination.close()
+            source.close()
+        self.terminal(6)
+
+        shutil.copyfile(backup, self.store.database)
+        restored = RunStore(self.temp.name)
+        with self.assertRaisesRegex(RunIntegrityError, "Existing immutable artifact"):
+            restored.reconcile_startup()
+        self.assertEqual(
+            restored.get_run(self.chamber, self.run)["lifecycle"],
+            "FINALIZING",
+        )
 
     def test_unknown_schema_refused(self):
         db = sqlite3.connect(self.store.database)

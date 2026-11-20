@@ -6,6 +6,7 @@ adapters that /history and /logs consume.
 """
 from __future__ import annotations
 
+import hashlib
 import tempfile
 import unittest
 from dataclasses import dataclass
@@ -13,7 +14,8 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from chamber_web.persistence.runs import RunIntegrityError, RunRecorder, RunStore
-from chamber_web.services.run_readers import RunStoreReader
+from chamber_web.security.auth import AuthenticationError, SecurityStore
+from chamber_web.services.run_readers import RunExportService, RunStoreReader
 
 
 @dataclass(frozen=True)
@@ -248,6 +250,126 @@ class RunStoreReaderTests(unittest.TestCase):
         page = reader.list_runs(self.chamber)
         self.assertFalse(page.available)
         self.assertEqual(page.records, ())
+
+
+class RunExportServiceTests(unittest.TestCase):
+    """Exercise the authenticated service boundary, not only RunStore bytes."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.store = RunStore(self.temp.name)
+        self.sink = RunRecorder(self.store)
+        self.chamber = "climate-A"
+        self.security = SecurityStore(self.store.root / "security")
+        self.security.bootstrap_admin("export_admin", "StrongAdminPassword#1")
+        self.tokens = self.security.login("export_admin", "StrongAdminPassword#1")
+        self.exporter = RunExportService(
+            lambda: self.store, lambda: self.security)
+
+    def _prepare(self):
+        run_id = str(uuid4())
+        self.sink.prepare(Snapshot(
+            1, run_id, self.chamber, Identity(self.chamber), 4, TIME,
+            "Cold soak", 3, "op-7",
+        ))
+        return run_id
+
+    def _start(self, run_id):
+        self.sink.emit(Event(run_id, self.chamber, 1, "PREPARED"))
+        self.sink.emit(Event(run_id, self.chamber, 2, "START_INTENT"))
+        self.sink.emit(Event(
+            run_id, self.chamber, 3, "STATE", state="REACHING",
+            detail="reaching target",
+        ))
+
+    def _sample(self, run_id, sequence, index):
+        self.sink.emit(Event(
+            run_id, self.chamber, sequence, "SAMPLE", state="REACHING",
+            sample_index=index, temperature_c=24.5, quality="GOOD",
+            monotonic_elapsed_s=float(index), source_sampled_at_utc=TIME,
+            detail="sample",
+        ))
+
+    def _terminal(self, run_id, sequence):
+        elapsed = self.store.get_run(self.chamber, run_id)["last_elapsed"]
+        self.sink.emit(Event(
+            run_id, self.chamber, sequence, "STOP_INTENT",
+            state="STOP_REQUESTED", monotonic_elapsed_s=elapsed,
+        ))
+        self.sink.emit(Event(
+            run_id, self.chamber, sequence + 1, "TERMINAL",
+            state="COMPLETED", monotonic_elapsed_s=elapsed,
+            detail="run finished",
+        ))
+
+    def _final_run(self):
+        run_id = self._prepare()
+        self._start(run_id)
+        self._sample(run_id, 4, 1)
+        self._terminal(run_id, 5)
+        return run_id
+
+    def test_verified_bounded_archive_is_audited_with_checksum(self):
+        run_id = self._final_run()
+        artifact = self.exporter.export_run(
+            self.tokens.session, self.tokens.csrf, self.chamber, run_id,
+            "evidence_zip",
+        )
+        self.assertTrue(artifact.content.startswith(b"PK"))
+        self.assertEqual(artifact.sha256, hashlib.sha256(artifact.content).hexdigest())
+        self.assertEqual(artifact.filename, f"{run_id}-evidence.zip")
+        records = [row for row in self.security.audit_records()
+                   if row[0] == "run.export"]
+        self.assertEqual([row[1] for row in records], ["INTENT", "SUCCESS"])
+        self.assertIn("sha256=", records[-1][4])
+
+    def test_revoked_session_is_denied_before_store_access(self):
+        self.security.logout(self.tokens.session)
+        provider_called = False
+
+        def provider():
+            nonlocal provider_called
+            provider_called = True
+            return self.store
+
+        exporter = RunExportService(provider, self.security)
+        with self.assertRaises(AuthenticationError):
+            exporter.export_run(
+                self.tokens.session, self.tokens.csrf, self.chamber,
+                str(uuid4()), "evidence_zip",
+            )
+        self.assertFalse(provider_called)
+        self.assertEqual(
+            [row[1] for row in self.security.audit_records()
+             if row[0] == "run.export"],
+            ["DENIED"],
+        )
+
+    def test_corrupt_evidence_fails_closed_and_is_audited(self):
+        run_id = self._final_run()
+        directory = self.store._directory(self.chamber, run_id)
+        (directory / "samples.csv").write_bytes(b"tampered")
+        with self.assertRaises(RunIntegrityError):
+            self.exporter.export_run(
+                self.tokens.session, self.tokens.csrf, self.chamber, run_id,
+                "samples_csv",
+            )
+        records = [row for row in self.security.audit_records()
+                   if row[0] == "run.export"]
+        self.assertEqual([row[1] for row in records], ["INTENT", "FAILED"])
+        self.assertIn("error=RunIntegrityError", records[-1][4])
+
+    def test_arbitrary_export_name_is_refused_and_audited(self):
+        run_id = self._final_run()
+        with self.assertRaises(ValueError):
+            self.exporter.export_run(
+                self.tokens.session, self.tokens.csrf, self.chamber, run_id,
+                "../../security.sqlite3",
+            )
+        records = [row for row in self.security.audit_records()
+                   if row[0] == "run.export"]
+        self.assertEqual([row[1] for row in records], ["INTENT", "FAILED"])
 
 
 if __name__ == "__main__":
