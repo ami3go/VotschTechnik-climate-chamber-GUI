@@ -74,8 +74,10 @@ try {
         Native $Python @((Join-Path $repo "scripts/w02_build_tools.py"),
                          "--lock", $BuilderLockFile,
                          "--wheelhouse", $BuilderWheelhouseDir,
-                         "--require", "pyinstaller", "--require", "setuptools",
-                         "--require", "packaging", "--require", "cryptography")
+                         "--require", "pyinstaller==6.16.0",
+                         "--require", "setuptools==84.2.1",
+                         "--require", "packaging==26.3",
+                         "--require", "cryptography==46.0.2")
     }
     $bundle = Join-Path $work $name
     $server = Join-Path $bundle "server"
