@@ -45,6 +45,56 @@ powershell.exe -NoProfile -File C:\SiteTrusted\verify_w02_release.ps1 `
 
 The independently provisioned verifier and PowerShell 5.1 wrapper require **exact Windows CI proof and separate clean disconnected Windows 10/11 testing**, controlled signing/Authenticode or protected digest attestation, site trust-key management, permissions review and security approval. Until then the release gate **remains fail-closed / NO-GO**. Signed production W02 artifacts have **not** been generated with a site-approved key.
 
+## W02 build-tool wheelhouse preflight (CH-WP-08 software increment)
+
+The existing reviewed *runtime* wheelhouse does **not** lock the **build
+environment**. In the historical W01/PreProduction feasibility command,
+`scripts/build_windows_offline.ps1` and the separately invoked
+`scripts/build_windows_launcher.ps1` still obtain PyInstaller and/or build
+requirements through connected pip. Version pins alone are not a SHA-256-locked
+builder. Such builds **cannot be classified as W02 signed releases**.
+
+Both Windows PowerShell builders now accept optional
+`-BuilderLockFile` and `-BuilderWheelhouseDir` **together**. When provided,
+a standard-library preflight in `scripts/w02_build_tools.py` checks an
+independently provisioned, Windows-compatible builder wheelhouse before install:
+every wheel must have exactly one pinned `name==version --hash=sha256:<64hex>`
+line, matching disk filename/version/hash; duplicate distributions, additional
+files, directory/symlink entries, missing wheels, corrupted contents and
+unhashed/unpinned lock lines fail closed. The full freezer build requires
+`pyinstaller`, `cryptography`, `packaging` and `setuptools` in that
+builder lock, and installs from this same wheelhouse into *all three*
+toolchain environments (closure helper, server freezer, browser launcher)
+with pip `--no-index --find-links --require-hashes`. Pip must also prove
+transitive dependency completeness during those installs.
+
+Example, **only after a separate reviewer has pinned and approved the
+complete Windows x64 CPython 3.12 builder dependency lock and wheel hashes**:
+
+```powershell
+powershell.exe -NoProfile -File .\scripts\build_windows_offline.ps1 `
+  -UseReviewedClosure -Variant PreProduction `
+  -BuilderLockFile C:\SiteTrusted\w02-builder-win312.lock `
+  -BuilderWheelhouseDir D:\ReviewedBuilderWheels `
+  -OutputDir .\dist\w02-candidate
+```
+
+This is an optional **software-enforced, offline builder path**, not a claimed
+existing complete lock: no independently approved build-wheelhouse manifest,
+wheel files, Windows clean-VM run or publisher approval is provided in this
+repository by this increment. The old connected-pip W01 feasibility mode is
+preserved and explicitly warns that its toolchain is not release-qualified.
+The preflight is not package-signature attestation, a license review, or a
+substitute for the signed W02 verifier and site rollout gates.
+
+**Follow-up acceptance evidence:** provision and hash-review every Windows
+build dependency (including PyInstaller hooks and transitive requirements);
+run the locked-builder path with egress disabled and a finite build watchdog;
+capture resulting builder wheel names and hashes, source SHA, target Python/OS
+build, exact CI job logs and frozen-artifact digests. Independently approve
+license inventory, publisher signing, rollback policy and isolated Win10/11
+installation/restore. Until then **W02 certification and R01 remain NO-GO**.
+
 ## Air-gap dependency closure (S2-03 software increment)
 
 `scripts/w02_closure.py` produces and verifies the **complete transitive dependency
