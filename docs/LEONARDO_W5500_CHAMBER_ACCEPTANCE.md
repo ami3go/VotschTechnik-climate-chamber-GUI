@@ -1,6 +1,7 @@
 # LEO-EMU-01 — Arduino Leonardo / W5500 acceptance ledger
 
 Status: **DRAFT IMPLEMENTATION / NOT HARDWARE VERIFIED**.
+Operator test procedure: [LEO-HIL-RUNBOOK-01 — full Leonardo hardware/software runbook](LEONARDO_W5500_FULL_TEST_RUNBOOK.md). Its acceptance table starts NOT RUN/BLOCKED; the existence of a runbook is not test evidence.
 Dependency: ESP-EMU-01 [draft PR #84](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/84).
 Protocol authority: Vötsch Python driver main
 `d22dc05687cac4c5cdef440fb52b05965ed3d146`;
