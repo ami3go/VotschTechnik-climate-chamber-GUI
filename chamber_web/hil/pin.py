@@ -33,19 +33,28 @@ def state_path() -> Path:
     return Path.home() / ".local" / "state" / "votsch-climate-chamber" / "hil-pin.json"
 
 
-def _state_directory(path: Path) -> None:
+def _state_directory(path: Path, *, create: bool = True) -> None:
     parent = path.parent
     if parent.is_symlink():
         raise HilPinError("HIL PIN state directory must not be a symlink")
-    parent.mkdir(parents=True, mode=0o700, exist_ok=True)
-    if not parent.is_dir() or parent.is_symlink():
+    try:
+        if create:
+            parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+        info = parent.stat()
+    except OSError as exc:
+        raise HilPinError("HIL PIN state directory is unavailable") from exc
+    if not stat.S_ISDIR(info.st_mode) or parent.is_symlink():
         raise HilPinError("HIL PIN state directory is unsafe")
-    if os.name == "posix" and parent.stat().st_mode & 0o077:
-        raise HilPinError("HIL PIN state directory must have mode 0700")
+    if os.name == "posix":
+        if info.st_mode & 0o077:
+            raise HilPinError("HIL PIN state directory must have mode 0700")
+        if info.st_uid != os.getuid():
+            raise HilPinError("HIL PIN state directory belongs to another user")
 
 
 def _read(path: Path) -> dict:
     try:
+        _state_directory(path, create=False)
         if path.is_symlink():
             raise HilPinError("HIL PIN state file must not be a symlink")
         info = path.stat()
@@ -94,6 +103,8 @@ def issue_pin(*, reset: bool = False, path: Path | None = None,
     """Generate/rotate PIN; CLI adds human-in-terminal confirmation."""
     path = path or state_path()
     _state_directory(path)
+    if path.is_symlink():
+        raise HilPinError("HIL PIN state file must not be a symlink")
     if path.exists() and not reset:
         raise HilPinError("PIN already exists; use reset to rotate it")
     now = now or datetime.now(timezone.utc)
@@ -110,14 +121,30 @@ def issue_pin(*, reset: bool = False, path: Path | None = None,
         "digest": _hash(pin, salt).hex(),
     }, sort_keys=True) + "\n"
     tmp = None
+    created = False
     try:
-        fd, tmp = tempfile.mkstemp(prefix=".hil-pin-", dir=path.parent)
+        if reset:
+            fd, tmp = tempfile.mkstemp(prefix=".hil-pin-", dir=path.parent)
+        else:
+            # O_EXCL makes two simultaneous setup attempts deterministic: one
+            # wins and the other fails instead of silently rotating the PIN.
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            created = True
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(tmp, path)
+        if reset:
+            os.replace(tmp, path)
+            tmp = None
+    except FileExistsError as exc:
+        raise HilPinError("PIN already exists; use reset to rotate it") from exc
     except OSError as exc:
+        if created:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
         raise HilPinError("Could not write HIL PIN state") from exc
     finally:
         if tmp is not None and os.path.exists(tmp):
@@ -154,6 +181,8 @@ def require_hil_pin(env: Mapping[str, str] | None = None) -> None:
 
 def revoke_pin(*, path: Path | None = None) -> None:
     path = path or state_path()
+    if path.exists() or path.is_symlink():
+        _state_directory(path, create=False)
     if path.is_symlink():
         raise HilPinError("HIL PIN state file must not be a symlink")
     try:
