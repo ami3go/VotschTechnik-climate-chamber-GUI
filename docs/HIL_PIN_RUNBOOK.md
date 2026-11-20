@@ -63,6 +63,22 @@ PINs unattended.
    apply a blind process-kill watchdog to an energized chamber: a killed
    process may leave the chamber running.
 
+## Test-tool admission matrix
+
+| Physical test entry point | Independent PIN gate before device I/O | Exclusive bench lock | Negative regression |
+|---|---|---|---|
+| `tests/hardware/` via `tests/hardware/hil_support.py:authorization` | Yes | `hil_pin.sh run` required | missing/invalid PIN exits collection before authorization |
+| `scripts/hil_soak.py:main` | Yes | `hil_pin.sh run` required | missing/wrong PIN cannot parse HIL configuration or create evidence |
+| `scripts/hil_lab_acceptance.py:main` without `--simulate` | Yes | `hil_pin.sh run` required | missing PIN cannot parse HIL configuration or create evidence |
+| pytest-owned NiceGUI subprocess in `chamber_web/main.py` | Yes when `CHAMBER_HIL_RUN_TESTS=1` | inherited wrapper lock | missing/invalid PIN aborts before service construction |
+| `scripts/hil_lab_acceptance.py --simulate` and ordinary unit/GUI tests | Not applicable; simulation stays PIN-free | Not applicable | simulation regression runs without state or PIN |
+
+The ordinary product GUI and legacy signed H02 application runtime are not
+agent test entry points and are intentionally outside this PIN migration.
+Windows runs the software-only negative matrix, but Windows-native physical
+test admission remains NO-GO until an equivalent qualified cross-process lock
+and operator runner replace the POSIX Bash/`flock` wrapper.
+
 ## Example invocations
 
 ```bash
