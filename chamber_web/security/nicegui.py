@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import stat
 import threading
 
 from nicegui import app, ui
@@ -61,20 +62,35 @@ def cookie_secret() -> str:
             output.write(secrets.token_hex(32))
             output.flush()
             os.fsync(output.fileno())
-    # The cookie signing key is as sensitive as the G08 backup/audit keys:
-    # never accept a symlink, a directory/device, or another POSIX user's
-    # file even when its target happens to contain a valid hex secret.
-    import stat
-    if path.is_symlink():
+    # Inspect the key *and* read through the same descriptor. Prior
+    # is_symlink()/stat()/read_text() checks left a symlink-swap race.
+    info = path.lstat()
+    if stat.S_ISLNK(info.st_mode):
         raise RuntimeError("Symlink NiceGUI cookie signing key; startup refused")
-    info = path.stat()
     if not stat.S_ISREG(info.st_mode):
         raise RuntimeError("Nonregular NiceGUI cookie signing key; startup refused")
+    flags = os.O_RDONLY
     if os.name != "nt":
-        if info.st_uid != os.getuid() or info.st_mode & 0o077:
-            raise PermissionError(
-                "Insecure cookie key ownership or permissions; startup refused")
-    secret = path.read_text(encoding="ascii").strip()
+        # O_NOFOLLOW makes the final-component symlink rejection atomic on
+        # POSIX; O_NONBLOCK prevents a swapped FIFO from hanging startup.
+        if not hasattr(os, "O_NOFOLLOW"):
+            raise RuntimeError("Safe cookie key open unavailable; startup refused")
+        flags |= os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode):
+            raise RuntimeError("Nonregular NiceGUI cookie signing key; startup refused")
+        if os.name != "nt":
+            if opened.st_uid != os.getuid() or opened.st_mode & 0o077:
+                raise PermissionError(
+                    "Insecure cookie key ownership or permissions; startup refused")
+        with os.fdopen(fd, "r", encoding="ascii") as source:
+            fd = -1
+            secret = source.read(66).strip()
+    finally:
+        if fd >= 0:
+            os.close(fd)
     if len(secret) != 64 or any(ch not in "0123456789abcdef" for ch in secret):
         raise RuntimeError("Invalid persistent cookie signing key; startup refused")
     return secret

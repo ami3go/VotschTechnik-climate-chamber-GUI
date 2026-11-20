@@ -44,3 +44,23 @@ Branch was reconfirmed as based on `main` `4be73edda855ea53cc5a1417ec8583fd37dfe
 **Resolved in candidate source:** G07-R9 HIGH (absence of run SQLite DB while per-run evidence or SQLite sidecar remains could previously create empty replacement). Added fail-closed pre-open detection and regression tests for missing DB and orphan WAL; added six-worker concurrent idempotent replay test and G06/G04 simulator cancel + STOP_INTENT crash/recovery + evidence tamper/ZIP test. G07 workflow now runs G04 STOP-fencing and G08-min security tests for each Windows Python version. No new recording architecture, web HTTP route, physical driver connection or physical control is introduced.
 
 **Outstanding:** All release/HIGH items R1 (Windows power loss), R2 (independent setpoint readback + generation from G06), R3 (authorization for any future History/Logs/exports), R4 (trusted archival anchoring and backup recovery), R7 (exclusive process-startup integration/physical interruption), R8 (independent human review and final exact-source CI) remain open. Documented unit/software remediation **does not** close physical HIL, G08-full or W02. This audit is AI-assisted technical review only; its author cannot supply independent human approval. Keep PR draft, do not merge absent required gates. Actual final-head CI run IDs and conclusions must be recorded in the PR audit discussion after GitHub reports them.
+
+## CH-WP-05 software update (2026-11-20)
+
+PR #104 adds extrema-preserving plot buckets and an authenticated
+`RunExportService` used by the History page. Each download revalidates the
+server-held session and CSRF token, requires G08 READ permission, verifies the
+manifest and artifact hashes, applies fixed 16 MiB CSV / 32 MiB ZIP limits, and
+records DENIED, INTENT, SUCCESS or FAILED in the tamper-evident security audit.
+Tests cover short hot/cold excursions, requested `intended_setpoint_c` versus
+observed `temperature_c` labels, corrupt evidence, arbitrary export names,
+revoked sessions, ENOSPC/fsync/partial-finalization recovery, older-database
+rollback against newer immutable artifacts, and two spawned processes refusing
+the same corrupt journal without rewriting it.
+
+This resolves R3, R5 and the bounded-refusal portion of R6 for the reviewed
+application route, subject to exact-head Linux/Windows CI. It does not resolve
+R1 target-volume power-cut certification, R2 independently observed setpoint,
+R4 external archival anchoring/approved backup policy, deployment request
+throttling, or R8 independent/site approval. Evidence directories must never be
+published through a separate static or unauthenticated route.

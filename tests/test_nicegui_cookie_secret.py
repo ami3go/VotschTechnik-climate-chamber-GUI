@@ -50,6 +50,29 @@ class CookieSecretFileTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Nonregular"):
             web_security.cookie_secret()
 
+    def test_oversized_existing_key_is_refused(self):
+        self.directory.mkdir()
+        self.path.write_text("a" * 256, encoding="ascii")
+        if os.name != "nt":
+            self.path.chmod(0o600)
+        with self.assertRaisesRegex(RuntimeError, "Invalid persistent"):
+            web_security.cookie_secret()
+
+    @unittest.skipIf(os.name == "nt", "POSIX named-pipe filesystem test")
+    def test_named_pipe_is_refused_without_waiting_for_writer(self):
+        self.directory.mkdir()
+        os.mkfifo(self.path, 0o600)
+        with self.assertRaisesRegex(RuntimeError, "Nonregular"):
+            web_security.cookie_secret()
+
+    def test_existing_key_is_read_without_path_read_text(self):
+        self.directory.mkdir()
+        self.path.write_text("b" * 64, encoding="ascii")
+        if os.name != "nt":
+            self.path.chmod(0o600)
+        with patch.object(Path, "read_text", side_effect=AssertionError("unsafe read")):
+            self.assertEqual(web_security.cookie_secret(), "b" * 64)
+
     @unittest.skipIf(os.name == "nt", "POSIX ownership and mode validation")
     def test_insecure_permissions_are_refused(self):
         self.directory.mkdir(mode=0o700)
