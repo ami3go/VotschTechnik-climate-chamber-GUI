@@ -49,14 +49,7 @@ MAC:         02:56:4F:54:43:01
 
 Disconnect VPNs/other lab test instruments from the isolated interface. Photograph the board and ICSP connection; record board/shield revisions, USB/host OS, operator, date/time (UTC), NIC IP, MAC and a signed-off statement that the RJ45 segment cannot reach a real chamber.
 
-Create one evidence folder per test campaign; never overwrite prior data:
-
-```bash
-mkdir -p test-evidence/leonardo/campaign-01
-date -u --iso-8601=seconds > test-evidence/leonardo/campaign-01/start-utc.txt
-```
-
-On Windows use PowerShell `New-Item -ItemType Directory -Force test-evidence/leonardo/campaign-01` and `(Get-Date).ToUniversalTime().ToString('o')`.
+Create one evidence folder per test campaign **inside the GUI repository after cloning it in section 2**; never overwrite prior data. On Windows use PowerShell `New-Item -ItemType Directory -Force test-evidence/leonardo/campaign-01` and `(Get-Date).ToUniversalTime().ToString('o')`.
 
 **Pass:** no real hardware other than the Leonardo is reachable on test Ethernet; device is physically identifiable and initial RUN is zero.
 
@@ -68,6 +61,8 @@ Do not run firmware from an unreviewed source or substitute a newer unpinned dri
 git clone --branch feat/leonardo-w5500-chamber-emulator \
   https://github.com/ami3go/VotschTechnik-climate-chamber-GUI.git
 cd VotschTechnik-climate-chamber-GUI
+mkdir -p test-evidence/leonardo/campaign-01
+date -u --iso-8601=seconds > test-evidence/leonardo/campaign-01/start-utc.txt
 git status --short
 git rev-parse HEAD | tee test-evidence/leonardo/campaign-01/gui-commit.txt
 
