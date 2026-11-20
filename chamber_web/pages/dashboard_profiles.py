@@ -226,8 +226,8 @@ def _build():
         reload_button.disable() if view.active else reload_button.enable()
         if view.admin_override:
             mode_label.set_text(
-                "ADMIN OVERRIDE: ownership and STOP/restart checks bypassed for "
-                "isolated lab runs")
+                "ADMIN TAKEOVER: manual lease may be reassigned, but the "
+                "chamber must be independently verified STOPPED")
         elif view.lab:
             mode_label.set_text(
                 "Physical chamber: isolated lab mode — no permit or watchdog required" +

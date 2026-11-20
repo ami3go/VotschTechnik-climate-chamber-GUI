@@ -231,8 +231,10 @@ class LabAcceptance:
         self.dashboard, self.manual = create_demo_control_services(
             security, self.hil,
             hil_driver_factory=factory,
-            # Shared with a live server: both can never control at once.
-            lease_directory=Path.home() / ".chamber_web" / "ownership",
+            # Physical acceptance shares the durable live-server lease. The
+            # in-process simulator uses only its disposable test workspace.
+            lease_directory=(work / "ownership" if factory is not None else
+                             Path.home() / ".chamber_web" / "ownership"),
             gradient_writes=self.lab.gradients)
         self.connected = True
         self.manager = self.dashboard.manager
