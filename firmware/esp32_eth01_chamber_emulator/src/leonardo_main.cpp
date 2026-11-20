@@ -305,9 +305,10 @@ void poll_network(uint32_t now) {
     if (pending) {
         if (static_cast<int32_t>(now - reply_at_ms) < 0) return;
         if (response_offset < response_len) {
+            const size_t remaining = response_len - response_offset;
             size_t written = client.write(response + response_offset,
-                                          response_len - response_offset);
-            if (written > response_len - response_offset) written = 0;
+                                          remaining);
+            if (written > remaining) written = 0;
             response_offset += static_cast<uint8_t>(written);
         }
         if (response_offset == response_len) {
@@ -368,9 +369,10 @@ void loop() {
     poll_console(Serial, Serial, usb_line, usb_len);
     poll_console(Serial1, Serial1, uart_line, uart_len);
     poll_network(now);
-    if (has_dhcp && !chamber.running &&
-        static_cast<uint32_t>(now - last_maintain_ms) >= 1000UL) {
-        // Ethernet.maintain may block: never call during a profile/run.
+    if (leonardo::dhcp_maintenance_due(
+            has_dhcp, static_cast<bool>(client), chamber.running,
+            static_cast<uint32_t>(now - last_maintain_ms))) {
+        // Ethernet.maintain may block: never call during a client session or run.
         const int rc = Ethernet.maintain();
         last_maintain_ms = millis();
         if (rc == 1 || rc == 3) last_maintain_ms += DHCP_RETRY_MS - 1000UL;

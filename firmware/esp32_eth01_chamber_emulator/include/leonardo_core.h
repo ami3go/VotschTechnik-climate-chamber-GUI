@@ -9,6 +9,11 @@ static const size_t MAX_REQUEST = 80;
 static const size_t MAX_RESPONSE = 64;
 static const uint16_t CHAMBER_PORT = 2049;
 
+inline bool dhcp_maintenance_due(bool has_dhcp, bool client_active,
+                                 bool running, uint32_t elapsed_ms) {
+    return has_dhcp && !client_active && !running && elapsed_ms >= 1000UL;
+}
+
 struct Faults {
     bool sticky_stop = false;
     bool invalid_sensor = false;
