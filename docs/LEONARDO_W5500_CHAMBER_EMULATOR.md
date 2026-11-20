@@ -181,4 +181,6 @@ The GPIO/IP, SRAM/flash build report, real W5500 connectivity, DHCP renewal,
 repeated STOP, link recovery, watchdog reboot and NiceGUI browser behavior
 must be verified on a purchased board. The HIL/release gate remains unchanged.
 
+For the **complete operator test sequence** (actual board + driver, negative faults, EEPROM/link recovery, NiceGUI simulation and explicit GUI-emulator enrollment gate), use [LEO-HIL-RUNBOOK-01](LEONARDO_W5500_FULL_TEST_RUNBOOK.md).
+
 See [Leonardo acceptance](LEONARDO_W5500_CHAMBER_ACCEPTANCE.md).
