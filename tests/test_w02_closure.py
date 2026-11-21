@@ -118,6 +118,37 @@ class ClosureLockTests(unittest.TestCase):
         with self.assertRaisesRegex(closure.ClosureError, "empty"):
             closure.parse_lock("# only comments\n")
 
+    def test_top_level_metadata_ignores_vendored_dist_info(self):
+        wheel = self.root / "setuptools-1.0-py3-none-any.whl"
+        with zipfile.ZipFile(wheel, "w") as archive:
+            archive.writestr(
+                "setuptools-1.0.dist-info/METADATA",
+                "Metadata-Version: 2.1\nName: setuptools\nVersion: 1.0\n\n")
+            archive.writestr(
+                "setuptools/_vendor/packaging-2.0.dist-info/METADATA",
+                "Metadata-Version: 2.1\nName: packaging\nVersion: 2.0\n\n")
+        self.assertEqual(closure.wheel_metadata(wheel)["name"], "setuptools")
+
+    def test_spdx_license_expression_precedes_legacy_license(self):
+        wheel = self.root / "example-1.0-py3-none-any.whl"
+        with zipfile.ZipFile(wheel, "w") as archive:
+            archive.writestr(
+                "example-1.0.dist-info/METADATA",
+                "Metadata-Version: 2.4\nName: example\nVersion: 1.0\n"
+                "License-Expression: Apache-2.0 OR BSD-2-Clause\n"
+                "License: UNKNOWN\n\n")
+        self.assertEqual(closure.wheel_license(wheel),
+                         "Apache-2.0 OR BSD-2-Clause")
+
+    def test_platform_specific_py3_none_wheel_is_valid_for_target_only(self):
+        closure.check_wheel_platform(
+            "pyinstaller-6.16.0-py3-none-win_amd64.whl",
+            platform_tags=("win_amd64",), python_tag="cp312")
+        with self.assertRaisesRegex(closure.ClosureError, "platform tag"):
+            closure.check_wheel_platform(
+                "pyinstaller-6.16.0-py3-none-win_amd64.whl",
+                platform_tags=("manylinux", "linux"), python_tag="cp312")
+
 
 class ClosureWheelhouseTests(unittest.TestCase):
     def setUp(self):

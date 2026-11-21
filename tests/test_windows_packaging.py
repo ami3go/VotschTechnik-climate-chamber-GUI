@@ -179,6 +179,16 @@ class ManifestTests(unittest.TestCase):
             manifest.verify_manifest(self.bundle)
 
 
+class BuildScriptSourceTests(unittest.TestCase):
+    def test_reviewed_offline_build_closes_nested_launcher_tool_install(self):
+        root = Path(__file__).resolve().parents[1]
+        offline = (root / "scripts/build_windows_offline.ps1").read_text(encoding="utf-8")
+        launcher = (root / "scripts/build_windows_launcher.ps1").read_text(encoding="utf-8")
+        self.assertIn("-BuildWheelhouseDir $buildWheelhouse -BuildLock $buildLock", offline)
+        self.assertIn('"--no-index", "--find-links", $BuildWheelhouseDir', launcher)
+        self.assertIn('"--require-hashes", "-r", $BuildLock', launcher)
+
+
 if __name__ == "__main__":
     unittest.main()
 
