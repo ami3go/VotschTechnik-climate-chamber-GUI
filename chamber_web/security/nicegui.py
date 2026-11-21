@@ -8,15 +8,15 @@ from __future__ import annotations
 
 import os
 import secrets
+import stat
 import threading
 
 from nicegui import app, ui
 
 from .auth import AuthenticationError, SecurityProfile, SecurityStore
-from .http import OriginMiddleware
 from .deployment import DeploymentPolicy
+from .http import OriginMiddleware
 from .paths import security_directory
-
 
 _store: SecurityStore | None = None
 _store_lock = threading.Lock()
@@ -56,16 +56,47 @@ def cookie_secret() -> str:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         pass
+    except OSError:
+        # Windows reports PermissionError rather than FileExistsError when the
+        # existing entry is a directory. Continue only when lstat proves that
+        # an entry exists; otherwise preserve a fail-closed startup error.
+        path.lstat()
     else:
         with os.fdopen(fd, "w", encoding="ascii") as output:
             output.write(secrets.token_hex(32))
             output.flush()
             os.fsync(output.fileno())
-    secret = path.read_text(encoding="ascii").strip()
+    # Inspect the key *and* read through the same descriptor. Prior
+    # is_symlink()/stat()/read_text() checks left a symlink-swap race.
+    info = path.lstat()
+    if stat.S_ISLNK(info.st_mode):
+        raise RuntimeError("Symlink NiceGUI cookie signing key; startup refused")
+    if not stat.S_ISREG(info.st_mode):
+        raise RuntimeError("Nonregular NiceGUI cookie signing key; startup refused")
+    flags = os.O_RDONLY
+    if os.name != "nt":
+        # O_NOFOLLOW makes the final-component symlink rejection atomic on
+        # POSIX; O_NONBLOCK prevents a swapped FIFO from hanging startup.
+        if not hasattr(os, "O_NOFOLLOW"):
+            raise RuntimeError("Safe cookie key open unavailable; startup refused")
+        flags |= os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode):
+            raise RuntimeError("Nonregular NiceGUI cookie signing key; startup refused")
+        if (os.name != "nt" and
+                (opened.st_uid != os.getuid() or opened.st_mode & 0o077)):
+            raise PermissionError(
+                "Insecure cookie key ownership or permissions; startup refused")
+        with os.fdopen(fd, "r", encoding="ascii") as source:
+            fd = -1
+            secret = source.read(66).strip()
+    finally:
+        if fd >= 0:
+            os.close(fd)
     if len(secret) != 64 or any(ch not in "0123456789abcdef" for ch in secret):
         raise RuntimeError("Invalid persistent cookie signing key; startup refused")
-    if os.name != "nt" and path.stat().st_mode & 0o077:
-        raise PermissionError("Insecure cookie key permissions; startup refused")
     return secret
 
 
