@@ -5,6 +5,7 @@ on:
       - "scripts/w02_release.py"
       - "scripts/w02_target_verifier.py"
       - "scripts/w02_closure.py"
+      - "scripts/w02_build_bootstrap.py"
       - "scripts/verify_w02_release.ps1"
       - "tests/test_windows_packaging.py"
       - ".github/workflows/windows-packaging.yml"
@@ -14,7 +15,10 @@ on:
       - "scripts/windows_manifest.py"
       - "tests/test_w02_release.py"
       - "tests/test_w02_closure.py"
+      - "tests/test_w02_build_bootstrap.py"
       - "requirements-w02-build.txt"
+      - "requirements-w02-build.lock"
+      - "w02-build-closure-manifest.json"
       - "requirements-w02-runtime.lock"
       - "requirements-hardware.txt"
       - "w02-closure-manifest.json"
@@ -29,6 +33,10 @@ on:
       - "requirements-web.txt"
       - "requirements-hardware.txt"
       - "requirements-w02-build.txt"
+      - "requirements-w02-build.lock"
+      - "w02-build-closure-manifest.json"
+      - "scripts/w02_build_bootstrap.py"
+      - "tests/test_w02_build_bootstrap.py"
       - ".github/workflows/w02-release-validation.yml"
   workflow_dispatch:
 jobs:
@@ -45,13 +53,52 @@ jobs:
           python-version: ${{ matrix.python-version }}
           architecture: x64
       - name: Install offline-verifier test prerequisites
-        run: python -m pip install -r requirements-web.txt -r requirements-w02-build.txt pytest==9.1.1 ruff==0.17.0
+        # The reviewed build closure intentionally targets CPython 3.12.  The
+        # 3.10 compatibility job exercises source verification code only.
+        run: python -m pip install -r requirements-web.txt cryptography==46.0.2 packaging==26.3 pytest==9.1.1 ruff==0.17.0
       - name: Lint
-        run: python -m ruff check scripts/w02_release.py scripts/w02_target_verifier.py scripts/windows_manifest.py tests/test_w02_release.py --select E4,E7,E9,F
+        run: python -m ruff check scripts/w02_release.py scripts/w02_target_verifier.py scripts/w02_build_bootstrap.py scripts/windows_manifest.py tests/test_w02_release.py tests/test_w02_build_bootstrap.py --select E4,E7,E9,F
       - name: Adversarial release tests
-        run: python -m pytest -q tests/test_w02_release.py tests/test_windows_packaging.py
+        run: python -m pytest -q tests/test_w02_release.py tests/test_w02_build_bootstrap.py tests/test_windows_packaging.py
       - name: Report gating
         run: echo "W02 release NO-GO - self-hosted offline clean-VM acceptance and trusted signature required"
+
+  reviewed-build-tools:
+    name: Reviewed build tools (win_amd64, Python 3.12)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+      - name: Hydrate exact reviewed build wheels without dependency resolution
+        run: >
+          python scripts/w02_build_bootstrap.py
+          --requirements requirements-w02-build.txt
+          --lock requirements-w02-build.lock
+          --manifest w02-build-closure-manifest.json
+          --wheelhouse w02-build-wheelhouse
+      - name: Install every build tool offline with hashes enforced
+        shell: pwsh
+        run: |
+          python -m venv "$env:RUNNER_TEMP/w02-build-tools"
+          $py = "$env:RUNNER_TEMP/w02-build-tools/Scripts/python.exe"
+          & $py -m pip install --disable-pip-version-check --no-index `
+            --find-links ./w02-build-wheelhouse --require-hashes `
+            -r ./requirements-w02-build.lock
+          if ($LASTEXITCODE -ne 0) { throw "Offline build-tool installation failed" }
+          & $py -m scripts.w02_closure verify `
+            --wheelhouse ./w02-build-wheelhouse `
+            --lock ./requirements-w02-build.lock `
+            --manifest ./w02-build-closure-manifest.json `
+            --target win_amd64-cp312
+          if ($LASTEXITCODE -ne 0) { throw "Build-tool closure verification failed" }
+          & $py -c "import PyInstaller, cryptography, packaging; print(PyInstaller.__version__)"
+          if ($LASTEXITCODE -ne 0) { throw "Reviewed build tools are not importable" }
+      - name: Report gating
+        run: echo "Build tooling is hash-locked; publisher signing and clean-VM release acceptance remain NO-GO"
 
   # S2-03: the air-gap dependency closure of the frozen Windows runtime.
   #

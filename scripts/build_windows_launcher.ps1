@@ -16,6 +16,11 @@
   PyInstaller entry script (default: the W01 demo launcher).
 .PARAMETER Variant
   Recorded build variant (w01 or preproduction) in launcher-build.json.
+.PARAMETER BuildWheelhouseDir
+  Optional reviewed build-tool wheelhouse. Must be supplied together with
+  BuildLock; PyInstaller is then installed with no index and required hashes.
+.PARAMETER BuildLock
+  Hash-locked requirements file for BuildWheelhouseDir.
 #>
 [CmdletBinding()]
 param(
@@ -25,10 +30,15 @@ param(
     [ValidatePattern('^[0-9A-Za-z][0-9A-Za-z.+-]{0,48}$')][string]$Version = "0.1.0-w01",
     [string]$Python = "python",
     [string]$Entry = "scripts/windows_launcher.py",
+    [string]$BuildWheelhouseDir = "",
+    [string]$BuildLock = "",
     [ValidateSet("w01", "preproduction")][string]$Variant = "w01"
 )
 $ErrorActionPreference = "Stop"
 if ($env:OS -ne "Windows_NT") { throw "Build launcher natively on Windows." }
+if ([bool]$BuildWheelhouseDir -ne [bool]$BuildLock) {
+    throw "BuildWheelhouseDir and BuildLock must be supplied together"
+}
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if ([IO.Path]::IsPathRooted($OutputDir)) { $output = [IO.Path]::GetFullPath($OutputDir) }
 else { $output = [IO.Path]::GetFullPath((Join-Path (Get-Location).Path $OutputDir)) }
@@ -47,7 +57,16 @@ function Native([string]$command, [string[]]$arguments) {
 try {
     Native $Python @("-m", "venv", (Join-Path $work "venv"))
     $py = Join-Path $work "venv/Scripts/python.exe"
-    Native $py @("-m", "pip", "install", "--disable-pip-version-check", "pyinstaller==6.16.0")
+    if ($BuildWheelhouseDir) {
+        if (-not (Test-Path $BuildWheelhouseDir)) { throw "Reviewed build wheelhouse is missing" }
+        if (-not (Test-Path $BuildLock)) { throw "Reviewed build lock is missing" }
+        Native $py @("-m", "pip", "install", "--disable-pip-version-check",
+                     "--no-index", "--find-links", $BuildWheelhouseDir,
+                     "--require-hashes", "-r", $BuildLock)
+    }
+    else {
+        Native $py @("-m", "pip", "install", "--disable-pip-version-check", "pyinstaller==6.16.0")
+    }
     Native $py @(
         "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--windowed",
         "--name", "ClimateChamberLauncher", "--paths", $repo,

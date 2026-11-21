@@ -1,0 +1,103 @@
+{
+  "artifacts": [
+    {
+      "filename": "altgraph-0.17.5-py2.py3-none-any.whl",
+      "license": "MIT",
+      "name": "altgraph",
+      "requires_python": "",
+      "sha256": "f3a22400bce1b0c701683820ac4f3b159cd301acab067c51c653e06961600597",
+      "url": "https://files.pythonhosted.org/packages/a9/ba/000a1996d4308bc65120167c21241a3b205464a2e0b58deda26ae8ac21d1/altgraph-0.17.5-py2.py3-none-any.whl",
+      "version": "0.17.5"
+    },
+    {
+      "filename": "cffi-2.1.1-cp312-cp312-win_amd64.whl",
+      "license": "MIT-0",
+      "name": "cffi",
+      "requires_python": ">=3.10",
+      "sha256": "f53e442b08449d42821fa4a4fba000095af9f62742a500f978a9f557ec44339a",
+      "url": "https://files.pythonhosted.org/packages/d9/79/615cc094e2fb508cade7de88d3b4f6c4ec2bab695c97bce9153dc65aadf5/cffi-2.1.1-cp312-cp312-win_amd64.whl",
+      "version": "2.1.1"
+    },
+    {
+      "filename": "cryptography-46.0.2-cp311-abi3-win_amd64.whl",
+      "license": "Apache-2.0 OR BSD-3-Clause",
+      "name": "cryptography",
+      "requires_python": ">=3.8, !=3.9.0, !=3.9.1",
+      "sha256": "758cfc7f4c38c5c5274b55a57ef1910107436f4ae842478c4989abbd24bd5acb",
+      "url": "https://files.pythonhosted.org/packages/a8/cd/2f83cafd47ed2dc5a3a9c783ff5d764e9e70d3a160e0df9a9dcd639414ce/cryptography-46.0.2-cp311-abi3-win_amd64.whl",
+      "version": "46.0.2"
+    },
+    {
+      "filename": "packaging-26.3-py3-none-any.whl",
+      "license": "Apache-2.0 OR BSD-2-Clause",
+      "name": "packaging",
+      "requires_python": ">=3.9",
+      "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+      "url": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
+      "version": "26.3"
+    },
+    {
+      "filename": "pefile-2023.2.7-py3-none-any.whl",
+      "license": "MIT",
+      "name": "pefile",
+      "requires_python": ">=3.6.0",
+      "sha256": "da185cd2af68c08a6cd4481f7325ed600a88f6a813bad9dea07ab3ef73d8d8d6",
+      "url": "https://files.pythonhosted.org/packages/55/26/d0ad8b448476d0a1e8d3ea5622dc77b916db84c6aa3cb1e1c0965af948fc/pefile-2023.2.7-py3-none-any.whl",
+      "version": "2023.2.7"
+    },
+    {
+      "filename": "pycparser-3.12-py3-none-any.whl",
+      "license": "BSD-3-Clause",
+      "name": "pycparser",
+      "requires_python": ">=3.11",
+      "sha256": "a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e",
+      "url": "https://files.pythonhosted.org/packages/b6/ae/315bbeee126a769cbde43cf4908acb4b40408d8bf8bbf334dd7368d8dadf/pycparser-3.12-py3-none-any.whl",
+      "version": "3.12"
+    },
+    {
+      "filename": "pyinstaller-6.16.0-py3-none-win_amd64.whl",
+      "license": "GPLv2-or-later with a special exception which allows to use PyInstaller to build and distribute non-free programs (including commercial ones)",
+      "name": "pyinstaller",
+      "requires_python": "<3.15,>=3.8",
+      "sha256": "bc10eb1a787f99fea613509f55b902fbd2d8b73ff5f51ff245ea29a481d97d41",
+      "url": "https://files.pythonhosted.org/packages/aa/99/2005efbc297e7813c1d6f18484aa94a1a81ce87b6a5b497c563681f4c4ea/pyinstaller-6.16.0-py3-none-win_amd64.whl",
+      "version": "6.16.0"
+    },
+    {
+      "filename": "pyinstaller_hooks_contrib-2026.10-py3-none-any.whl",
+      "license": "OSI Approved :: Apache Software License; OSI Approved :: GNU General Public License v2 (GPLv2)",
+      "name": "pyinstaller-hooks-contrib",
+      "requires_python": ">=3.8",
+      "sha256": "dfc3cde20a7ce6c92e803016e66eed4b7050467e2c5f886a3745d89b258c6d6d",
+      "url": "https://files.pythonhosted.org/packages/08/10/4a6d13adaa93d0bbcfea082a78965e970cae7a8bfa82ac1557a1dc8f1cba/pyinstaller_hooks_contrib-2026.10-py3-none-any.whl",
+      "version": "2026.10"
+    },
+    {
+      "filename": "pywin32_ctypes-0.2.3-py3-none-any.whl",
+      "license": "BSD-3-Clause",
+      "name": "pywin32-ctypes",
+      "requires_python": ">=3.6",
+      "sha256": "8a1513379d709975552d202d942d9837758905c8d01eb82b8bcc30918929e7b8",
+      "url": "https://files.pythonhosted.org/packages/de/3d/8161f7711c017e01ac9f008dfddd9410dff3674334c233bde66e7ba65bbf/pywin32_ctypes-0.2.3-py3-none-any.whl",
+      "version": "0.2.3"
+    },
+    {
+      "filename": "setuptools-84.2.1-py3-none-any.whl",
+      "license": "MIT",
+      "name": "setuptools",
+      "requires_python": ">=3.10",
+      "sha256": "ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2",
+      "url": "https://files.pythonhosted.org/packages/ef/55/6dc6d6bb953bdfc52519a0059592c52b6e3b8ad51cf8256dffceb55b0610/setuptools-84.2.1-py3-none-any.whl",
+      "version": "84.2.1"
+    }
+  ],
+  "platform": [
+    "win_amd64"
+  ],
+  "python_tag": "cp312",
+  "release_version": "build-tools-1",
+  "requirements": "requirements-w02-build.txt",
+  "requirements_sha256": "652d47860433b0affabdffe855e17af2442acdfe412be7d19316b2a95653ca69",
+  "schema": 1,
+  "target": "win_amd64-cp312"
+}
