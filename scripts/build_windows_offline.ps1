@@ -33,6 +33,7 @@ param(
     [switch]$SimulationOnly,
     [switch]$UseReviewedClosure,
     [string]$WheelhouseDir = "",
+    [string]$BuildWheelhouseDir = "",
     [ValidateSet("W01", "PreProduction")][string]$Variant = "W01"
 )
 $ErrorActionPreference = "Stop"
@@ -69,7 +70,11 @@ try {
     $py = Join-Path $work "venv/Scripts/python.exe"
     $closureLock = Join-Path $repo "requirements-w02-runtime.lock"
     $closureManifest = Join-Path $repo "w02-closure-manifest.json"
+    $buildRequirements = Join-Path $repo "requirements-w02-build.txt"
+    $buildLock = Join-Path $repo "requirements-w02-build.lock"
+    $buildManifest = Join-Path $repo "w02-build-closure-manifest.json"
     $wheelhouse = if ($WheelhouseDir) { $WheelhouseDir } else { Join-Path $work "wheelhouse" }
+    $buildWheelhouse = if ($BuildWheelhouseDir) { $BuildWheelhouseDir } else { Join-Path $work "build-wheelhouse" }
     if ($UseReviewedClosure) {
         # The reviewed closure: hash-locked, complete, and installed with NO
         # index access. Hydrate the exact audited wheel URLs and SHA-256 values
@@ -78,16 +83,34 @@ try {
         # against its committed hash before freezing.
         if (-not (Test-Path $closureLock)) { throw "The reviewed closure lock is missing" }
         if (-not (Test-Path $closureManifest)) { throw "The reviewed closure manifest is missing" }
+        if (-not (Test-Path $buildLock)) { throw "The reviewed build-tool lock is missing" }
+        if (-not (Test-Path $buildManifest)) { throw "The reviewed build-tool manifest is missing" }
         New-Item -Path $wheelhouse -ItemType Directory -Force | Out-Null
+        # Bootstrap with stdlib only: exact reviewed wheel URLs and hashes,
+        # never pip's resolver.  An operator may instead provide an already
+        # populated wheelhouse, which is verified below before use.
+        if (-not $BuildWheelhouseDir) {
+            Native $Python @((Join-Path $repo "scripts/w02_build_bootstrap.py"),
+                              "--requirements", $buildRequirements,
+                              "--lock", $buildLock,
+                              "--manifest", $buildManifest,
+                              "--wheelhouse", $buildWheelhouse)
+        }
         # A separate tool environment keeps the build requirements (the pinned
         # build backend, the marker parser) out of the runtime environment that
         # is frozen into the bundle.
         Native $Python @("-m", "venv", (Join-Path $work "closure-venv"))
         $closurePy = Join-Path $work "closure-venv/Scripts/python.exe"
         Native $closurePy @("-m", "pip", "install", "--disable-pip-version-check",
-                            "-r", (Join-Path $repo "requirements-w02-build.txt"))
+                            "--no-index", "--find-links", $buildWheelhouse,
+                            "--require-hashes", "-r", $buildLock)
         Push-Location $repo
         try {
+            Native $closurePy @("-m", "scripts.w02_closure", "verify",
+                                "--wheelhouse", $buildWheelhouse,
+                                "--lock", $buildLock,
+                                "--manifest", $buildManifest,
+                                "--target", "win_amd64-cp312")
             Native $closurePy @("-m", "scripts.w02_closure", "hydrate",
                                 "--requirements", (Join-Path $repo "requirements-web.txt"),
                                 "--vcs-requirement", (Join-Path $repo "requirements-hardware.txt"),
@@ -104,6 +127,11 @@ try {
         Native $py @("-m", "pip", "install", "--disable-pip-version-check",
                      "--no-index", "--find-links", $wheelhouse, "--require-hashes",
                      "-r", $closureLock)
+        # The freezer and every build-only dependency come from the separate
+        # reviewed build closure; this command cannot contact an index.
+        Native $py @("-m", "pip", "install", "--disable-pip-version-check",
+                     "--no-index", "--find-links", $buildWheelhouse,
+                     "--require-hashes", "-r", $buildLock)
     }
     else {
         Native $py @("-m", "pip", "install", "--disable-pip-version-check", "-r",
@@ -114,7 +142,12 @@ try {
                          (Join-Path $repo "requirements-hardware.txt"))
         }
     }
-    Native $py @("-m", "pip", "install", "--disable-pip-version-check", "pyinstaller==6.16.0")
+    if (-not $UseReviewedClosure) {
+        # Historical connected feasibility/developer path only.  The reviewed
+        # release path above installs PyInstaller from the hash-locked build
+        # wheelhouse and never resolves from an index.
+        Native $py @("-m", "pip", "install", "--disable-pip-version-check", "pyinstaller==6.16.0")
+    }
     if ($preProduction) {
         # H02 admission binds the exact GUI and driver revisions. A frozen
         # bundle has no git checkout (and a hash-locked wheelhouse may lose the
@@ -149,8 +182,22 @@ try {
     if (-not $SimulationOnly) { $testFlags += @("--require-module", "VotschTechnikClimateChamber") }
     Native $serverExe $testFlags
 
-    # Script A is a genuinely separate maintained thin-launcher build.
-    & (Join-Path $repo "scripts/build_windows_launcher.ps1") -Clean -OutputDir $bundle -Configuration $Configuration -Version $Version -Python $Python -Entry $(if ($preProduction) { "scripts/preproduction_launcher.py" } else { "scripts/windows_launcher.py" }) -Variant $variantKey
+    # Script A is a genuinely separate maintained thin-launcher build. The
+    # reviewed path must pass the same hash-locked build tools through to its
+    # private build venv; otherwise a nested connected PyInstaller resolution
+    # would silently reopen the closure.
+    $launcherEntry = if ($preProduction) { "scripts/preproduction_launcher.py" } else { "scripts/windows_launcher.py" }
+    if ($UseReviewedClosure) {
+        & (Join-Path $repo "scripts/build_windows_launcher.ps1") -Clean -OutputDir $bundle `
+            -Configuration $Configuration -Version $Version -Python $Python `
+            -Entry $launcherEntry -Variant $variantKey `
+            -BuildWheelhouseDir $buildWheelhouse -BuildLock $buildLock
+    }
+    else {
+        & (Join-Path $repo "scripts/build_windows_launcher.ps1") -Clean -OutputDir $bundle `
+            -Configuration $Configuration -Version $Version -Python $Python `
+            -Entry $launcherEntry -Variant $variantKey
+    }
     if (-not $?) { throw "Launcher build failed" }
     if ($preProduction) {
         Copy-Item (Join-Path $repo "README_PREPRODUCTION_WINDOWS.md") $bundle

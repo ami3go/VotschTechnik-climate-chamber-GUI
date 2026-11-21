@@ -231,8 +231,11 @@ def parse_lock(text: str) -> list[tuple[str, str, str]]:
 def wheel_metadata_text(path: Path) -> str:
     """The raw core metadata of a wheel, without installing it."""
     with zipfile.ZipFile(path) as archive:
+        # Some build tools (notably setuptools) vendor other distributions,
+        # including their own nested ``*.dist-info/METADATA`` files.  Only
+        # the wheel's top-level metadata directory describes this artifact.
         names = [name for name in archive.namelist()
-                 if name.endswith(".dist-info/METADATA")]
+                 if name.count("/") == 1 and name.endswith(".dist-info/METADATA")]
         if len(names) != 1:
             raise ClosureError("wheel has no unique .dist-info/METADATA: " + path.name)
         with archive.open(names[0]) as handle:
@@ -258,13 +261,24 @@ def wheel_metadata(path: Path) -> dict[str, str]:
 
 def wheel_license(path: Path) -> str:
     """Best-effort declared license, from the wheel metadata or classifiers."""
+    raw = wheel_metadata_text(path)
     fields = wheel_metadata(path)
+    expression = fields.get("license-expression", "").strip()
+    if expression:
+        return expression
     declared = fields.get("license", "").strip()
     if declared and declared.lower() != "unknown":
         return declared
-    for line in fields.get("classifier", "").splitlines():
-        if line.lower().startswith("license ::"):
-            return line.split("::")[-1].strip()
+    classifiers: list[str] = []
+    for line in raw.splitlines():
+        if not line:
+            break
+        if line.lower().startswith("classifier: license ::"):
+            value = line.split("::", 1)[1].strip()
+            if value and value not in classifiers:
+                classifiers.append(value)
+    if classifiers:
+        return "; ".join(classifiers)
     return "NOASSERTION"
 
 
@@ -348,6 +362,12 @@ def check_wheel_platform(filename: str, *, platform_tags: tuple[str, ...],
         raise ClosureError(
             f"{filename}: platform tag {wheel_platform!r} is not one of "
             + ", ".join(repr(tag) for tag in platform_tags))
+    # Platform-specific wheels may still contain interpreter-independent
+    # Python plus native executables/data (PyInstaller publishes exactly
+    # ``py3-none-win_amd64``).  The platform was checked above; accept the
+    # standard Python-3/no-ABI tag without pretending it is ``any``.
+    if wheel_abi == "none" and wheel_python in ("py3", "py2.py3"):
+        return
     if wheel_abi == python_tag:
         if wheel_python != python_tag:
             raise ClosureError(
