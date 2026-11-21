@@ -22,8 +22,9 @@ from nicegui import app, ui  # noqa: E402
 
 from .bootstrap import create_demo_control_services
 from .adapters.votsch import discover_votsch_chambers
+from .domain.chamber import ChamberSafetyError
 from .hil.chamber_settings import effective_hil_environment
-from .hil.lab_mode import LabMode, lab_mode_from_env
+from .hil.lab_mode import LabMode, lab_mode_from_env, operational_watchdog_limits
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
 from .hil.pin import require_hil_pin
 from .hil.supervised_profile import SupervisedProfileRuntime, supervised_runtime_from_env
@@ -53,6 +54,9 @@ if _HIL is not None and os.environ.get("CHAMBER_HIL_RUN_TESTS") == "1":
 # Isolated-lab unattended mode: physical profile runs without the H02 permit
 # workflow. Launch-time only; misconfiguration refuses to start.
 _LAB = lab_mode_from_env(_HIL_ENV, hil_present=_HIL is not None)
+if _LAB is not None and _LAB.independent_watchdog and deployment_policy.is_lab:
+    raise ChamberSafetyError(
+        "Operational Mode requires localhost or HTTPS LAN; plain HTTP lab mode is refused")
 _security = get_security()
 # A factory credential is reported as a security warning, not a hardware
 # admission rule. Physical access still requires explicit HIL authorization,
@@ -72,6 +76,7 @@ _dashboard_service, _manual_service = create_demo_control_services(
     gradient_writes=_LAB is not None and _LAB.gradients,
 )
 _MODE = ("Simulation" if _HIL is None else
+         "Physical operational" if _LAB is not None and _LAB.independent_watchdog else
          "Physical lab" if _LAB is not None else "Physical HIL")
 # Server-side supervised physical admission. A site-signed H02 permit enables
 # supervised profile runs; a partial or broken permit configuration refuses to
@@ -114,19 +119,23 @@ async def _startup_supervision() -> None:
     fail-closed (alive() false), which refuses every physical profile start.
     """
     global _SUPERVISION, _SUPERVISED
-    if _SUPERVISED is None or _HIL is None:
+    if _HIL is None or (_SUPERVISED is None and not (
+            _LAB is not None and _LAB.independent_watchdog)):
         return
     from .services.profile_runtime import run_journal_directory
+    limits = (_SUPERVISED.permit.watchdog if _SUPERVISED is not None
+              else operational_watchdog_limits())
     host = SupervisionHost(
-        _SUPERVISED.permit.watchdog,
+        limits,
         evidence_dir=run_journal_directory() / "watchdog",
         chamber_id=_HIL.chamber_id, serial_number=_HIL.expected_serial,
     )
     host.start()
     _SUPERVISION = host
-    _SUPERVISED = replace(
-        _SUPERVISED, supervision=host, supervisor_alive=_supervisor_alive,
-    )
+    if _SUPERVISED is not None:
+        _SUPERVISED = replace(
+            _SUPERVISED, supervision=host, supervisor_alive=_supervisor_alive,
+        )
 
 
 async def _shutdown_supervision() -> None:
@@ -1024,7 +1033,8 @@ def run() -> None:
         options = {"ssl_certfile": str(deployment_policy.certfile),
                    "ssl_keyfile": str(deployment_policy.keyfile)}
     ui.run(title="Climate Chamber — server simulation" if _HIL is None
-           else "Climate Chamber — PHYSICAL (isolated lab mode)" if _LAB is not None
+           else "Climate Chamber — PHYSICAL (operational mode)" if _LAB is not None and _LAB.independent_watchdog
+            else "Climate Chamber — PHYSICAL (isolated lab mode)" if _LAB is not None
            else "Climate Chamber — SUPERVISED PHYSICAL HIL",
            host=deployment_policy.bind_host, port=deployment_policy.port,
            reload=False, show=False, storage_secret=cookie_secret(),

@@ -150,6 +150,7 @@ class ProfileRunRuntimeTests(unittest.TestCase):
         stub_main.profile_execution_is_simulation = lambda: True
         stub_main.profile_execution_supervision = lambda: None
         stub_main.profile_execution_lab = lambda: None
+        stub_main.get_supervision_host = lambda: None
         # The getter binds the G05 manual guard only when its composition
         # SecurityStore matches the page's (see profiles.py); an isolated
         # test that swaps the store must degrade to manual_guard=None.

@@ -35,11 +35,14 @@ from typing import Mapping
 from chamber_web.domain.chamber import ChamberSafetyError
 
 ENV_LAB_MODE = "CHAMBER_LAB_MODE"
+ENV_OPERATIONAL_MODE = "CHAMBER_OPERATIONAL_MODE"
+OPERATIONAL_ACKNOWLEDGEMENT = "SUPERVISED-OPERATION"
 ENV_MEASURED_MARGIN = "CHAMBER_LAB_MEASURED_MARGIN_C"
 ENV_GRADIENTS = "CHAMBER_LAB_GRADIENTS"
 LAB_ACKNOWLEDGEMENT = "ISOLATED-LAB-UNATTENDED"
 # Stable 64-hex run binding recorded where a permit SHA would otherwise be.
 LAB_RUN_BINDING = hashlib.sha256(LAB_ACKNOWLEDGEMENT.encode("ascii")).hexdigest()
+OPERATIONAL_RUN_BINDING = hashlib.sha256(OPERATIONAL_ACKNOWLEDGEMENT.encode("ascii")).hexdigest()
 DEFAULT_MEASURED_MARGIN_C = 5.0
 MAX_MEASURED_MARGIN_C = 10.0
 
@@ -51,6 +54,8 @@ class LabMode:
     measured_margin_c: float = DEFAULT_MEASURED_MARGIN_C
     # Profile ramp_up/ramp_down columns write the chamber's gradient settings.
     gradients: bool = True
+    # Operational mode requires a healthy independent supervisor on every run.
+    independent_watchdog: bool = False
 
     def __post_init__(self) -> None:
         margin = self.measured_margin_c
@@ -60,12 +65,28 @@ class LabMode:
                 f"Lab measured margin must be 0..{MAX_MEASURED_MARGIN_C} °C")
         if type(self.gradients) is not bool:
             raise ChamberSafetyError("Lab gradient switch must be boolean")
+        if type(self.independent_watchdog) is not bool:
+            raise ChamberSafetyError("Independent watchdog switch must be boolean")
 
 
 def lab_mode_from_env(env: Mapping[str, str], *, hil_present: bool) -> LabMode | None:
     """None unless explicitly enabled; any partial/invalid value fails closed."""
     raw = env.get(ENV_LAB_MODE, "").strip()
+    operational = env.get(ENV_OPERATIONAL_MODE, "").strip()
     extras = [key for key in (ENV_MEASURED_MARGIN, ENV_GRADIENTS) if env.get(key, "").strip()]
+    if operational:
+        if raw or extras:
+            raise ChamberSafetyError("Operational mode cannot combine with isolated lab options")
+        if operational != OPERATIONAL_ACKNOWLEDGEMENT:
+            raise ChamberSafetyError("Invalid operational-mode acknowledgement")
+        if not hil_present:
+            raise ChamberSafetyError("Operational mode requires a physical HIL authorization")
+        if env.get("CHAMBER_H02_PERMIT_FILE", "").strip() or env.get(
+                "CHAMBER_H02_TRUSTED_KEY", "").strip():
+            raise ChamberSafetyError("Operational mode cannot combine with an H02 permit")
+        # Gradients require separate H03 site acceptance. Unattended operational
+        # runs are never permitted without the independent watchdog.
+        return LabMode(measured_margin_c=0.0, gradients=False, independent_watchdog=True)
     if not raw:
         if extras:
             raise ChamberSafetyError(
@@ -89,3 +110,22 @@ def lab_mode_from_env(env: Mapping[str, str], *, hil_present: bool) -> LabMode |
     if gradients_raw not in ("on", "off"):
         raise ChamberSafetyError(f"{ENV_GRADIENTS} must be on or off")
     return LabMode(measured_margin_c=margin, gradients=gradients_raw == "on")
+
+
+def operational_watchdog_limits():
+    """Finite independent-process watchdog policy for operational test pilots.
+
+    This protects a live parent process; it CANNOT issue hardware STOP if the
+    entire parent/host dies. That failure still requires site hardware measures.
+    """
+    from chamber_web.hil.profile_admission import H02WatchdogLimits
+
+    return H02WatchdogLimits(
+        schema_version=1, controller_command_timeout_s=2,
+        readback_deadline_s=5, max_telemetry_gap_s=5,
+        profile_step_deadline_s=1_209_600,
+        whole_profile_deadline_s=1_209_600,
+        recorder_heartbeat_s=3, process_heartbeat_s=3,
+        supervisor_heartbeat_s=3, cleanup_timeout_s=10,
+        stop_verification_timeout_s=15,
+    )

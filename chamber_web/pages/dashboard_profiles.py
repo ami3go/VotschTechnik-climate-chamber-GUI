@@ -44,6 +44,7 @@ def _build():
         active_tokens, require_authenticated_page, require_browser_permission,
     )
 
+    from chamber_web.main import profile_execution_lab
     editor = get_profile_editor_service()
     execution = get_profile_execution_service()
     selected: ProfileRevision | None = None
@@ -157,7 +158,10 @@ def _build():
                 ui.notify(
                     f"Started saved revision {revision} " +
                     ("in simulation" if started.simulation else
-                     "on the physical chamber (isolated lab mode)"
+                     ("on the physical chamber (supervised operational mode)"
+                      if profile_execution_lab() is not None and
+                      profile_execution_lab().independent_watchdog
+                      else "on the physical chamber (isolated lab mode)")
                      if started.lab else
                      "under supervised physical HIL permit"),
                     color="positive")
@@ -230,14 +234,17 @@ def _build():
                 "chamber must be independently verified STOPPED")
         elif view.lab:
             mode_label.set_text(
-                "Physical chamber: isolated lab mode — no permit or watchdog required" +
+                ("Physical chamber: supervised operational mode — independent watchdog required"
+                 if profile_execution_lab() is not None and
+                 profile_execution_lab().independent_watchdog else
+                 "Physical chamber: isolated lab mode — no independent watchdog") +
                 ("; Run re-verifies STOPPED and clears the restart lock"
                  if view.stop_latched and view.controller_state == "UNKNOWN" else ""))
         elif not view.simulation:
             mode_label.set_text(
                 "Physical HIL: signed permit, witness and live watchdog required"
                 if view.supervised else
-                "Physical HIL: enable isolated lab mode in Settings or configure "
+                "Physical HIL: enable Operational/isolated lab mode in Settings or configure "
                 "a signed H02 permit in the server environment")
         elif view.stop_latched and view.controller_state == "VERIFIED_STOPPED":
             mode_label.set_text(
