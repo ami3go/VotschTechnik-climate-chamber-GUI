@@ -23,6 +23,7 @@ from chamber_web.hil.lab_mode import (
     LAB_ACKNOWLEDGEMENT, OPERATIONAL_ACKNOWLEDGEMENT, OPERATIONAL_RUN_BINDING,
     LabMode, lab_mode_from_env, operational_watchdog_limits,
 )
+from chamber_web.hil.supervision import SupervisionHost
 from chamber_web.hil.physical import HilAuthorization
 from chamber_web.persistence.profiles import ProfileStore
 from chamber_web.security.auth import Role, SecurityStore
@@ -502,6 +503,37 @@ class OperationalProfileRunTests(unittest.TestCase):
         self.assertTrue(fields["owner_ok"])
         self.assertEqual(stack.drain(), RunState.COMPLETED)
         self.assertFalse(stack.driver.is_running)
+
+    def test_real_independent_watchdog_process_supervises_mock_chamber(self):
+        """Real watchdog subprocess, simulated VT4011 only; no HIL PIN or I/O."""
+        host = SupervisionHost(
+            operational_watchdog_limits(), evidence_dir=self.root / "watchdog",
+            chamber_id="hil-votsch", serial_number=SERIAL,
+        )
+        self.addCleanup(host.close)
+        host.start()
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline and not host.alive():
+            time.sleep(0.05)
+        self.assertTrue(host.alive(), host.error)
+
+        stack = self.stack(lab=LabMode(independent_watchdog=True),
+                           operational_supervisor=lambda: host)
+        snapshot = stack.start(stack.profile({"target": 25, "dwell": 1}))
+        self.assertEqual(stack.drain(limit_s=30), RunState.COMPLETED,
+                         stack.service.runner.reason)
+        self.assertTrue(host.alive(), host.error)
+        events_deadline = time.monotonic() + 5.0
+        while time.monotonic() < events_deadline:
+            if '"RUN_DISARM"' in host.timeline_path.read_text(encoding="utf-8"):
+                break
+            time.sleep(0.05)
+        timeline = host.timeline_path.read_text(encoding="utf-8")
+        self.assertIn('"RUN_ARM"', timeline)
+        self.assertIn('"RUN_DISARM"', timeline)
+        self.assertIn(snapshot.run_id, timeline)
+        self.assertNotIn('"STOP_REQUEST"', timeline)
+        self.assertFalse(host.latched)
 
     def test_operational_admin_cannot_take_over_other_operator_lease(self):
         class Alive:
