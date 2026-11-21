@@ -297,7 +297,10 @@ class ProfileExecutionService:
             revalidate=lambda: None,
             supervisor_alive=host.alive if host is not None else None,
             allow_gradients=self._lab.gradients,
-            admin_override=actor.role is Role.ADMIN,
+            # The administrative implicit lease takeover is intentionally
+            # restricted to Isolated Lab. Operational profiles must respect
+            # the currently authenticated manual operator ownership.
+            admin_override=actor.role is Role.ADMIN and not self._lab.independent_watchdog,
         )
 
     def _supervision_state(self, runner: ProfileRunner) -> dict:
@@ -393,7 +396,8 @@ class ProfileExecutionService:
         G06 and the optional H02 signed preflight still apply separately.
         """
         admin_override = (
-            self._lab is not None and actor.role is Role.ADMIN)
+            self._lab is not None and not self._lab.independent_watchdog and
+            actor.role is Role.ADMIN)
         if admin_override:
             # ADMIN may take over a foreign manual lease only AFTER proving
             # fresh STOPPED state. The role cannot adopt RUNNING or bypass an
@@ -569,7 +573,8 @@ class ProfileExecutionService:
         with self._lock:
             runner, started_at = self._runner, self._started_at
         may_run = actor.role in (Role.ADMIN, Role.OPERATOR)
-        admin_override = self._lab is not None and actor.role is Role.ADMIN
+        admin_override = (self._lab is not None and
+                          not self._lab.independent_watchdog and actor.role is Role.ADMIN)
         manual_available = True
         if self._manual_guard is not None and not admin_override:
             manual_owner, mine = self._manual_guard.ownership_view(
