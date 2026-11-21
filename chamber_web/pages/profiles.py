@@ -516,8 +516,9 @@ def profiles_page() -> None:
             check_partial_coverage()
         else:
             coverage_label.set_text(
-                "Cannot claim >=85% test coverage: method requires unrepresented "
-                "facilities, DUT operations, controlled OEM details or timing.")
+                "Temperature-setpoint coverage cannot establish test compliance: "
+                "this method needs unsupported facilities, DUT operations, "
+                "controlled OEM requirements or timing.")
 
     def make_template_draft() -> None:
         require_edit()
