@@ -94,7 +94,7 @@ class ChamberSettingsTests(unittest.TestCase):
         saved = self.save(settings)
         self.assertTrue(load_settings(self.path).operational_mode)
         self.assertTrue(saved.operational_mode)
-        self.assertTrue(any("mode=operational" in row for row in self.store.audit_records()))
+        self.assertTrue(any("mode=operational" in row[4] for row in self.store.audit_records()))
         env, source = effective_hil_environment({}, self.path)
         self.assertEqual(source, "chamber settings")
         self.assertEqual(env["CHAMBER_OPERATIONAL_MODE"], OPERATIONAL_ACKNOWLEDGEMENT)
