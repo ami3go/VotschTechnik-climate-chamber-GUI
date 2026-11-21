@@ -53,7 +53,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           architecture: x64
       - name: Install offline-verifier test prerequisites
-        run: python -m pip install -r requirements-web.txt -r requirements-w02-build.txt pytest==9.1.1 ruff==0.17.0
+        # The reviewed build closure intentionally targets CPython 3.12.  The
+        # 3.10 compatibility job exercises source verification code only.
+        run: python -m pip install -r requirements-web.txt cryptography==46.0.2 packaging==26.3 pytest==9.1.1 ruff==0.17.0
       - name: Lint
         run: python -m ruff check scripts/w02_release.py scripts/w02_target_verifier.py scripts/w02_build_bootstrap.py scripts/windows_manifest.py tests/test_w02_release.py tests/test_w02_build_bootstrap.py --select E4,E7,E9,F
       - name: Adversarial release tests
