@@ -475,7 +475,7 @@ def profiles_page() -> None:
             coverage_label.set_text(
                 f"{report.percentage}% of temperature setpoints supported "
                 f"({report.supported_points}/{report.possible_points}). "
-                f"{'(partially) candidate eligible for review.' if report.meets_threshold else 'Below 90%: draft blocked.'} "
+                f"{'(partially) candidate eligible for review.' if report.meets_threshold else 'Below 85%: draft blocked.'} "
                 + report.comment)
             if report.meets_threshold and can_mutate:
                 make_candidate_button.enable()
@@ -505,7 +505,7 @@ def profiles_page() -> None:
             f"Source: {candidate.source_url}. "
             + ("Candidate draft available with explicit engineering parameters. "
                if candidate.can_make_draft else
-               "(partially) candidate: check >=90% of reported temperature setpoints. "
+               "(partially) candidate: check >=85% of reported temperature setpoints. "
                if partial else
                "RESEARCH ONLY: unsupported/incomplete for temperature-only editor. ")
             + "No automatic qualification or chamber execution.")
@@ -516,7 +516,7 @@ def profiles_page() -> None:
             check_partial_coverage()
         else:
             coverage_label.set_text(
-                "Cannot claim >=90% test coverage: method requires unrepresented "
+                "Cannot claim >=85% test coverage: method requires unrepresented "
                 "facilities, DUT operations, controlled OEM details or timing.")
 
     def make_template_draft() -> None:
@@ -737,7 +737,7 @@ def profiles_page() -> None:
                 "text-xs text-orange-9")
             coverage_label = ui.label(
                 "Chamber-reported limits are not a physical qualification. "
-                "90% refers to temperature setpoints only, not test compliance."
+                "85% refers to temperature setpoints only, not test compliance."
             ).classes("text-xs text-orange-9")
             with ui.row().classes("gap-2 flex-wrap"):
                 partial_min = ui.number(
@@ -747,7 +747,7 @@ def profiles_page() -> None:
                     "ISO step Tmax °C (partial assessment)"
                 ).props("outlined dense").style("width:210px")
                 ui.button(
-                    "Check partial (≥90%)", icon="fact_check",
+                    "Check partial (≥85%)", icon="fact_check",
                     on_click=check_partial_coverage,
                 ).props("outline no-caps")
             with ui.row().classes("gap-2 flex-wrap"):
@@ -772,8 +772,8 @@ def profiles_page() -> None:
             ).props("outline no-caps")
             make_candidate_button.disable()
             ui.label(
-                "PARTIALLY means >=90% of extracted temperature setpoint occurrences "
-                "inside the application-reported envelope, NOT 90% of a standard. "
+                "PARTIALLY means >=85% of extracted temperature setpoint occurrences "
+                "inside the application-reported envelope, NOT 85% of a standard. "
                 "Missing setpoints are omitted and recorded, not substituted. "
                 "No DUT supply switching, controlled ramps, thermal shock or humidity. "
                 "A complete OEM clause and physical facility qualification remain mandatory."
