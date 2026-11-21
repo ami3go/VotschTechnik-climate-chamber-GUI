@@ -18,7 +18,7 @@ from chamber_web.domain.profile import (
 from chamber_web.services.profile_editor import EditorDraft, validate_editor_profile
 from chamber_web.services.automotive_profile_templates import find_method
 
-MIN_COVERAGE_PERCENT = Decimal("90")
+MIN_COVERAGE_PERCENT = Decimal("85")
 # Bounded list: never invent full standard qualification for battery shock,
 # humidity, thermal-shock transfers or long semiconductor endurance.
 PARTIAL_METHOD_IDS = frozenset({"ISO-STEP", "LV-K-02", "LV-K-03"})
@@ -91,7 +91,7 @@ def assess_partial_coverage(
     method_id: str, capabilities: ChamberCapabilities | None, *,
     tmin_c: object = None, tmax_c: object = None,
 ) -> PartialCoverage:
-    """Evaluate 90% of *setpoint occurrences*, never normative test compliance."""
+    """Evaluate 85% of *setpoint occurrences*, never normative test compliance."""
     targets = thermal_targets(method_id, tmin_c=tmin_c, tmax_c=tmax_c)
     if capabilities is None:
         raise ValueError("Chamber-reported capabilities unavailable")
@@ -128,7 +128,7 @@ def partial_candidate_draft(
     dwell_s: object = None, tolerance_c: object = None,
     stabilize_s: object = None, reach_timeout_s: object = None,
 ) -> EditorDraft:
-    """Build *unapproved* draft only when >=90% setpoints fit reported limits.
+    """Build *unapproved* draft only when >=85% setpoints fit reported limits.
 
     No implicit substitute setpoints. Unsupported points are omitted and
     recorded in the profile metadata; it cannot be run in any mode.
@@ -138,7 +138,7 @@ def partial_candidate_draft(
     if not coverage.meets_threshold:
         raise ValueError(
             f"Only {coverage.percentage}% of specified temperature setpoints are "
-            "within the reported chamber limits; >=90% is required")
+            "within the reported chamber limits; >=85% is required")
     duration = _number(dwell_s, "Exposure duration", positive=True)
     tolerance = _number(tolerance_c, "Temperature tolerance", positive=True)
     stabilization = _number(stabilize_s, "DUT stabilization", positive=True)
