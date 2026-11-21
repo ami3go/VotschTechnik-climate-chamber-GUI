@@ -503,6 +503,24 @@ class OperationalProfileRunTests(unittest.TestCase):
         self.assertEqual(stack.drain(), RunState.COMPLETED)
         self.assertFalse(stack.driver.is_running)
 
+    def test_operational_admin_cannot_take_over_other_operator_lease(self):
+        class Alive:
+            def alive(self):
+                return True
+
+        stack = self.stack(lab=LabMode(independent_watchdog=True),
+                           operational_supervisor=lambda: Alive())
+        claimed = stack.manual.command(
+            stack.operator.session, stack.operator.csrf, stack.chamber_id, "claim")
+        self.assertEqual(claimed.state, ManualState.CONFIRMED)
+        view = stack.service.view(stack.admin.session)
+        self.assertFalse(view.admin_override)
+        self.assertFalse(view.can_start)
+        profile_id = stack.profile({"target": 25})
+        with self.assertRaisesRegex(ChamberSafetyError, "held by another operator"):
+            stack.service.start(stack.admin.session, stack.admin.csrf, profile_id, 1)
+        self.assertFalse(stack.driver.is_running)
+
     def test_lost_supervisor_liveness_prevents_new_starts(self):
         class Latched:
             def alive(self):
