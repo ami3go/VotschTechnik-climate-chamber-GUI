@@ -69,6 +69,22 @@ class ProfileExecutionServiceTests(unittest.TestCase):
     def _start(self, tokens):
         return self.service.start(tokens.session, tokens.csrf, self.saved.profile_id, 1)
 
+    def test_unapproved_automotive_template_denied_before_controller_lease(self):
+        from chamber_web.services.automotive_profile_templates import candidate_draft
+
+        research = candidate_draft(
+            "ISO-COLD-STORAGE", tolerance_c=1, stabilize_s=120,
+            reach_timeout_s=3600,
+        )
+        saved = self.store.create_profile(CHAMBER, research.profile)
+        with self.assertRaisesRegex(ChamberSafetyError, "Unapproved automotive"):
+            self.service.start(
+                self.operator.session, self.operator.csrf, saved.profile_id, 1)
+        self.assertIsNone(self.service.runner)
+        self.assertFalse(self.backend._running)
+        self.assertIsNone(self.manager.ownership(CHAMBER) if hasattr(
+            self.manager, "ownership") else None)
+
     def _drain(self, *, until=TERMINAL):
         runner = self.service.runner
         for _ in range(400):
