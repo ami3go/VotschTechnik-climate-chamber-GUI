@@ -24,7 +24,7 @@ from chamber_web.persistence.profiles import (
     ProfileConflictError, ProfileNotFoundError, ProfileStore,
 )
 from chamber_web.services.automotive_profile_templates import (
-    candidate_draft, find_method, method_templates, standard_templates,
+    candidate_draft, method_templates, standard_templates,
 )
 from chamber_web.services.profile_editor import (
     DuplicateProfileError, EditorDraft, ProfileEditorService,
