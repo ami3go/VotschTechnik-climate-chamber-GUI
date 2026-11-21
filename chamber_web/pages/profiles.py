@@ -72,7 +72,8 @@ def get_profile_execution_service() -> ProfileExecutionService:
                                       get_profile_manual_guard,
                                       profile_execution_is_simulation,
                                       profile_execution_lab,
-                                      profile_execution_supervision)
+                                      profile_execution_supervision,
+                                      get_supervision_host)
         editor = get_profile_editor_service()
         runtime = get_profile_runtime()
         security = get_security()
@@ -90,6 +91,7 @@ def get_profile_execution_service() -> ProfileExecutionService:
             supervised=profile_execution_supervision(),
             manual_guard=manual_guard,
             lab=profile_execution_lab(),
+            operational_supervisor=get_supervision_host,
         )
     return _execution_service
 
