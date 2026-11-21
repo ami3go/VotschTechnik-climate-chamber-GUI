@@ -128,14 +128,17 @@ def find_method(method_id: str) -> MethodTemplate:
     raise ValueError("Unknown automotive template")
 
 
-def _required_decimal(value: object, label: str, *, zero_ok: bool = False) -> Decimal:
+def _required_decimal(value: object, label: str, *, zero_ok: bool = False,
+                      signed: bool = False) -> Decimal:
     if value is None or isinstance(value, bool):
         raise ValueError(label + " must be explicitly provided")
     try:
         number = Decimal(str(value).strip())
     except (ValueError, TypeError, InvalidOperation) as exc:
         raise ValueError("Invalid " + label) from exc
-    if not number.is_finite() or (number < 0 if zero_ok else number <= 0):
+    if not number.is_finite() or (
+        not signed and (number < 0 if zero_ok else number <= 0)
+    ):
         raise ValueError(label + " must be a finite " +
                          ("non-negative" if zero_ok else "positive") + " number")
     return number
@@ -161,7 +164,7 @@ def candidate_draft(method_id: str, *, target_c: object = None,
     if fixed_dwell is not None and dwell_s is not None:
         raise ValueError("Do not override the published fixed dwell")
     target = fixed_target if fixed_target is not None else _required_decimal(
-        target_c, "DUT-selected temperature")
+        target_c, "DUT-selected temperature", signed=True)
     if fixed_target is None and not Decimal("-1000") <= target <= Decimal("1000"):
         raise ValueError("Target exceeds portable editor bounds")
     duration = fixed_dwell if fixed_dwell is not None else _required_decimal(
