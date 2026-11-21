@@ -174,7 +174,8 @@ def candidate_draft(method_id: str, *, target_c: object = None,
     if reach < stabilization:
         raise ValueError("Reach watchdog must cover DUT stabilization")
     note = (
-        f"{method.id} · {method.standard} {method.method}. "
+        UNAPPROVED_AUTOMOTIVE_TEMPLATE_PREFIX + method.id + " · "
+        f"{method.standard} {method.method}. "
         f"External DUT mode: {method.dut_state}. "
         "Research candidate — electrical bias, fixtures, sensors, chamber limits, "
         "thermal equilibrium, recovery and source revision require approval."
