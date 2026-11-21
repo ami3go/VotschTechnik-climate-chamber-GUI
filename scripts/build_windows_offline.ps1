@@ -182,8 +182,22 @@ try {
     if (-not $SimulationOnly) { $testFlags += @("--require-module", "VotschTechnikClimateChamber") }
     Native $serverExe $testFlags
 
-    # Script A is a genuinely separate maintained thin-launcher build.
-    & (Join-Path $repo "scripts/build_windows_launcher.ps1") -Clean -OutputDir $bundle -Configuration $Configuration -Version $Version -Python $Python -Entry $(if ($preProduction) { "scripts/preproduction_launcher.py" } else { "scripts/windows_launcher.py" }) -Variant $variantKey
+    # Script A is a genuinely separate maintained thin-launcher build. The
+    # reviewed path must pass the same hash-locked build tools through to its
+    # private build venv; otherwise a nested connected PyInstaller resolution
+    # would silently reopen the closure.
+    $launcherEntry = if ($preProduction) { "scripts/preproduction_launcher.py" } else { "scripts/windows_launcher.py" }
+    if ($UseReviewedClosure) {
+        & (Join-Path $repo "scripts/build_windows_launcher.ps1") -Clean -OutputDir $bundle `
+            -Configuration $Configuration -Version $Version -Python $Python `
+            -Entry $launcherEntry -Variant $variantKey `
+            -BuildWheelhouseDir $buildWheelhouse -BuildLock $buildLock
+    }
+    else {
+        & (Join-Path $repo "scripts/build_windows_launcher.ps1") -Clean -OutputDir $bundle `
+            -Configuration $Configuration -Version $Version -Python $Python `
+            -Entry $launcherEntry -Variant $variantKey
+    }
     if (-not $?) { throw "Launcher build failed" }
     if ($preProduction) {
         Copy-Item (Join-Path $repo "README_PREPRODUCTION_WINDOWS.md") $bundle
