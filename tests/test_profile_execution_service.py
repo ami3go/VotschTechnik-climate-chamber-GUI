@@ -82,8 +82,7 @@ class ProfileExecutionServiceTests(unittest.TestCase):
                 self.operator.session, self.operator.csrf, saved.profile_id, 1)
         self.assertIsNone(self.service.runner)
         self.assertFalse(self.backend._running)
-        self.assertIsNone(self.manager.ownership(CHAMBER) if hasattr(
-            self.manager, "ownership") else None)
+        self.assertEqual(self.manager.health(CHAMBER).state, "VERIFIED_STOPPED")
 
     def _drain(self, *, until=TERMINAL):
         runner = self.service.runner
