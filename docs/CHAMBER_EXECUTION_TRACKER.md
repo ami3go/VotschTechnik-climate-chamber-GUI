@@ -1,7 +1,7 @@
 # Chamber execution tracker — work packages CH-WP-01…10
 
 **Status:** active software engineering execution plan (not a certification or authority to energize hardware)  
-**Audit timestamp:** 2026-11-19 UTC  
+**Audit timestamp:** 2026-11-19 UTC (baseline); updated checkpoint: 2026-11-20  
 **GUI baseline:** [main d971a34](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/d971a34a425570571a68dd6e6c6e121f1a13ed65) (GUI [PR #89](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/89) merged 2026-11-19)  
 **Driver baseline:** [main d22dc05](https://github.com/ami3go/VotschTechnik-climate-chamber-Python/commit/d22dc05687cac4c5cdef440fb52b05965ed3d146)  
 **Canonical execution state:** this tracker and its linked GitHub issues. **Live state verification:** always refresh GitHub main, issues, open PRs, exact-head CI, and actual test evidence before marking any item complete. This table is a dated snapshot, not an automatic GitHub status feed.
@@ -45,6 +45,63 @@ The GitHub issues below are the execution units. Their checklists specify precis
 | Driver main d22dc05 | [driver Actions](https://github.com/ami3go/VotschTechnik-climate-chamber-Python/actions) | Latest recorded driver test workflows passed; update at implementation time |
 
 Do **not** copy a historical green CI state onto later head commits; test evidence is bound to exact revisions.
+
+## Verified implementation checkpoint — 2026-11-19
+
+**This checkpoint supersedes only the 2026-11-19 issue/PR states in the original table above; it does not rewrite historical test evidence or grant hardware authorization.**
+
+| WP | Source changes / outcome | Exact review or CI gate | Physical / release disposition |
+|---|---|---|---|
+| 01 #90 | Windows/W02 reviewed-wheelhouse drift and Playwright Ubuntu 26.04 browser runner fixed in [PR #101](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/101), **MERGED** `c54e1c7f260a2905f75e4c7ee64c7546899e69e4` | All 5 final-head PR workflows **PASS**: W01, W02, H01, H02 and combined S2-02. Main W02 PASS; main W01/S2-02 rechecks were in progress at this update | No physical HIL; #90 stays OPEN until exact-main checks close |
+| 02 #91 | Direct soak PIN gate + fail-closed tests and POSIX limitations in [PR #103](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/103), HEAD rebased onto fixed main | Latest-head CI **pending**; not merged | Ordinary product GUI / signed H02 runtime policy intentionally separate; physical admission review remains OPEN |
+| 03 #92 | Lab G04/G06 safety preflight and admin lease takeover fix in [PR #102](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/102), HEAD reconciled with fixed main | New exact-head regression **pending**; not merged | Physical STOP/restart acceptance OPEN |
+| 04 #93 | [Driver PR #1](https://github.com/ami3go/VotschTechnik-climate-chamber-Python/pull/1) reviewed function by function and **CLOSED WITHOUT MERGE** (obsolete APIs already on driver main); [issue #93](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/93) **CLOSED** | Driver main `d22dc05` had passing driver CI; no new driver code or hardware operations | Legacy-PR disposition complete; physical gradient acceptance remains separate |
+| 05 #94 | G07 measured-temperature extrema-preserving plot downsampling in [PR #104](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/104), HEAD rebased onto main | New Windows recorder/1M-sample and GUI regression **pending**; not merged | Export durability, Windows power-cut and independent evidence acceptance OPEN |
+| 06 #95 | ESP32 [draft PR #84](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/84) reconciled to main at `164c060f4` using non-force merge; no firmware change | GitHub compares show **0 commits behind**, mergeable; new-head native/firmware CI pending | **DO NOT MERGE** until real board, Ethernet/WDT and independent review |
+| 07 #96 | Leonardo stacked [draft PR #88](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/88) rebased onto updated #84 at `0edae55e5` | **0 commits behind** #84, new-head emulator CI pending | **DO NOT MERGE** until actual Leonardo/W5500 tests and hardware review |
+| 08 #97 | W02 dependency reproducibility software fix delivered by merged #101 | Software build/verification successful, *not* certified signed Windows package | Publisher key, licenses, attested provenance, clean Win10/11 and R01 gates OPEN |
+| 09 #98 | G08 NiceGUI cookie-secret filesystem validation in [PR #105](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/105), HEAD reconciled onto main | Symlink, nonregular, ownership/mode negative tests added; exact-head CI pending | LAN/NTFS, independent security assessment and release approval OPEN |
+| 10 #99 | Initial tracker [PR #100](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/100) **MERGED** `fbc150f2c8d6aea70eec42956f1d47eaabd612c0`; [issue #99](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/99) **CLOSED** | All 10 issue links and documentation links verified; docs-only CI passed | Documentation closure only; other gates remain OPEN |
+
+Software work has **not** earned R01 approval. Close each remaining issue only after its own exact final-head tests, review, merge and separately applicable HIL/site gates. The active PR branches listed above are staged and intentionally not merge-claimed while final-head CI is pending.
+
+## Verified issue/CI reconciliation — 2026-11-20
+
+**Current source of truth:** [GUI main `aad7bbbf8`](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/aad7bbbf8fbd4a8a8200563dfd18fb19979413bf), [driver main `d22dc0568`](https://github.com/ami3go/VotschTechnik-climate-chamber-Python/commit/d22dc05687cac4c5cdef440fb52b05965ed3d146). The original 19-Nov table and checkpoint above are **historical**, not present-tense issue state. Verify live GitHub again before execution.
+
+| WP | Live tracker issue | Verified software / PR disposition | Remaining independent gate |
+|---|---|---|---|
+| 01 [#90](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/90) | **CLOSED** | #101 merged; [main W01](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44808676609) and [S2-02](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44808676583) completed successfully on `aad7bbbf8` | No hardware implication |
+| 02 [#91](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/91) | **CLOSED** | PIN admission #103 merged and issue software-only closure recorded | Existing product H02 authorization and physical bench acceptance remain separate |
+| 03 [#92](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/92) | **CLOSED** | Verified STOPPED preflight #102 merged | Real STOP/restart hardware qualification not inferred |
+| 04 [#93](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/93) | **CLOSED** | Maintained driver supersedes obsolete driver PR #1; closed without merge | Real gradient/output conformance requires physical evidence |
+| 05 [#94](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/94) | **CLOSED** | G07 extrema-preserving plots #104 merged; [main G07 CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44808676786) success | Windows crash/power-loss durability, off-device audit acceptance |
+| 06 [#95](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/95) | **CLOSED** | ESP32 [draft #84](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/84) remains unmerged; [exact-head emulator CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44810984040) success | Actual WT32-ETH01 board, Ethernet/WDT, independent review **NOT RUN** |
+| 07 [#96](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/96) | **OPEN** | Leonardo stacked [draft #88](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/88) remains unmerged; [exact-head emulator CI](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/44813347988) success; physical runbook documented | Depends on #84; real Leonardo/W5500 flash, link recovery/WDT, GUI trust gate **NOT RUN** |
+| 08 [#97](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/97) | **OPEN** | Reviewed runtime wheelhouse CI fixed via #101; builder lock, signed target policy and staging remain unfinished | Clean disconnected Win10/11, publisher signing/key custody, license approvals, R01 **NO-GO** |
+| 09 [#98](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/98) | **OPEN** | Cookie-key integrity [PR #105](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/105) updated to `af2d7f6bd`: POSIX `O_NOFOLLOW`/descriptor-read fix and additional tests; **new exact-head CI pending**, no merge claim | Session/WS/ACL, off-device audit and independent security review OPEN |
+| 10 [#99](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/99) | **CLOSED** | Authoritative initial tracker #100 merged; this reconciliation is PR #106, pending final CI/merge | Documentation only |
+
+**Main CI checkpoint:** at GUI SHA `aad7bbbf8`, all eight reported latest-main workflows for the commit completed with `success` (G07, W01, S2-02, NiceGUI scaffold, discovery, profile readiness, identity, credential persistence). The older PR #105 S2-02 Windows failures **cannot** be relabeled PASS: only CI at its new head can prove the reconciliation.
+
+**Merge policy:** PRs #84 and #88 remain hardware-gated draft by explicit acceptance contract. #105 and #106 may merge only after current exact-head checks and independent diff review. The 24-hour PIN admits operator-supervised *physical test procedures*; it is not a release authorization and it is unnecessary for offline emulators. **R01 RELEASE NO-GO.**
+
+## Verified software closure reconciliation — 2026-11-21
+
+**Current source of truth:** [GUI main `d24ce9842`](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/d24ce9842f05a025f39f8aafbb348334cd8a0e64). Live GitHub shows tracker issues [#90](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/90) through [#99](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/99) **CLOSED** for their documented software or documentation scopes. This is not a physical, site, signing, or release closure.
+
+| WP | Final software disposition | Independent gate that remains open |
+|---|---|---|
+| 01–05 | #101, #103, #102 and #104 merged; obsolete driver PR #1 closed without merge; issues #90–#94 closed with exact-revision software evidence | Any applicable device, site, evidence-storage and release acceptance remains separate |
+| 06 [#95](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/95) | Software/native/firmware checks recorded; ESP32 [PR #84](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/84) deliberately remains an **OPEN DRAFT** | Actual WT32-ETH01 board flash, Ethernet/link recovery, watchdog, long-run behavior and independent hardware review **NOT RUN** |
+| 07 [#96](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/96) | Software/native/firmware checks recorded; Leonardo [PR #88](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/88) deliberately remains an **OPEN DRAFT** stacked on #84 | Actual Leonardo/W5500 flash, network isolation, link recovery, watchdog, long-run behavior and GUI trust qualification **NOT RUN** |
+| 08 [#97](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/97) | W02 build-foundation [PR #108](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/108) merged as [`3563d6953`](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/3563d6953f6a60d20d3d0b7b22a57aefd68fa04b); all 14 accepted-head hosted checks passed. Superseded PR #107 was closed without merge | Publisher signing/key ceremony, complete license acceptance, attested provenance policy, disconnected clean Windows 10/11 QA, trusted policy distribution and R01 approval |
+| 09 [#98](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/98) | G08 cookie-secret integrity [PR #105](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/105) merged as [`d24ce9842`](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/d24ce9842f05a025f39f8aafbb348334cd8a0e64). Accepted head `6381702fd`: local bounded suite 92 tests + 23 subtests passed; all 12 hosted jobs passed, including Linux/Windows combined suites, W01, NiceGUI/import, credential persistence and simulated H01/Chromium | Independent security/penetration review; live LAN browser/cookie/WebSocket validation; Windows service-account and NTFS owner/DACL/reparse qualification; firewall/PKI/site acceptance; off-device audit sealing and trusted backup freshness |
+| 10 [#99](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/99) | Initial authoritative tracker [PR #100](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/100) merged; #99 already closed. PR #106 is the final historical-to-current reconciliation | Documentation does not authorize hardware, signing, deployment or release |
+
+**Open-PR boundary at reconciliation:** only emulator drafts #84 and #88 plus this documentation PR #106 were open. #84/#88 must not be merged from software evidence alone. No physical chamber, emulator board, site network, operator PIN, publisher key or release artifact was exercised for this reconciliation.
+
+**Final software disposition:** CH-WP-01…10 are closed for their stated software/documentation scopes after exact-head validation and merge evidence. Production remains **R01 RELEASE NO-GO** until the external gates above and the release contract in section 5 are independently satisfied.
 
 ## 2. Execution dependency and sequencing
 
