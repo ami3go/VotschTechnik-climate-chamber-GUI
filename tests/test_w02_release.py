@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 from cryptography.hazmat.primitives import serialization
@@ -97,6 +98,39 @@ class W02ReleaseTests(unittest.TestCase):
         backup = self.bundle.parent / "previous"
         release.stage_update(self.bundle, new, self.pub, backup)
         self.assertEqual(release.verify(backup, self.pub)["version"], "1.0.0")
+
+    def test_interrupted_upgrade_marker_is_refused_without_cleanup(self):
+        import shutil
+        candidate = self.bundle.parent / "candidate"
+        shutil.copytree(self.bundle, candidate)
+        release.sign(candidate, "1.1.0", self.priv, source_sha=self.sha)
+        backup = self.bundle.parent / "previous"
+        pending = backup.with_name("previous.pending")
+        pending.mkdir()
+        (pending / "operator-review-required.txt").write_text("preserve")
+        with self.assertRaisesRegex(ValueError, "Interrupted staging"):
+            release.stage_update(self.bundle, candidate, self.pub, backup)
+        self.assertFalse(backup.exists())
+        self.assertEqual((pending / "operator-review-required.txt").read_text(), "preserve")
+
+    def test_corrupted_backup_copy_is_rejected_and_partial_removed(self):
+        import shutil
+        candidate = self.bundle.parent / "candidate"
+        shutil.copytree(self.bundle, candidate)
+        release.sign(candidate, "1.1.0", self.priv, source_sha=self.sha)
+        backup = self.bundle.parent / "previous"
+        original_verify = release.verify
+
+        def verify_after_corruption(root, key, **kwargs):
+            if Path(root).name.endswith(".pending"):
+                (Path(root) / "ClimateChamberLauncher.exe").write_bytes(b"corrupt")
+            return original_verify(root, key, **kwargs)
+
+        with mock.patch.object(release, "verify", side_effect=verify_after_corruption):
+            with self.assertRaisesRegex(ValueError, "integrity mismatch"):
+                release.stage_update(self.bundle, candidate, self.pub, backup)
+        self.assertFalse(backup.exists())
+        self.assertFalse(backup.with_name("previous.pending").exists())
 
 
     def test_w01_verifier_requires_explicit_signed_sidecar_allowlist(self):
@@ -282,6 +316,19 @@ class W02ReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already exists"):
             target_verifier.verify_archive(archive, install, self.pub,
                                            minimum_version="1.0.0")
+
+    def test_interrupted_install_staging_is_refused_and_preserved(self):
+        archive = self._signed_archive()
+        install = self.bundle.parent / "installed"
+        pending = install.with_name("installed.pending")
+        pending.mkdir()
+        marker = pending / "operator-review-required.txt"
+        marker.write_text("preserve")
+        with self.assertRaisesRegex(ValueError, "Interrupted install staging"):
+            target_verifier.verify_archive(
+                archive, install, self.pub, minimum_version="1.0.0")
+        self.assertFalse(install.exists())
+        self.assertEqual(marker.read_text(), "preserve")
 
     def test_archive_tampering_fails_without_installing(self):
         archive = self._signed_archive(

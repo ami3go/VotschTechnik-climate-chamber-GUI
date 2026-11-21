@@ -8,7 +8,7 @@ This extends W01-A; no second launcher, no new chamber I/O owner and no enableme
 - The W01 scripts `scripts/build_windows_launcher.ps1` and `scripts/build_windows_offline.ps1` are the sole launcher/freezer path. Build natively on Windows x64 with Python **3.12** and PowerShell 5.1+; Windows 10 and 11 x64 target baselines remain **unverified**. The browser is an OS-installed browser, not bundled.
 - Bundles include NiceGUI and `chamber_web` assets, the FakeBackend and alternate test stub. The pinned external Vötsch Python dependency is included by default through the dedicated `VotschBackend` import path, but G04 rejects physical I/O. `-SimulationOnly` omits the external driver and is non-release test scope.
 - `setup_environment.py` from merged PR #33 is an **online developer bootstrap** (may run pip/Git/Playwright downloads). It is not, and must not be invoked as, a frozen/offline updater or on-target installation requirement.
-- The historical W01 build still resolves packages using connected pip without verified full transitive wheel hashes. The **release path** now installs the runtime from the reviewed, hash-locked closure with `pip --no-index --find-links --require-hashes` (`build_windows_offline.ps1 -UseReviewedClosure`), so the frozen bundle contains exactly the reviewed artifacts; the connected resolution remains available for the feasibility build and its inventory is still labelled as the build environment. The W01 archive's SHA256SUMS is a corruption checksum, **not** a publisher authentication mechanism. The CI artifact is unsigned. The **build backend** (PyInstaller) is still installed from connected pip and is not hash-locked.
+- The historical W01/developer build still resolves packages using connected pip. The **reviewed release path** installs the runtime from the 50-wheel runtime closure and installs PyInstaller plus every build-only dependency from a separate 10-wheel build-tool closure, always with `pip --no-index --find-links --require-hashes` (`build_windows_offline.ps1 -UseReviewedClosure`). `scripts/w02_build_bootstrap.py` uses only the Python standard library to fetch the exact committed `files.pythonhosted.org` URLs and hashes; it never asks pip to resolve dependencies and publishes no partial wheelhouse. CI also exercises a fully pre-hydrated `-BuildWheelhouseDir` with `PIP_NO_INDEX=1`. The connected path remains available only for feasibility/developer use. The W01 archive's SHA256SUMS is a corruption checksum, **not** publisher authentication, and the CI artifact remains unsigned.
 - The W01 manifest builder now emits `sbom.cdx.json` (CycloneDX 1.5), `THIRD_PARTY_LICENSES.csv`, and `build-provenance.json` *before* hashing files into `build-manifest.json`. These are deterministic **build-environment inventory** artifacts; every license is `REVIEW_REQUIRED`, the dependency closure is `UNVERIFIED`, and source provenance is `UNATTESTED`. **They are not a complete frozen dependency closure, an approved license report, or signed provenance.**
 
 ## Cryptographic trust and signing
@@ -94,6 +94,22 @@ provenance `git+<url>@<commit>`. A wheel built on a different operating
 system hashes differently, which is why the closure is resolved natively on
 its target.
 
+### Reviewed build-tool closure
+
+`requirements-w02-build.lock` and `w02-build-closure-manifest.json` separately
+pin the ten Windows/CPython 3.12 build-host wheels, including PyInstaller,
+its Windows-only `pefile` and `pywin32-ctypes` requirements, the vendored-wheel
+backend, and the cryptographic verifier dependency. The input file explicitly
+pins every member so a foreign-platform resolver cannot silently omit Windows
+marker dependencies. The stdlib bootstrap rejects input/manifest drift,
+non-Python-hosted URLs, redirects, missing/extra entries and hash mismatches;
+the normal closure verifier then checks wheel tags, metadata and the complete
+dependency graph before any build tool is used.
+
+This closes connected dependency **resolution** on the reviewed build path. It
+does not make the build provenance attested, approve any license, authenticate
+the resulting executable, or replace disconnected Windows 10/11 acceptance.
+
 ## Updates, backups and data safety
 
 `python -m scripts.w02_release --stage-update --bundle OLD --candidate NEW --backup PREVIOUS --public-key C:\SiteTrusted\w02-publisher.pem` verifies both software trees, refuses same-core/same-version and downgrades, rejects aliasing/overlapping staging directories and creates a verified copy of OLD using `PREVIOUS.pending` followed by rename. It does **not** replace binaries, stop processes, migrate SQLite or back up user data; do not mistake this for an installed/atomic updater.
@@ -110,7 +126,7 @@ This transactional install/migration/rollback sequence is **not implemented** an
 | --- | --- | --- |
 | Code signing and closed-file inventory | **PARTIAL SOFTWARE** | Final-head 3.10/3.12 Windows unit results, independent review |
 | Connected Windows frozen x64 smoke | **EARLY W01 evidence only** | Final-head W01 job and extraction / simulator launch |
-| Complete lockfile, hashes and air-gap wheel closure | **SOFTWARE MERGED; DISCONNECTED ACCEPTANCE OPEN** | Approved wheelhouse hash lock, offline pip resolution and damaged-wheel negative tests — tooling, negative tests and the reviewed closure merged ([S2-03](#air-gap-dependency-closure-s2-03-software-increment)): `requirements-w02-runtime.lock` pins the **50** `win_amd64`/CPython 3.12 runtime distributions by SHA-256 — the PyPI runtime, the reproducibly built vendored Vötsch driver and the driver's own `colorama` dependency — and the Windows CI job reproduces that closure and installs it with `--no-index --require-hashes`. Every requirement of every closure member is proven to be inside the closure. **Still open:** the install on a clean disconnected target (Stage 2 S2-04) and the independent supply-chain review |
+| Complete runtime and build-tool lockfiles, hashes and air-gap wheel closure | **SOFTWARE IMPLEMENTED; DISCONNECTED ACCEPTANCE OPEN** | `requirements-w02-runtime.lock` pins the **50** shipped runtime distributions and `requirements-w02-build.lock` pins the **10** Windows build-tool distributions. Both wheelhouses reject changed/missing/extra artifacts and install with `--no-index --require-hashes`; PyInstaller is no longer resolved from connected pip on the reviewed path. **Still open:** final-head Windows CI, clean disconnected target runs (Stage 2 S2-04), license approval and independent supply-chain/provenance review |
 | SBOM and license/provenance review | **RUNTIME SBOM MERGED; APPROVAL OPEN** | Reviewed runtime/component inventory with licenses, signed build provenance — the runtime SBOM is now derived from the locked closure instead of the build host, but every license row is still `REVIEW_REQUIRED` and the provenance is still unattested |
 | Independent target-side verifier with no Python | **CANDIDATE CODE / NO-GO** | Frozen tool + PowerShell 5.1 Windows CI, independently attested tool/key policy, clean offline Windows 10/11 evidence |
 | Profile/G07/G08 data migration and reversible upgrade | **NO-GO** | Atomic stage/swap, snapshot, schema and interrupted-update trials |
