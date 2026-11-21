@@ -33,6 +33,7 @@ def _describe(settings: ChamberSettings | None) -> str:
     return (f"{CHAMBER_TYPES[settings.chamber_type]} · {settings.chamber_id} · "
             f"{settings.address} · serial {settings.expected_serial} · "
             f"{settings.temperature_min_c:g}…{settings.temperature_max_c:g} °C"
+            f"{' · operational mode (watchdog required)' if settings.operational_mode else ''}"
             f"{' · isolated lab mode' if settings.lab_mode else ''}")
 
 
@@ -66,6 +67,7 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 temperature_max_c=float(temp_max.value),
                 person_present_acknowledged=bool(acknowledge.value),
                 lab_mode=bool(lab_mode.value),
+                operational_mode=bool(operational_mode.value),
                 # The supervised H02 permit fields were removed from this
                 # screen. Saving now clears any legacy permit configuration so
                 # the next start cannot mix it with isolated lab mode.
@@ -208,7 +210,9 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
             ui.label("Running: Simulator (no hardware)").classes("font-bold")
         elif lab is not None:
             ui.label(
-                f"Running: PHYSICAL · isolated lab mode · {hil.chamber_id} · "
+                f"Running: PHYSICAL · "
+                f"{'operational mode (watchdog)' if lab.independent_watchdog else 'isolated lab mode'}"
+                f" · {hil.chamber_id} · "
                 f"{hil.address} · serial {hil.expected_serial} · "
                 f"{hil.temperature_min_c:g}…{hil.temperature_max_c:g} °C").classes(
                     "font-bold text-negative")
@@ -239,8 +243,8 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
             "Changes take effect only after the server is restarted. The software "
             "envelope is a secondary guard: the chamber's own limits and emergency "
             "stop remain the primary safety layer. Physical profile runs require "
-            "either isolated lab mode below or a signed H02 permit configured "
-            "through the server environment."
+            "operational watchdog mode, isolated lab mode, or a signed H02 permit "
+            "configured through the server environment."
         ).classes("demo-banner w-full")
         security_warning = factory_credential_warning(
             *get_security().factory_credentials_active())
@@ -305,6 +309,16 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
                 "Enable unattended profile runs on this chamber "
                 "(isolated lab mode)",
                 value=initial.lab_mode)
+            operational_mode = ui.checkbox(
+                "Enable supervised Operational Mode (independent watchdog required)",
+                value=initial.operational_mode)
+            ui.label(
+                "Operational Mode requires localhost or HTTPS LAN, G08 login, "
+                "a pinned chamber identity, approved envelope and a healthy "
+                "independent watchdog. It uses no per-run H02 permit. "
+                "Physical site acceptance and hardware emergency protection "
+                "remain mandatory. Cannot be combined with isolated lab mode."
+            ).classes("text-xs text-orange-9")
             ui.label(
                 "Isolated lab mode replaces the signed H02 permit, named witness "
                 "and independent watchdog with a single administrator approval. "
