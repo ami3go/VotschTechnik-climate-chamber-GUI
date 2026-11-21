@@ -23,7 +23,7 @@ from typing import Mapping
 
 from chamber_web.domain.chamber import ChamberSafetyError, validate_chamber_id
 from chamber_web.hil.commits import detect_driver_commit, detect_gui_commit
-from chamber_web.hil.lab_mode import LAB_ACKNOWLEDGEMENT
+from chamber_web.hil.lab_mode import (LAB_ACKNOWLEDGEMENT, OPERATIONAL_ACKNOWLEDGEMENT)
 from chamber_web.hil.physical import (
     ACKNOWLEDGEMENT, HilAuthorization, hil_authorization_from_env,
 )
@@ -54,6 +54,8 @@ class ChamberSettings:
     # signed H02 permit workflow. Physical limits, roles, G04 STOP fencing and
     # the run journal still apply.
     lab_mode: bool = False
+    # Normal operational mode requires a separate independent-process watchdog.
+    operational_mode: bool = False
     # Legacy H02 supervised-profile configuration. The permit itself is signed
     # by the site and only referenced here; empty keeps profile runs disabled.
     h02_permit_file: str = ""
@@ -66,7 +68,7 @@ class ChamberSettings:
 
     def h02_environment(self) -> dict[str, str]:
         """``CHAMBER_H02_*`` mapping; empty when no permit is configured."""
-        if self.chamber_type == "simulator" or self.lab_mode or not (
+        if self.chamber_type == "simulator" or self.lab_mode or self.operational_mode or not (
                 self.h02_permit_file or self.h02_trusted_key):
             return {}
         return {
@@ -90,27 +92,33 @@ class ChamberSettings:
             # Lab mode is unattended, so the person-present acknowledgement is
             # not required; the HIL authorization token itself still is.
             "CHAMBER_HIL_ACK": (ACKNOWLEDGEMENT if
-                                self.person_present_acknowledged or self.lab_mode
+                                self.person_present_acknowledged or self.lab_mode or self.operational_mode
                                 else ""),
         }
 
     def lab_environment(self) -> dict[str, str]:
         """``CHAMBER_LAB_MODE`` mapping for unattended physical profiles."""
-        if self.chamber_type == "simulator" or not self.lab_mode:
+        if self.chamber_type == "simulator":
             return {}
-        return {"CHAMBER_LAB_MODE": LAB_ACKNOWLEDGEMENT}
+        if self.operational_mode:
+            return {"CHAMBER_OPERATIONAL_MODE": OPERATIONAL_ACKNOWLEDGEMENT}
+        if self.lab_mode:
+            return {"CHAMBER_LAB_MODE": LAB_ACKNOWLEDGEMENT}
+        return {}
 
     def validate(self) -> HilAuthorization | None:
         """Apply exactly the launch-time HIL rules; None for the simulator."""
         if self.chamber_type not in CHAMBER_TYPES:
             raise ChamberSafetyError("Unsupported chamber type")
+        if self.lab_mode and self.operational_mode:
+            raise ChamberSafetyError("Choose either isolated lab or operational mode")
         if self.chamber_type == "simulator":
-            if self.lab_mode:
+            if self.lab_mode or self.operational_mode:
                 raise ChamberSafetyError(
-                    "Isolated lab mode requires a physical chamber, not the simulator")
+                    "Physical operating modes require a real chamber, not the simulator")
             return None
         validate_chamber_id(self.chamber_id)
-        if not (self.person_present_acknowledged or self.lab_mode):
+        if not (self.person_present_acknowledged or self.lab_mode or self.operational_mode):
             raise ChamberSafetyError(
                 "Physical chamber requires acknowledging that a person is present, "
                 "or enabling isolated lab mode")
@@ -182,6 +190,7 @@ def load_settings(path: Path | None = None) -> ChamberSettings | None:
             temperature_max_c=float(data["temperature_max_c"]),
             person_present_acknowledged=data["person_present_acknowledged"] is True,
             lab_mode=data.get("lab_mode", False) is True,
+            operational_mode=data.get("operational_mode", False) is True,
             h02_permit_file=str(data.get("h02_permit_file", "")),
             h02_trusted_key=str(data.get("h02_trusted_key", "")),
             h02_witness=str(data.get("h02_witness", "")),
