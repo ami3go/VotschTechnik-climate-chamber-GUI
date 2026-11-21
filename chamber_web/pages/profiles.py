@@ -23,6 +23,9 @@ from chamber_web.domain.profile import MAX_BYTES, format_digital_outputs
 from chamber_web.persistence.profiles import (
     ProfileConflictError, ProfileNotFoundError, ProfileStore,
 )
+from chamber_web.services.automotive_profile_templates import (
+    candidate_draft, find_method, method_templates, standard_templates,
+)
 from chamber_web.services.profile_editor import (
     DuplicateProfileError, EditorDraft, ProfileEditorService,
     compatibility_warnings,
@@ -421,6 +424,72 @@ def profiles_page() -> None:
         except (ValueError, TypeError, UnicodeError, OSError) as exc:
             notice_error(exc)
 
+    # Built-in method catalogue: read-only until an operator explicitly
+    # requests one of the few schema-representable research candidates.
+    standards = standard_templates()
+    methods = {item.id: item for item in method_templates()}
+
+    def select_standard() -> None:
+        require_read()
+        record = next((s for s in standards if s.id == standard_select.value), None)
+        method_select.options = (
+            {item_id: f"{item_id} · {methods[item_id].method}"
+             for item_id in record.method_ids} if record else {}
+        )
+        method_select.value = None
+        method_select.update()
+        standard_detail.set_text(
+            f"{record.standard}: {record.test_family}. "
+            f"Extraction: {record.extraction_state}. "
+            f"Source: {record.source_url}. {record.comment}"
+            if record else "Choose a standard to inspect extracted test methods.")
+        select_method()
+
+    def select_method() -> None:
+        require_read()
+        candidate = methods.get(method_select.value)
+        if candidate is None:
+            method_detail.set_text(
+                "No extracted method selected. Some OEM standards need controlled "
+                "documents before any numeric profile can be defined.")
+            make_candidate_button.disable()
+            return
+        method_detail.set_text(
+            f"{candidate.standard} {candidate.method} · {candidate.temperatures} · "
+            f"{candidate.sequence} · DUT: {candidate.dut_state}. "
+            f"Evidence: {candidate.evidence}. Missing: {candidate.missing}. "
+            f"Required equipment: {candidate.equipment}. "
+            f"Source: {candidate.source_url}. "
+            + ("Candidate draft available with explicit engineering parameters. "
+               if candidate.can_make_draft else
+               "RESEARCH ONLY: unsupported/incomplete for temperature-only editor. ")
+            + "No automatic qualification or chamber execution.")
+        if candidate.can_make_draft and can_mutate:
+            make_candidate_button.enable()
+        else:
+            make_candidate_button.disable()
+
+    def make_template_draft() -> None:
+        require_edit()
+        nonlocal draft, selected_step
+        if not can_discard():
+            return
+        try:
+            draft = candidate_draft(
+                str(method_select.value),
+                target_c=template_target.value,
+                dwell_s=template_duration.value,
+                tolerance_c=template_tolerance.value,
+                stabilize_s=template_stabilization.value,
+                reach_timeout_s=template_reach.value,
+            )
+            selected_step = 0
+            populate()
+            ui.notify("Unapproved research draft loaded. It cannot be executed. "
+                      "Save only for review.", color="warning", timeout=7000)
+        except (ValueError, TypeError) as exc:
+            notice_error(exc)
+
     def paginate(delta: int) -> None:
         require_read()
         nonlocal offset
@@ -577,6 +646,54 @@ def profiles_page() -> None:
                 ui.button("Next 100", on_click=lambda: paginate(1)).props(
                     "flat no-caps")
                 count_label = ui.label("").classes("text-xs text-grey-7")
+        with ui.column().classes("panel gap-2"):
+            ui.label("Automotive Temperature Standards Library").classes("panel-heading")
+            ui.label(
+                "86 researched standards · 60 extracted method variants. "
+                "All research candidates are UNAPPROVED and blocked at execution. "
+                "No profile is automatically added to the saved library."
+            ).classes("text-xs text-orange-9")
+            standard_select = ui.select(
+                {item.id: f"{item.standard} · {item.id}" for item in standards},
+                label="Select standard / OEM", with_input=True,
+                on_change=lambda _: select_standard(),
+            ).props("outlined dense").classes("w-full")
+            standard_detail = ui.label(
+                "Choose a standard to inspect extracted test methods."
+            ).classes("text-xs text-grey-7")
+            method_select = ui.select(
+                {}, label="Select method / temperature profile",
+                with_input=True, on_change=lambda _: select_method(),
+            ).props("outlined dense").classes("w-full")
+            method_detail = ui.label("No extracted method selected.").classes(
+                "text-xs text-orange-9")
+            with ui.row().classes("gap-2 flex-wrap"):
+                template_target = ui.number(
+                    "Tmin / Tmax / severity °C (only if not fixed)"
+                ).props("outlined dense").style("width:210px")
+                template_duration = ui.number(
+                    "Severity dwell seconds (only if not fixed)", min=1
+                ).props("outlined dense").style("width:220px")
+                template_tolerance = ui.number(
+                    "DUT tolerance °C (required)", min=0.001
+                ).props("outlined dense").style("width:210px")
+                template_stabilization = ui.number(
+                    "DUT stabilization seconds (required)", min=1
+                ).props("outlined dense").style("width:220px")
+                template_reach = ui.number(
+                    "Reach watchdog seconds (required)", min=1
+                ).props("outlined dense").style("width:210px")
+            make_candidate_button = ui.button(
+                "Create unapproved research draft",
+                icon="science", on_click=make_template_draft,
+            ).props("outline no-caps")
+            make_candidate_button.disable()
+            ui.label(
+                "Templates never switch DUT supply, command chamber gradients or "
+                "control humidity. Source clause, equipment capability, operating "
+                "mode and watchdog must be verified before a separately approved "
+                "production profile can be prepared."
+            ).classes("text-xs text-grey-7")
         with ui.column().classes("panel gap-3"):
             with ui.row().classes("panel-head"):
                 ui.label("Profile Editor").classes("panel-heading")
