@@ -241,7 +241,8 @@ def save_settings(security, session: str | None, csrf: str | None,
     detail = ("simulator" if stamped.chamber_type == "simulator" else
               f"{stamped.chamber_type} {stamped.chamber_id} {stamped.address} "
               f"serial {stamped.expected_serial} "
-              f"{stamped.temperature_min_c}..{stamped.temperature_max_c} C")
+              f"{stamped.temperature_min_c}..{stamped.temperature_max_c} C "
+              f"mode={'operational' if stamped.operational_mode else 'isolated-lab' if stamped.lab_mode else 'supervised-h02-or-manual'}")
     security.audit(admin, "chamber.settings.save", "SUCCESS",
                    chamber_id=None if stamped.chamber_type == "simulator"
                    else stamped.chamber_id, detail=detail)
