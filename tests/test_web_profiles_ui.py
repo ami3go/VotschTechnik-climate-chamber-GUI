@@ -145,7 +145,8 @@ async def test_operator_runs_saved_revision_and_stops_it(
     await user.should_see("SIMULATION", retries=50)
     await user.open("/profiles")
     await user.should_see("Profile Run")
-    user.find(ui.select).elements.pop().value = saved.profile_id
+    # Saved-profile selector is the first select; later selects belong to OEM templates.
+    user.find(ui.select).elements[0].value = saved.profile_id
     user.find("Load").click()
     await user.should_see("Loaded latest persisted revision")
     user.find("Run Loaded Revision").click()
@@ -207,7 +208,8 @@ async def test_revoked_session_cannot_export_profile_revision(
     await user.should_see("SIMULATION", retries=50)
     await user.open("/profiles")
     await user.should_see("Import / Export")
-    user.find(ui.select).elements.pop().value = saved.profile_id
+    # Saved-profile selector is the first select; later selects belong to OEM templates.
+    user.find(ui.select).elements[0].value = saved.profile_id
     user.find("Load").click()
     await user.should_see("Loaded latest persisted revision")
 
