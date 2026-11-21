@@ -57,3 +57,27 @@ The newly added SQLite tail check is a **partial hardening**, not a closure of t
 The existing G08 security authority now rejects (a) a missing SQLite identity DB with surviving audit/backup keys and (b) removal of an established HMAC checkpoint while its key remains. Positive G08-min legacy migration and negative tampering/reboot tests are included. Check final-head Windows CI on both supported Python versions before marking these software defects resolved. Complete loss of both database **and** trust keys is not recoverable or attestable without operator-controlled off-device key escrow and monotonic external evidence.
 
 - [ ] Confirm the fix for the concurrent-first-start Windows regression from [run 38618249624](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/actions/runs/38618249624): key plus audit-checkpoint setup is serialized via SQLite; six-worker and original simultaneous-bootstrap regressions must both pass on final head. This is a startup availability fix, not relaxed audit verification.
+
+## CH-WP-09 software closure boundary — 2026-11-21
+
+The fresh file/line audit and consolidated owner/dependency/artifact ledger are
+in [G08_SECURITY_REVIEW.md](G08_SECURITY_REVIEW.md#2026-11-21-ch-wp-09-fresh-code-level-audit-and-risk-ledger).
+PR #105 fixes the newly confirmed POSIX persisted-cookie-key substitution race
+without changing session semantics, chamber ownership, physical HIL admission,
+or STOP fencing. Final software closure requires the PR's exact synchronized
+head to pass the bounded local security suite and all applicable Windows/Linux
+hosted checks; older or failed heads do not count.
+
+The following are deliberately **not** software-closure claims and remain open:
+
+- independent penetration/security approval and live LAN browser/WebSocket
+  fixation, revocation, Origin, cookie-attribute, and TLS behavior;
+- Windows target service-account identity, effective NTFS owner/DACL and
+  reparse-point inspection, firewall/PKI, restart/logoff/power-loss drills;
+- off-device audit sealing, operator-owned signing-key escrow, and trusted
+  freshness/anti-rollback authority for an authentic older backup;
+- publisher key ceremony, attested provenance/license review, disconnected
+  clean Win10/11 qualification, site approval, physical HIL, and R01 release.
+
+These external gates must remain separate in the issue/PR handoff even when the
+code issue closes after exact-head software evidence.
