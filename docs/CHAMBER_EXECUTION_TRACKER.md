@@ -86,6 +86,23 @@ Software work has **not** earned R01 approval. Close each remaining issue only a
 
 **Merge policy:** PRs #84 and #88 remain hardware-gated draft by explicit acceptance contract. #105 and #106 may merge only after current exact-head checks and independent diff review. The 24-hour PIN admits operator-supervised *physical test procedures*; it is not a release authorization and it is unnecessary for offline emulators. **R01 RELEASE NO-GO.**
 
+## Verified software closure reconciliation — 2026-11-21
+
+**Current source of truth:** [GUI main `d24ce9842`](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/d24ce9842f05a025f39f8aafbb348334cd8a0e64). Live GitHub shows tracker issues [#90](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/90) through [#99](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/99) **CLOSED** for their documented software or documentation scopes. This is not a physical, site, signing, or release closure.
+
+| WP | Final software disposition | Independent gate that remains open |
+|---|---|---|
+| 01–05 | #101, #103, #102 and #104 merged; obsolete driver PR #1 closed without merge; issues #90–#94 closed with exact-revision software evidence | Any applicable device, site, evidence-storage and release acceptance remains separate |
+| 06 [#95](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/95) | Software/native/firmware checks recorded; ESP32 [PR #84](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/84) deliberately remains an **OPEN DRAFT** | Actual WT32-ETH01 board flash, Ethernet/link recovery, watchdog, long-run behavior and independent hardware review **NOT RUN** |
+| 07 [#96](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/96) | Software/native/firmware checks recorded; Leonardo [PR #88](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/88) deliberately remains an **OPEN DRAFT** stacked on #84 | Actual Leonardo/W5500 flash, network isolation, link recovery, watchdog, long-run behavior and GUI trust qualification **NOT RUN** |
+| 08 [#97](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/97) | W02 build-foundation [PR #108](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/108) merged as [`3563d6953`](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/3563d6953f6a60d20d3d0b7b22a57aefd68fa04b); all 14 accepted-head hosted checks passed. Superseded PR #107 was closed without merge | Publisher signing/key ceremony, complete license acceptance, attested provenance policy, disconnected clean Windows 10/11 QA, trusted policy distribution and R01 approval |
+| 09 [#98](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/98) | G08 cookie-secret integrity [PR #105](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/105) merged as [`d24ce9842`](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/commit/d24ce9842f05a025f39f8aafbb348334cd8a0e64). Accepted head `6381702fd`: local bounded suite 92 tests + 23 subtests passed; all 12 hosted jobs passed, including Linux/Windows combined suites, W01, NiceGUI/import, credential persistence and simulated H01/Chromium | Independent security/penetration review; live LAN browser/cookie/WebSocket validation; Windows service-account and NTFS owner/DACL/reparse qualification; firewall/PKI/site acceptance; off-device audit sealing and trusted backup freshness |
+| 10 [#99](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/99) | Initial authoritative tracker [PR #100](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/pull/100) merged; #99 already closed. PR #106 is the final historical-to-current reconciliation | Documentation does not authorize hardware, signing, deployment or release |
+
+**Open-PR boundary at reconciliation:** only emulator drafts #84 and #88 plus this documentation PR #106 were open. #84/#88 must not be merged from software evidence alone. No physical chamber, emulator board, site network, operator PIN, publisher key or release artifact was exercised for this reconciliation.
+
+**Final software disposition:** CH-WP-01…10 are closed for their stated software/documentation scopes after exact-head validation and merge evidence. Production remains **R01 RELEASE NO-GO** until the external gates above and the release contract in section 5 are independently satisfied.
+
 ## 2. Execution dependency and sequencing
 
 **Stage A — execute sequentially, safety first**
