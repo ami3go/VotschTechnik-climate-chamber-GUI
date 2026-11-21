@@ -755,7 +755,7 @@ def profiles_page() -> None:
                     "Tmin / Tmax / severity °C (only if not fixed)"
                 ).props("outlined dense").style("width:210px")
                 template_duration = ui.number(
-                    "Severity dwell seconds (only if not fixed)", min=1
+                    "Dwell seconds (required for partial / IEC)", min=1
                 ).props("outlined dense").style("width:220px")
                 template_tolerance = ui.number(
                     "DUT tolerance °C (required)", min=0.001
