@@ -26,6 +26,9 @@ MAX_STEPS = 200
 OUTPUT_DIRECTIVES = frozenset({"UNCHANGED", "ON", "OFF"})
 MAX_DIGITAL_OUTPUT = 64
 
+# Persisted in canonical ZIP provenance. Research candidates are never executable.
+UNAPPROVED_AUTOMOTIVE_TEMPLATE_PREFIX = "AUTOMOTIVE_RESEARCH_TEMPLATE_UNAPPROVED:"
+
 
 def _number(value: str, field: str, *, positive=False, minimum=None) -> Decimal:
     try:
@@ -129,6 +132,13 @@ class ParsedProfile:
     description: str = ""
     repeat_count: int = 1
     completion_action: str = "STOP"
+
+
+def is_unapproved_automotive_template(profile: ParsedProfile) -> bool:
+    """Fail closed for candidates generated from unapproved research data."""
+    warning = profile.migration_warning
+    return isinstance(warning, str) and warning.startswith(
+        UNAPPROVED_AUTOMOTIVE_TEMPLATE_PREFIX)
 
 
 def _rows(data: bytes):
