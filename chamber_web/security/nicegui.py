@@ -14,10 +14,9 @@ import threading
 from nicegui import app, ui
 
 from .auth import AuthenticationError, SecurityProfile, SecurityStore
-from .http import OriginMiddleware
 from .deployment import DeploymentPolicy
+from .http import OriginMiddleware
 from .paths import security_directory
-
 
 _store: SecurityStore | None = None
 _store_lock = threading.Lock()
@@ -81,10 +80,10 @@ def cookie_secret() -> str:
         opened = os.fstat(fd)
         if not stat.S_ISREG(opened.st_mode):
             raise RuntimeError("Nonregular NiceGUI cookie signing key; startup refused")
-        if os.name != "nt":
-            if opened.st_uid != os.getuid() or opened.st_mode & 0o077:
-                raise PermissionError(
-                    "Insecure cookie key ownership or permissions; startup refused")
+        if (os.name != "nt" and
+                (opened.st_uid != os.getuid() or opened.st_mode & 0o077)):
+            raise PermissionError(
+                "Insecure cookie key ownership or permissions; startup refused")
         with os.fdopen(fd, "r", encoding="ascii") as source:
             fd = -1
             secret = source.read(66).strip()

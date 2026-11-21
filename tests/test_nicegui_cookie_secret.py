@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import os
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 from unittest.mock import patch
 
 from chamber_web.security import nicegui as web_security
@@ -86,9 +86,9 @@ class CookieSecretFileTests(unittest.TestCase):
         self.directory.mkdir(mode=0o700)
         self.path.write_text("a" * 64, encoding="ascii")
         self.path.chmod(0o600)
-        with patch.object(web_security.os, "getuid", return_value=-1):
-            with self.assertRaisesRegex(PermissionError, "ownership"):
-                web_security.cookie_secret()
+        with patch.object(web_security.os, "getuid", return_value=-1), \
+                self.assertRaisesRegex(PermissionError, "ownership"):
+            web_security.cookie_secret()
 
 
 if __name__ == "__main__":
