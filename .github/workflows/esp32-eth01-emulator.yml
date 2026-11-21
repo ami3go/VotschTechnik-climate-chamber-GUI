@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - feat/esp32-eth01-chamber-emulator
+      - feat/leonardo-w5500-chamber-emulator
     paths:
       - 'firmware/esp32_eth01_chamber_emulator/**'
       - '.github/workflows/esp32-eth01-emulator.yml'
@@ -42,7 +43,7 @@ jobs:
       - name: Maintained Python driver over real TCP socket
         run: |
           python scripts/h02_watchdog_command.py --timeout-s 180 --idle-timeout-s 70 --log-dir test-evidence/esp32-emulator/driver -- \
-            python -m unittest discover -v -s firmware/esp32_eth01_chamber_emulator/test/integration -p 'test_*.py'
+            python -m unittest discover -v -s firmware/esp32_eth01_chamber_emulator/test/integration -p 'test_external_driver.py'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -62,8 +63,12 @@ jobs:
         run: python -m pip install platformio==6.1.18
       - name: Compile WT32-ETH01 target with watchdog
         run: |
-          python scripts/h02_watchdog_command.py --timeout-s 1200 --idle-timeout-s 300 --log-dir test-evidence/esp32-emulator/firmware-build -- \
-            pio run -d firmware/esp32_eth01_chamber_emulator
+          if ! python scripts/h02_watchdog_command.py --timeout-s 1200 --idle-timeout-s 300 --log-dir test-evidence/esp32-emulator/firmware-build -- \
+            pio run -d firmware/esp32_eth01_chamber_emulator; then
+            find test-evidence/esp32-emulator/firmware-build -name stdout.log -exec tail -n 120 {} \;
+            find test-evidence/esp32-emulator/firmware-build -name stderr.log -exec tail -n 80 {} \;
+            exit 1
+          fi
       - name: Record actual firmware hash
         run: |
           sha256sum firmware/esp32_eth01_chamber_emulator/.pio/build/wt32-eth01/firmware.bin > firmware-sha256.txt
@@ -76,4 +81,88 @@ jobs:
             firmware/esp32_eth01_chamber_emulator/.pio/build/wt32-eth01/firmware.bin
             firmware-sha256.txt
             test-evidence/esp32-emulator/
+          if-no-files-found: warn
+
+  leonardo-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ami3go/VotschTechnik-climate-chamber-Python
+          ref: d22dc05687cac4c5cdef440fb52b05965ed3d146
+          path: external-driver
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install colorama==0.4.6
+      - name: Compile exact Leonardo C++ core for native contract tests
+        run: |
+          mkdir -p firmware/esp32_eth01_chamber_emulator/build
+          python scripts/h02_watchdog_command.py --timeout-s 120 --idle-timeout-s 60 --log-dir test-evidence/leonardo/native-build -- \
+            bash -c 'set -euo pipefail; d=firmware/esp32_eth01_chamber_emulator; g++ -std=c++11 -Wall -Wextra -Werror -I"$d/include" "$d/src/leonardo_core.cpp" "$d/test/host/test_leonardo.cpp" -o "$d/build/test_leonardo"; g++ -std=c++11 -Wall -Wextra -Werror -I"$d/include" "$d/src/leonardo_core.cpp" "$d/test/host/leonardo_tcp_reference.cpp" -o "$d/build/leonardo_tcp_reference"'
+      - name: Check syntax of opt-in physical hardware runner (no hardware contact)
+        run: python -m py_compile firmware/esp32_eth01_chamber_emulator/test/hardware/verify_leonardo.py
+      - name: Execute fixed-buffer S!MPAC golden tests
+        run: |
+          python scripts/h02_watchdog_command.py --timeout-s 120 --idle-timeout-s 60 --log-dir test-evidence/leonardo/native-golden -- \
+            firmware/esp32_eth01_chamber_emulator/build/test_leonardo
+      - name: Driver interoperability on real TCP using maintained Python driver
+        run: |
+          python scripts/h02_watchdog_command.py --timeout-s 240 --idle-timeout-s 90 --log-dir test-evidence/leonardo/native-driver -- \
+            python -m unittest discover -v -s firmware/esp32_eth01_chamber_emulator/test/integration -p test_leonardo_driver.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: leonardo-native-driver-evidence
+          path: test-evidence/leonardo/
+          if-no-files-found: warn
+
+  leonardo-firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install platformio==6.1.18
+      - name: Build Arduino Leonardo ATmega32U4 + W5500
+        run: |
+          if ! python scripts/h02_watchdog_command.py --timeout-s 750 --idle-timeout-s 180 --log-dir test-evidence/leonardo/avr-build -- \
+            pio run -d firmware/esp32_eth01_chamber_emulator -e leonardo-w5500; then
+            find test-evidence/leonardo/avr-build -name stdout.log -exec tail -n 120 {} \;
+            find test-evidence/leonardo/avr-build -name stderr.log -exec tail -n 80 {} \;
+            exit 1
+          fi
+      - name: Report actual Leonardo flash and SRAM resource usage
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          logs = sorted(Path("test-evidence/leonardo/avr-build").rglob("stdout.log"))
+          assert logs, "Missing AVR compiler watchdog output"
+          text = logs[-1].read_text(errors="replace")
+          for metric, limit, reserve in (("RAM", 2560, 768), ("Flash", 28672, 512)):
+              match = re.search(rf"{metric}:.*used (\d+) bytes from (\d+) bytes", text)
+              if not match:
+                  raise SystemExit(f"No verified {metric} metrics in PlatformIO output")
+              used, reported = map(int, match.groups())
+              print(f"{metric}: {used}/{reported} bytes ({100*used/reported:.1f}%), free={reported-used}")
+              if reported != limit or used > limit - reserve:
+                  raise SystemExit(f"{metric} reserve below {reserve} bytes")
+          PY
+      - name: Firmware SHA-256
+        run: |
+          sha256sum firmware/esp32_eth01_chamber_emulator/.pio/build/leonardo-w5500/firmware.hex > leonardo-firmware-sha256.txt
+          cat leonardo-firmware-sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: leonardo-w5500-build
+          path: |
+            firmware/esp32_eth01_chamber_emulator/.pio/build/leonardo-w5500/firmware.hex
+            leonardo-firmware-sha256.txt
+            test-evidence/leonardo/
           if-no-files-found: warn
