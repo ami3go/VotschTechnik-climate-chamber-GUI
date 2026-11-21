@@ -302,7 +302,7 @@ def render_chamber_config_panel(discover_chambers: Callable | None = None) -> No
             acknowledge = ui.checkbox(
                 "For supervised operation: a trained person is present at the "
                 "chamber whenever the server runs with this configuration "
-                "(not required in isolated lab mode)",
+                "(not required in isolated lab/operational modes)",
                 value=initial.person_present_acknowledged)
             ui.label("Physical profile runs").classes("text-subtitle2")
             lab_mode = ui.checkbox(
