@@ -60,6 +60,8 @@ async def test_profiles_page_requires_login_and_persists_between_sessions(
     await user.should_see("86 researched standards")
     await user.should_see("All research candidates are UNAPPROVED")
     await user.should_see("Create unapproved research draft")
+    await user.should_see("Check partial (≥90%)")
+    await user.should_see("90% refers to temperature setpoints only")
     await user.should_see("Profile Editor")
     await user.should_see("Outputs use ON / OFF / UNCHANGED")
     columns = {column["field"]: column for column in _grid_columns()}
