@@ -56,6 +56,10 @@ async def test_profiles_page_requires_login_and_persists_between_sessions(
     await user.open("/profiles")
     await user.should_see("Persistent Profiles / Revisions")
     await user.should_see("Profile Library")
+    await user.should_see("Automotive Temperature Standards Library")
+    await user.should_see("86 researched standards")
+    await user.should_see("All research candidates are UNAPPROVED")
+    await user.should_see("Create unapproved research draft")
     await user.should_see("Profile Editor")
     await user.should_see("Outputs use ON / OFF / UNCHANGED")
     columns = {column["field"]: column for column in _grid_columns()}
