@@ -14,7 +14,7 @@ const uint8_t ETH_CS = 10;
 const uint8_t SD_CS = 4;
 const uint32_t CLIENT_IDLE_MS = 5000UL;
 const uint32_t WRITE_DEADLINE_MS = 1000UL;
-const uint32_t DHCP_RETRY_MS = 60000UL;
+const uint16_t DHCP_RETRY_MS = 60000U;
 const uint16_t DHCP_FIRST_TIMEOUT_MS = 10000;
 const uint16_t DHCP_RESPONSE_MS = 2000;
 const uint16_t VERSION_MARKER = 0x4C32; // L2
@@ -42,6 +42,7 @@ uint8_t response[leonardo::MAX_RESPONSE];
 uint8_t request_len = 0, response_len = 0, response_offset = 0;
 uint32_t last_client_ms = 0, reply_at_ms = 0, write_started_ms = 0;
 uint32_t last_tick_ms = 0, last_maintain_ms = 0, last_led_ms = 0;
+uint16_t dhcp_maintenance_interval_ms = 1000U;
 char usb_line[100], uart_line[100];
 uint8_t usb_len = 0, uart_len = 0;
 bool led_state = false;
@@ -371,11 +372,15 @@ void loop() {
     poll_network(now);
     if (leonardo::dhcp_maintenance_due(
             has_dhcp, static_cast<bool>(client), chamber.running,
-            static_cast<uint32_t>(now - last_maintain_ms))) {
+            static_cast<uint32_t>(now - last_maintain_ms),
+            dhcp_maintenance_interval_ms)) {
         // Ethernet.maintain may block: never call during a client session or run.
         const int rc = Ethernet.maintain();
         last_maintain_ms = millis();
-        if (rc == 1 || rc == 3) last_maintain_ms += DHCP_RETRY_MS - 1000UL;
+        // Keep the reference timestamp in the past. Moving it into the future
+        // would make unsigned elapsed-time arithmetic wrap and retry at once.
+        dhcp_maintenance_interval_ms =
+            (rc == 1 || rc == 3) ? DHCP_RETRY_MS : 1000U;
     }
     if (static_cast<uint32_t>(now - last_led_ms) >= 1000UL) {
         led_state = !led_state;

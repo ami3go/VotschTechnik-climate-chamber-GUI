@@ -35,6 +35,10 @@ int main() {
     assert(!dhcp_maintenance_due(true, false, true, 1000));
     assert(!dhcp_maintenance_due(true, false, false, 999));
     assert(!dhcp_maintenance_due(false, false, false, 1000));
+    assert(!dhcp_maintenance_due(true, false, false, 59999, 60000));
+    assert(dhcp_maintenance_due(true, false, false, 60000, 60000));
+    assert(!dhcp_maintenance_due(true, true, false, 60000, 60000));
+    assert(!dhcp_maintenance_due(true, false, true, 60000, 60000));
     Chamber c;
     Faults f;
     assert(response(req("99997", "1"),c,f) == ok_value("VT4011-EMULATOR"));

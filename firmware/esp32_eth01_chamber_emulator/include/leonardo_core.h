@@ -10,8 +10,10 @@ static const size_t MAX_RESPONSE = 64;
 static const uint16_t CHAMBER_PORT = 2049;
 
 inline bool dhcp_maintenance_due(bool has_dhcp, bool client_active,
-                                 bool running, uint32_t elapsed_ms) {
-    return has_dhcp && !client_active && !running && elapsed_ms >= 1000UL;
+                                 bool running, uint32_t elapsed_ms,
+                                 uint16_t interval_ms = 1000U) {
+    return has_dhcp && !client_active && !running &&
+           elapsed_ms >= interval_ms;
 }
 
 struct Faults {
