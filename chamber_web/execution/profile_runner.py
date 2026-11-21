@@ -28,7 +28,7 @@ from chamber_web.domain.chamber import (
     ChamberCapabilities, ChamberIdentity, ChamberSafetyError, OperationState,
     ReadingQuality, finite_temperature, validate_chamber_id,
 )
-from chamber_web.domain.profile import ProfileStep
+from chamber_web.domain.profile import ProfileStep, is_unapproved_automotive_template
 from chamber_web.persistence.profiles import ProfileRevision, ProfileStore
 from chamber_web.services.chamber_manager import ChamberManager
 
@@ -460,6 +460,9 @@ class ProfileRunner:
             record: ProfileRevision = self._store.get_revision(
                 chamber_id, profile_id, revision=revision,
             )
+            if is_unapproved_automotive_template(record.profile):
+                raise ChamberSafetyError(
+                    "Unapproved automotive research candidate: execution prohibited")
             enabled = tuple(s for s in record.profile.steps if s.enabled)
             if not enabled or record.profile.completion_action != "STOP":
                 raise ChamberSafetyError("Only nonempty STOP profiles can run")
