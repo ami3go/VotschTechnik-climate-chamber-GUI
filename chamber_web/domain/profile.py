@@ -137,8 +137,14 @@ class ParsedProfile:
 def is_unapproved_automotive_template(profile: ParsedProfile) -> bool:
     """Fail closed for candidates generated from unapproved research data."""
     warning = profile.migration_warning
-    return isinstance(warning, str) and warning.startswith(
-        UNAPPROVED_AUTOMOTIVE_TEMPLATE_PREFIX)
+    return (
+        isinstance(warning, str) and warning.startswith(
+            UNAPPROVED_AUTOMOTIVE_TEMPLATE_PREFIX)
+    ) or any(
+        isinstance(step.notes, str) and step.notes.startswith(
+            UNAPPROVED_AUTOMOTIVE_TEMPLATE_PREFIX)
+        for step in profile.steps
+    )
 
 
 def _rows(data: bytes):
