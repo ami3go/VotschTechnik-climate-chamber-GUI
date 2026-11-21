@@ -56,6 +56,11 @@ def cookie_secret() -> str:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         pass
+    except OSError:
+        # Windows reports PermissionError rather than FileExistsError when the
+        # existing entry is a directory. Continue only when lstat proves that
+        # an entry exists; otherwise preserve a fail-closed startup error.
+        path.lstat()
     else:
         with os.fdopen(fd, "w", encoding="ascii") as output:
             output.write(secrets.token_hex(32))
