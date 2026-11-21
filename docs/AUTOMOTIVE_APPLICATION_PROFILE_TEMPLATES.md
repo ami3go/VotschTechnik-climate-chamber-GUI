@@ -32,19 +32,19 @@ Only the following research methods can currently become **unsaved editor drafts
 
 All generated G03 steps use **null ramps** and leave auxiliary outputs unchanged. `chamber_run=ON` means **chamber control only**, not DUT power. The output step notes and metadata retain an explicit **unapproved** marker. Operator input is necessary; no values for tolerance, stabilization or reach-timeout are invented. Generating a candidate never writes SQLite, creates a hardware lease or starts a run.
 
-## Conditional >=90% reported-temperature matching — (partially)
+## Conditional >=85% reported-temperature matching — (partially)
 
 **No verified physical Vötsch facility specifications are available in the repository.** G04's reported temperature envelope is taken from the configured/authorized device limits and is *not* independently verified manufacturer performance; the default FakeBackend limit (-40…+130°C) is a simulator only.
 
-The `Check partial (≥90%)` action on the NiceGUI profile library calculates the fraction of *explicitly enumerated temperature setpoint occurrences* supported by the currently reported chamber envelope. It requires >=90% **before any partially marked candidate can be drafted**, but this is **not** percent compliance with the full standard. Missing/extreme setpoints and non-thermal requirements remain prominently visible. There is no automatic substitution, rounding to a nearby setpoint, physical permission escalation, or chamber I/O.
+The `Check partial (≥85%)` action on the NiceGUI profile library calculates the fraction of *explicitly enumerated temperature setpoint occurrences* supported by the currently reported chamber envelope. It requires >=85% **before any partially marked candidate can be drafted**, but this is **not** percent compliance with the full standard. Missing/extreme setpoints and non-thermal requirements remain prominently visible. There is no automatic substitution, rounding to a nearby setpoint, physical permission escalation, or chamber I/O.
 
 | Additional method | Conditions | Incomplete / not controlled |
 |---|---|---|
-| ISO 16750-4 `ISO-STEP` | Operator must choose ISO Tmin and Tmax in 5°C increments around 20°C, plus explicit per-step dwell, stabilization, tolerance and watchdog; reported setpoint match >=90% | Requires DUT thermal equilibrium and external supply voltage/mode switching at specified points; timed ramps/functional checks absent |
-| LV124 `LV-K-02` | Third-party -55…+85°C stepped example (5°C increments); operator selects 300..600 seconds per step; reported setpoint match >=90% | Vendor example is not a controlled OEM normative test, DUT functional checks missing |
+| ISO 16750-4 `ISO-STEP` | Operator must choose ISO Tmin and Tmax in 5°C increments around 20°C, plus explicit per-step dwell, stabilization, tolerance and watchdog; reported setpoint match >=85% | Requires DUT thermal equilibrium and external supply voltage/mode switching at specified points; timed ramps/functional checks absent |
+| LV124 `LV-K-02` | Third-party -55…+85°C stepped example (5°C increments); operator selects 300..600 seconds per step; reported setpoint match >=85% | Vendor example is not a controlled OEM normative test, DUT functional checks missing |
 | LV124 `LV-K-03` | Third-party -55°C / 48h example and reported range includes -55°C | DUT intermittent 12h/12h operation cannot be commanded, OEM revision not confirmed |
 
-For example **FakeBackend -40…+130°C** supports **26/29 = 89.7%** of the reported LV124 K-02 temperature levels, so draft generation is blocked. Reported range -45…+130°C would support **27/29 = 93.1%** and permit an **unapproved `(partially)` research draft** that explicitly *omits* -55°C and -50°C. A missing minimum or maximum is still a missing critical test level; no standard conformity is implied.
+For example, **FakeBackend -40…+130°C** supports **26/29 = 89.7%** of the vendor-reported LV124 K-02 temperature levels; this **meets the 85% temperature-only threshold**, allowing an unapproved `(partially)` draft that omits −55, −50 and −45°C. A hypothetical reported range of **−30…+130°C** covers **24/29 = 82.8%** and is **blocked**. A range of −45…+130°C supports 27/29 = 93.1%, omitting −55 and −50°C. These are reported ranges, not certified chamber capabilities; a missing extreme remains a missing critical test condition, and none of these profiles imply standard compliance.
 
 Methods needing *mandatory humidity, physical transfer/shock, water fixture, externally controlled electrical bias, certified battery-abuse facilities or more than 14 days of uninterrupted test time* remain inspection-only regardless of their temperature-setpoint overlap. A single-zone chamber reaching a shock test's hot and cold extremes is not equivalent to a certified thermal-shock apparatus.
 
