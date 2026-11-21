@@ -15,8 +15,9 @@
 
 1. The responsible operator checks the actual chamber nameplate **model, serial, firmware/options**, rated temperature range, test-system type, installed interlocks, calibration and OEM STOP/alarm documentation. Record the host/driver exact SHAs; approve a specimen-safe envelope and temperature excursion. Document the separate local emergency stop, site response to transport failure and fire/power loss. Do not infer this from a simulator.
 2. Pin the GUI and maintained driver, verify installation with `python setup_environment.py --check-driver` and `python scripts/verify_driver_install.py`. Install or activate the admin account and confirm saved chamber IP/serial. Start in `localhost` mode (or approved TLS LAN); **do not** start hardware test programs without operator PIN.
-3. The human operator issues an 8-digit 24h test PIN using `bash scripts/hil_pin.sh setup` and only gives it to a supervised test command on an isolated bench. Run read-only readiness and STOPPED/identity verification, writing evidence to a local directory:
+3. The human operator issues an 8-digit 24h test PIN using `bash scripts/hil_pin.sh setup` and only gives it to a supervised test command on an isolated bench. **The existing `hil_lab_acceptance.py` harness uses the explicit engineering `CHAMBER_LAB_MODE=ISOLATED-LAB-UNATTENDED` configuration**, along with the complete site-approved `CHAMBER_HIL_*` environment; it is not a substitute for Operational Mode, and must not be combined with `CHAMBER_OPERATIONAL_MODE`. This harness has its own bounded application-level deadline and requires a human supervising the real chamber. Run read-only readiness and STOPPED/identity verification, writing evidence to a local directory:
    ```bash
+   export CHAMBER_LAB_MODE=ISOLATED-LAB-UNATTENDED  # HIL harness only, NOT product operation
    bash scripts/hil_pin.sh run -- python scripts/hil_lab_acceptance.py \
      --plan-only --evidence hil-evidence/h01-current-plan
    ```
