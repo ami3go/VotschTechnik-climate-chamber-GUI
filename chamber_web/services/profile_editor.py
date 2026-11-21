@@ -292,7 +292,7 @@ class ProfileEditorService:
 
     def duplicate(self, draft: EditorDraft) -> EditorDraft:
         profile = replace(draft.profile, name=(draft.profile.name[:153] + " (Copy)")[:160])
-        self.validate(profile)
+        validate_editor_profile(profile)
         header = self.store.create_profile(self.chamber_id, profile)
         return EditorDraft(profile, header.profile_id, header.current_revision,
                            header.current_revision)
