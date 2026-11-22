@@ -290,19 +290,24 @@ void poll_network(uint32_t now) {
         Serial.println(F("ETH link restored"));
         prior_link = true;
     }
-    // Arduino Ethernet 2.0.2 accept() returns a new connection even before
-    // the first received byte; stale sessions may be replaced by a new driver.
+    // Reclaim disconnected/stale sockets first. A second client must never
+    // preempt the active controller session (including a pending STOP reply).
+    // Stale sessions are bounded by CLIENT_IDLE_MS and can be reclaimed.
+    if (client && leonardo::tcp_session_reclaimable(
+            client.connected(), client.available() > 0,
+            static_cast<uint32_t>(now - last_client_ms), CLIENT_IDLE_MS)) {
+        close_client();
+    }
     EthernetClient candidate = server.accept();
     if (candidate) {
-        close_client();
-        client = candidate;
-        last_client_ms = now;
+        if (client) {
+            candidate.stop(); // explicit single-controller ownership
+        } else {
+            client = candidate;
+            last_client_ms = now;
+        }
     }
     if (!client) return;
-    if (!client.connected() && !client.available()) { close_client(); return; }
-    if (static_cast<uint32_t>(now - last_client_ms) >= CLIENT_IDLE_MS) {
-        close_client(); return;
-    }
     if (pending) {
         if (static_cast<int32_t>(now - reply_at_ms) < 0) return;
         if (response_offset < response_len) {
