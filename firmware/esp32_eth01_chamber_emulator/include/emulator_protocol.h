@@ -64,6 +64,13 @@ struct Request {
     std::vector<std::string> args;
 };
 
+// Pure, host-testable validation for persisted static IPv4 settings. Allows a
+// zero gateway/DNS on physically isolated emulator-only Ethernet networks.
+bool valid_static_network(const std::array<uint8_t, 4>& ip,
+                          const std::array<uint8_t, 4>& mask,
+                          const std::array<uint8_t, 4>& gateway,
+                          const std::array<uint8_t, 4>& dns);
+
 // Rejects invalid UTF-8/non-printing bytes, malformed delimiters, incorrect
 // chamber index, extra args, LF terminators, and oversized request frames.
 bool parse_request(const std::string &frame, Request &request);
