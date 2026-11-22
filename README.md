@@ -17,6 +17,10 @@ advanced its **design and engineering work queue** to
 This does not assert signed site acceptance, independently accepted H02
 physical profile runs, W02 air-gap certification, or R01 release approval.
 
+## Physical Operational Mode (supervised pilot)
+
+Administrators can select **Settings → Chamber configuration → Enable supervised Operational Mode**, enter the real chamber address, pinned serial, and site-approved temperature envelope, and restart the server. This mode requires a live independent G06/H02-C watchdog to start profiles; it deliberately rejects plain-HTTP lab networking, H02 permit mixing, unqualified gradients and physical digital outputs. A healthy watchdog on the host **does not** replace the chamber's independent hardware interlocks or emergency stop, especially after host/network/power failure. No current-head physical HIL or signed site/release approval is claimed; see [operational qualification](docs/H01_OPERATIONAL_HARDWARE_QUALIFICATION.md), [H01 issue #112](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/112) and [software issue #113](https://github.com/ami3go/VotschTechnik-climate-chamber-GUI/issues/113).
+
 ## Isolated lab: full-range unattended operation
 
 For agent-managed physical HIL tests, first use `bash scripts/hil_pin.sh setup` at an operator terminal, then `bash scripts/hil_pin.sh run -- COMMAND` (see [runbook](docs/HIL_PIN_RUNBOOK.md)). This PIN does not replace physical STOP, chamber limits or bench ownership.
