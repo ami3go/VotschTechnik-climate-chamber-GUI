@@ -56,6 +56,12 @@ async def test_profiles_page_requires_login_and_persists_between_sessions(
     await user.open("/profiles")
     await user.should_see("Persistent Profiles / Revisions")
     await user.should_see("Profile Library")
+    await user.should_see("Automotive Temperature Standards Library")
+    await user.should_see("86 researched standards")
+    await user.should_see("All research candidates are UNAPPROVED")
+    await user.should_see("Create unapproved research draft")
+    await user.should_see("Check partial (≥85%)")
+    await user.should_see("85% refers to temperature setpoints only")
     await user.should_see("Profile Editor")
     await user.should_see("Outputs use ON / OFF / UNCHANGED")
     columns = {column["field"]: column for column in _grid_columns()}
@@ -141,7 +147,13 @@ async def test_operator_runs_saved_revision_and_stops_it(
     await user.should_see("SIMULATION", retries=50)
     await user.open("/profiles")
     await user.should_see("Profile Run")
-    user.find(ui.select).elements.pop().value = saved.profile_id
+    # Element matches are an unordered set. Identify the saved library field
+    # by its server-owned label, not an arbitrary select position.
+    saved_selector = next(
+        element for element in user.find(ui.select).elements
+        if element._props.get("label") == "Saved profiles"
+    )
+    saved_selector.value = saved.profile_id
     user.find("Load").click()
     await user.should_see("Loaded latest persisted revision")
     user.find("Run Loaded Revision").click()
@@ -203,7 +215,13 @@ async def test_revoked_session_cannot_export_profile_revision(
     await user.should_see("SIMULATION", retries=50)
     await user.open("/profiles")
     await user.should_see("Import / Export")
-    user.find(ui.select).elements.pop().value = saved.profile_id
+    # Element matches are an unordered set. Identify the saved library field
+    # by its server-owned label, not an arbitrary select position.
+    saved_selector = next(
+        element for element in user.find(ui.select).elements
+        if element._props.get("label") == "Saved profiles"
+    )
+    saved_selector.value = saved.profile_id
     user.find("Load").click()
     await user.should_see("Loaded latest persisted revision")
 

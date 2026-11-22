@@ -23,6 +23,12 @@ from chamber_web.domain.profile import MAX_BYTES, format_digital_outputs
 from chamber_web.persistence.profiles import (
     ProfileConflictError, ProfileNotFoundError, ProfileStore,
 )
+from chamber_web.services.automotive_profile_templates import (
+    candidate_draft, method_templates, standard_templates,
+)
+from chamber_web.services.automotive_partial_profiles import (
+    PARTIAL_METHOD_IDS, assess_partial_coverage, partial_candidate_draft,
+)
 from chamber_web.services.profile_editor import (
     DuplicateProfileError, EditorDraft, ProfileEditorService,
     compatibility_warnings,
@@ -72,7 +78,8 @@ def get_profile_execution_service() -> ProfileExecutionService:
                                       get_profile_manual_guard,
                                       profile_execution_is_simulation,
                                       profile_execution_lab,
-                                      profile_execution_supervision)
+                                      profile_execution_supervision,
+                                      get_supervision_host)
         editor = get_profile_editor_service()
         runtime = get_profile_runtime()
         security = get_security()
@@ -90,6 +97,7 @@ def get_profile_execution_service() -> ProfileExecutionService:
             supervised=profile_execution_supervision(),
             manual_guard=manual_guard,
             lab=profile_execution_lab(),
+            operational_supervisor=get_supervision_host,
         )
     return _execution_service
 
@@ -421,6 +429,138 @@ def profiles_page() -> None:
         except (ValueError, TypeError, UnicodeError, OSError) as exc:
             notice_error(exc)
 
+    # Built-in method catalogue: read-only until an operator explicitly
+    # requests one of the few schema-representable research candidates.
+    standards = standard_templates()
+    methods = {item.id: item for item in method_templates()}
+
+    def select_standard() -> None:
+        require_read()
+        record = next((s for s in standards if s.id == standard_select.value), None)
+        method_select.options = (
+            {item_id: f"{item_id} · {methods[item_id].method}"
+             for item_id in record.method_ids} if record else {}
+        )
+        method_select.value = None
+        method_select.update()
+        standard_detail.set_text(
+            f"{record.standard}: {record.test_family}. "
+            f"Extraction: {record.extraction_state}. "
+            f"Source: {record.source_url}. {record.comment}"
+            if record else "Choose a standard to inspect extracted test methods.")
+        select_method()
+
+    def _reported_caps():
+        # No physical I/O. This is an application-reported capability envelope,
+        # NOT a certification of the real Vötsch chamber.
+        try:
+            from chamber_web.main import get_dashboard_service
+            return get_dashboard_service().view().capabilities
+        except (RuntimeError, AttributeError, ValueError, OSError):
+            return None
+
+    def check_partial_coverage() -> None:
+        require_read()
+        method_id = method_select.value
+        if method_id not in PARTIAL_METHOD_IDS:
+            coverage_label.set_text(
+                "Only eligible multi-step temperature methods can be assessed; "
+                "humidity, shock and REESS safety are excluded.")
+            make_candidate_button.disable()
+            return
+        try:
+            report = assess_partial_coverage(
+                str(method_id), _reported_caps(),
+                tmin_c=partial_min.value,
+                tmax_c=partial_max.value,
+            )
+            coverage_label.set_text(
+                f"{report.percentage}% of temperature setpoints supported "
+                f"({report.supported_points}/{report.possible_points}). "
+                f"{'(partially) candidate eligible for review.' if report.meets_threshold else 'Below 85%: draft blocked.'} "
+                + report.comment)
+            if report.meets_threshold and can_mutate:
+                make_candidate_button.enable()
+            else:
+                make_candidate_button.disable()
+        except (ValueError, TypeError) as exc:
+            coverage_label.set_text(
+                "Partial coverage not established: " + str(exc))
+            make_candidate_button.disable()
+
+    def select_method() -> None:
+        require_read()
+        candidate = methods.get(method_select.value)
+        make_candidate_button.disable()  # Never carry eligibility across selections.
+        if candidate is None:
+            method_detail.set_text(
+                "No extracted method selected. Some OEM standards need controlled "
+                "documents before any numeric profile can be defined.")
+            coverage_label.set_text("")
+            return
+        partial = candidate.id in PARTIAL_METHOD_IDS
+        method_detail.set_text(
+            f"{candidate.standard} {candidate.method} · {candidate.temperatures} · "
+            f"{candidate.sequence} · DUT: {candidate.dut_state}. "
+            f"Evidence: {candidate.evidence}. Missing: {candidate.missing}. "
+            f"Required equipment: {candidate.equipment}. "
+            f"Source: {candidate.source_url}. "
+            + ("Candidate draft available with explicit engineering parameters. "
+               if candidate.can_make_draft else
+               "(partially) candidate: check >=85% of reported temperature setpoints. "
+               if partial else
+               "RESEARCH ONLY: unsupported/incomplete for temperature-only editor. ")
+            + "No automatic qualification or chamber execution.")
+        if candidate.can_make_draft and can_mutate:
+            make_candidate_button.enable()
+            coverage_label.set_text("Unapproved single-exposure research candidate.")
+        elif partial:
+            check_partial_coverage()
+        else:
+            coverage_label.set_text(
+                "Temperature-setpoint coverage cannot establish test compliance: "
+                "this method needs unsupported facilities, DUT operations, "
+                "controlled OEM requirements or timing.")
+
+    def make_template_draft() -> None:
+        require_edit()
+        nonlocal draft, selected_step
+        if not can_discard():
+            return
+        try:
+            method = methods.get(method_select.value)
+            if method is None:
+                raise ValueError("Select an extracted method first")
+            if method.can_make_draft:
+                draft = candidate_draft(
+                    method.id,
+                    target_c=template_target.value,
+                    dwell_s=template_duration.value,
+                    tolerance_c=template_tolerance.value,
+                    stabilize_s=template_stabilization.value,
+                    reach_timeout_s=template_reach.value,
+                )
+            elif method.id in PARTIAL_METHOD_IDS:
+                # Fail closed on current reported limits and all missing inputs.
+                draft = partial_candidate_draft(
+                    method.id, _reported_caps(),
+                    tmin_c=partial_min.value,
+                    tmax_c=partial_max.value,
+                    dwell_s=template_duration.value,
+                    tolerance_c=template_tolerance.value,
+                    stabilize_s=template_stabilization.value,
+                    reach_timeout_s=template_reach.value,
+                )
+            else:
+                raise ValueError("This method is research-only; no draft generator")
+            selected_step = 0
+            populate()
+            ui.notify("UNAPPROVED research draft loaded (partially where marked). "
+                      "Execution blocked in all modes; save only for review.",
+                      color="warning", timeout=7000)
+        except (ValueError, TypeError) as exc:
+            notice_error(exc)
+
     def paginate(delta: int) -> None:
         require_read()
         nonlocal offset
@@ -428,6 +568,10 @@ def profiles_page() -> None:
         refresh_library()
 
     def render_run(view: RunView) -> None:
+        from chamber_web.main import profile_execution_lab
+        mode = profile_execution_lab()
+        mode_name = ("supervised operational" if mode is not None and
+                     mode.independent_watchdog else "isolated lab")
         stop_confirm_button.set_visibility(view.supervised)
         stop_confirm_label.set_visibility(view.supervised)
         stop_confirm_label.set_text(
@@ -436,11 +580,11 @@ def profiles_page() -> None:
                  "STOP and emergency stop. Web STOP is not an emergency stop.")
         if view.admin_override:
             run_mode_label.set_text(
-                "ADMIN TAKEOVER · isolated lab · manual lease may be reassigned "
+                f"ADMIN TAKEOVER · {mode_name} · manual lease may be reassigned "
                 f"only after verified STOPPED · controller {view.controller_state}")
         elif view.lab:
             run_mode_label.set_text(
-                f"Physical chamber · isolated lab mode · controller {view.controller_state}" +
+                f"Physical chamber · {mode_name} mode · controller {view.controller_state}" +
                 (" · Run Loaded Revision re-verifies STOPPED and clears the "
                  "restart lock"
                  if view.stop_latched and view.controller_state == "UNKNOWN" else ""))
@@ -519,7 +663,8 @@ def profiles_page() -> None:
         success_message = (
             f"Started revision {revision} in simulation"
             if profile_execution_is_simulation() else
-            f"Started revision {revision} on the physical chamber (lab mode)"
+            f"Started revision {revision} on the physical chamber "
+            f"({'supervised operational' if profile_execution_lab().independent_watchdog else 'isolated lab'} mode)"
             if profile_execution_lab() is not None else
             f"Started revision {revision} under supervised H02 permit"
         )
@@ -553,6 +698,9 @@ def profiles_page() -> None:
         from chamber_web.main import profile_execution_is_simulation, profile_execution_lab
         ui.label("SIMULATION · Saved revisions run only against the simulated chamber"
                  if profile_execution_is_simulation() else
+                 "PHYSICAL CHAMBER · supervised operational mode · "
+                 "independent watchdog required for all profile runs"
+                 if profile_execution_lab() is not None and profile_execution_lab().independent_watchdog else
                  "PHYSICAL CHAMBER · isolated lab mode · saved revisions drive the real chamber"
                  if profile_execution_lab() is not None else
                  "PHYSICAL CHAMBER · profile runs disabled — enable isolated lab mode "
@@ -577,6 +725,70 @@ def profiles_page() -> None:
                 ui.button("Next 100", on_click=lambda: paginate(1)).props(
                     "flat no-caps")
                 count_label = ui.label("").classes("text-xs text-grey-7")
+        with ui.column().classes("panel gap-2"):
+            ui.label("Automotive Temperature Standards Library").classes("panel-heading")
+            ui.label(
+                "86 researched standards · 60 extracted method variants. "
+                "All research candidates are UNAPPROVED and blocked at execution. "
+                "No profile is automatically added to the saved library."
+            ).classes("text-xs text-orange-9")
+            standard_select = ui.select(
+                {item.id: f"{item.standard} · {item.id}" for item in standards},
+                label="Select standard / OEM", with_input=True,
+                on_change=lambda _: select_standard(),
+            ).props("outlined dense").classes("w-full")
+            standard_detail = ui.label(
+                "Choose a standard to inspect extracted test methods."
+            ).classes("text-xs text-grey-7")
+            method_select = ui.select(
+                {}, label="Select method / temperature profile",
+                with_input=True, on_change=lambda _: select_method(),
+            ).props("outlined dense").classes("w-full")
+            method_detail = ui.label("No extracted method selected.").classes(
+                "text-xs text-orange-9")
+            coverage_label = ui.label(
+                "Chamber-reported limits are not a physical qualification. "
+                "85% refers to temperature setpoints only, not test compliance."
+            ).classes("text-xs text-orange-9")
+            with ui.row().classes("gap-2 flex-wrap"):
+                partial_min = ui.number(
+                    "ISO step Tmin °C (partial assessment)"
+                ).props("outlined dense").style("width:210px")
+                partial_max = ui.number(
+                    "ISO step Tmax °C (partial assessment)"
+                ).props("outlined dense").style("width:210px")
+                ui.button(
+                    "Check partial (≥85%)", icon="fact_check",
+                    on_click=check_partial_coverage,
+                ).props("outline no-caps")
+            with ui.row().classes("gap-2 flex-wrap"):
+                template_target = ui.number(
+                    "Tmin / Tmax / severity °C (only if not fixed)"
+                ).props("outlined dense").style("width:210px")
+                template_duration = ui.number(
+                    "Dwell seconds (required for partial / IEC)", min=1
+                ).props("outlined dense").style("width:220px")
+                template_tolerance = ui.number(
+                    "DUT tolerance °C (required)", min=0.001
+                ).props("outlined dense").style("width:210px")
+                template_stabilization = ui.number(
+                    "DUT stabilization seconds (required)", min=1
+                ).props("outlined dense").style("width:220px")
+                template_reach = ui.number(
+                    "Reach watchdog seconds (required)", min=1
+                ).props("outlined dense").style("width:210px")
+            make_candidate_button = ui.button(
+                "Create unapproved research draft",
+                icon="science", on_click=make_template_draft,
+            ).props("outline no-caps")
+            make_candidate_button.disable()
+            ui.label(
+                "PARTIALLY means >=85% of extracted temperature setpoint occurrences "
+                "inside the application-reported envelope, NOT 85% of a standard. "
+                "Missing setpoints are omitted and recorded, not substituted. "
+                "No DUT supply switching, controlled ramps, thermal shock or humidity. "
+                "A complete OEM clause and physical facility qualification remain mandatory."
+            ).classes("text-xs text-grey-7")
         with ui.column().classes("panel gap-3"):
             with ui.row().classes("panel-head"):
                 ui.label("Profile Editor").classes("panel-heading")
