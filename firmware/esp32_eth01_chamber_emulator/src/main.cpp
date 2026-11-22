@@ -16,6 +16,7 @@
 namespace {
 constexpr unsigned MAX_SESSIONS = 4;
 constexpr uint32_t IDLE_MS = 10000;
+constexpr uint32_t TCP_WRITE_DEADLINE_MS = 1000;
 const char *VERSION = "0.1.0";
 Preferences prefs;
 emu::Chamber chamber;
@@ -33,6 +34,8 @@ struct Session {
     size_t length = 0;
     uint32_t last_activity = 0;
     uint32_t reply_at = 0;
+    uint32_t write_started_at = 0;
+    size_t reply_offset = 0;
     std::string pending;
     bool waiting = false;
     bool close_after = false;
@@ -55,6 +58,8 @@ void event_handler(WiFiEvent_t event) {
 void close_session(Session &s) {
     s.client.stop();
     s.pending.clear();
+    s.reply_offset = 0;
+    s.write_started_at = 0;
     s.length = 0;
     s.waiting = false;
     s.close_after = false;
@@ -197,9 +202,11 @@ void dispatch(Session &s, const std::string &request, uint32_t now) {
     const bool is_stop = request.find(std::string("14001") + char(0xB6) + "1" +
                                char(0xB6) + "1" + char(0xB6) + "0\r") == 0;
     s.pending = response;
+    s.reply_offset = 0;
     s.close_after = false;
     s.waiting = true;
     s.reply_at = now + faults.response_delay_ms;
+    s.write_started_at = s.reply_at;
     if (faults.drop_stop_reply && is_stop) {
         // State was already updated, but driver MUST report outcome UNKNOWN.
         Serial.println("FAULT STOP executed; reply lost; closing session");
@@ -249,10 +256,27 @@ void tick_network(uint32_t now) {
         if (now - s.last_activity > IDLE_MS) { close_session(s); continue; }
         if (s.waiting) {
             if (int32_t(now - s.reply_at) >= 0) {
-                if (!s.pending.empty())
-                    s.client.write(reinterpret_cast<const uint8_t*>(s.pending.data()), s.pending.size());
+                // A TCP write may accept only part of the response. Never
+                // mark the frame complete or parse a second request until all
+                // bytes are sent, or a finite deadline closes this session.
+                if (s.reply_offset < s.pending.size()) {
+                    const size_t remaining = s.pending.size() - s.reply_offset;
+                    const size_t written = s.client.write(
+                        reinterpret_cast<const uint8_t*>(s.pending.data()) +
+                        s.reply_offset, remaining);
+                    if (written > remaining) { close_session(s); continue; }
+                    s.reply_offset += written;
+                    if (s.reply_offset < s.pending.size()) {
+                        if (uint32_t(now - s.write_started_at) > TCP_WRITE_DEADLINE_MS) {
+                            Serial.println("TCP response write deadline exceeded");
+                            close_session(s);
+                        }
+                        continue;
+                    }
+                }
                 if (s.close_after) { close_session(s); continue; }
                 s.waiting = false; s.pending.clear();
+                s.reply_offset = 0;
                 s.last_activity = now;
             }
             continue;
