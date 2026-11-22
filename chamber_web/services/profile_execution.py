@@ -33,9 +33,12 @@ from chamber_web.execution.profile_runner import (
     TERMINAL, Clock, EventSink, ExecutionSnapshot, ProfileRunner, RunParameters, RunState,
     SupervisedRun, step_budget,
 )
-from chamber_web.hil.lab_mode import LAB_RUN_BINDING, LabMode
+from chamber_web.hil.lab_mode import (
+    LAB_RUN_BINDING, OPERATIONAL_RUN_BINDING, LabMode, operational_watchdog_limits,
+)
 from chamber_web.hil.profile_admission import AdmissionDenied, preflight_physical_profile
 from chamber_web.hil.supervised_profile import SupervisedProfileRuntime
+from chamber_web.hil.supervision import SupervisionHost
 from chamber_web.persistence.profiles import ProfileStore
 from chamber_web.security.auth import Role, SecurityStore
 from chamber_web.security.guards import AuthorizedChamber, Permission, require_permission
@@ -95,7 +98,8 @@ class ProfileExecutionService:
                  start_blocker: Callable[[], str] | None = None,
                  supervised: SupervisedProfileRuntime | None = None,
                  manual_guard: AuthorizedChamber | None = None,
-                 lab: LabMode | None = None):
+                 lab: LabMode | None = None,
+                 operational_supervisor: Callable[[], SupervisionHost | None] | None = None):
         if chamber_id not in manager.configured_ids():
             raise ChamberSafetyError("Profile execution chamber is not configured")
         if type(simulation) is not bool:
@@ -106,6 +110,7 @@ class ProfileExecutionService:
             raise ValueError("Lab mode requires physical mode without an H02 permit")
         self._supervised = supervised
         self._lab = lab
+        self._operational_supervisor = operational_supervisor
         self._manager = manager
         self._store = store
         self._security = security
@@ -269,20 +274,41 @@ class ProfileExecutionService:
             supervisor_alive=supervised.supervision.alive,
         )
 
+    def _operational_watchdog_alive(self) -> bool:
+        """Never treat an absent, faulted or latched supervisor as approval."""
+        if self._lab is None or not self._lab.independent_watchdog:
+            return True
+        host = self._operational_supervisor() if self._operational_supervisor else None
+        return host is not None and host.alive()
+
     def _admit_lab(self, actor) -> SupervisedRun:
-        """Isolated-lab physical admission: the G08 actor is the run operator."""
+        """Physical admission; Operational Mode also requires a live watchdog."""
         assert self._lab is not None
-        self._security.audit(actor, "profile.lab_admission", "SUCCESS", self._chamber_id)
+        if not self._operational_watchdog_alive():
+            raise ChamberSafetyError("Operational independent watchdog unavailable")
+        host = (self._operational_supervisor() if self._lab.independent_watchdog
+                and self._operational_supervisor else None)
+        self._security.audit(
+            actor, "profile.operational_admission" if host is not None
+            else "profile.lab_admission", "SUCCESS", self._chamber_id)
         return SupervisedRun(
-            permit_sha256=LAB_RUN_BINDING, operator=actor.username,
-            revalidate=lambda: None, allow_gradients=self._lab.gradients,
-            admin_override=actor.role is Role.ADMIN,
+            permit_sha256=(OPERATIONAL_RUN_BINDING if host is not None
+                           else LAB_RUN_BINDING),
+            operator=actor.username,
+            revalidate=lambda: None,
+            supervisor_alive=host.alive if host is not None else None,
+            allow_gradients=self._lab.gradients,
+            # The administrative implicit lease takeover is intentionally
+            # restricted to Isolated Lab. Operational profiles must respect
+            # the currently authenticated manual operator ownership.
+            admin_override=actor.role is Role.ADMIN and not self._lab.independent_watchdog,
         )
 
     def _supervision_state(self, runner: ProfileRunner) -> dict:
-        """Live heartbeat snapshot for the H02-C watchdog (server-derived)."""
+        """Live H02/Operational watchdog heartbeat, derived only from G04/G07."""
         supervised = self._supervised
-        assert supervised is not None
+        if supervised is None and not (self._lab and self._lab.independent_watchdog):
+            raise ChamberSafetyError("No supervised physical operating context")
         state = runner.supervision_state()
         health = self._manager.health(self._chamber_id)
         status = self._manager.status(self._chamber_id)
@@ -291,7 +317,18 @@ class ProfileExecutionService:
         if sampled is not None and getattr(sampled, "tzinfo", None) is not None:
             age = (datetime.now(timezone.utc) - sampled).total_seconds()
         measured = status.measured_temperature_c
-        envelope = supervised.permit.data
+        if supervised is not None:
+            envelope = supervised.permit.data
+            readback_deadline = supervised.permit.watchdog.readback_deadline_s
+            margin = 0.0
+        else:
+            caps = self._manager.capabilities(self._chamber_id)
+            envelope = {
+                "temperature_min_c": caps.temperature_min_c,
+                "temperature_max_c": caps.temperature_max_c,
+            }
+            readback_deadline = operational_watchdog_limits().readback_deadline_s
+            margin = self._lab.measured_margin_c
         state.update({
             "generation": health.generation,
             "telemetry_age_s": age,
@@ -302,21 +339,26 @@ class ProfileExecutionService:
                 status.quality is ReadingQuality.GOOD and
                 status.operation_state is OperationState.STOPPED and
                 age is not None and
-                0 <= age <= supervised.permit.watchdog.readback_deadline_s
+                0 <= age <= readback_deadline
             ),
             "temp_ok": bool(
                 status.quality is ReadingQuality.GOOD and measured is not None and
-                float(envelope["temperature_min_c"]) <= measured <=
-                float(envelope["temperature_max_c"])),
+                float(envelope["temperature_min_c"]) - margin <= measured <=
+                float(envelope["temperature_max_c"]) + margin),
         })
         return state
 
     def _arm_supervision(self, runner: ProfileRunner,
                          snapshot: ExecutionSnapshot) -> None:
         runtime = self._supervised
-        assert runtime is not None and runtime.supervision is not None
-        runtime.supervision.arm_run(
-            run_id=snapshot.run_id, permit_sha256=runtime.permit.sha256,
+        host = (runtime.supervision if runtime is not None else
+                self._operational_supervisor() if self._operational_supervisor else None)
+        if host is None or not host.alive():
+            raise ChamberSafetyError("Independent watchdog unavailable before RUN_ARM")
+        binding = (runtime.permit.sha256 if runtime is not None
+                   else OPERATIONAL_RUN_BINDING)
+        host.arm_run(
+            run_id=snapshot.run_id, permit_sha256=binding,
             generation=snapshot.controller_generation, manager=self._manager,
             state_provider=lambda: self._supervision_state(runner),
             fault_notify=runner.notify_supervisor_fault,
@@ -355,7 +397,8 @@ class ProfileExecutionService:
         G06 and the optional H02 signed preflight still apply separately.
         """
         admin_override = (
-            self._lab is not None and actor.role is Role.ADMIN)
+            self._lab is not None and not self._lab.independent_watchdog and
+            actor.role is Role.ADMIN)
         if admin_override:
             # ADMIN may take over a foreign manual lease only AFTER proving
             # fresh STOPPED state. The role cannot adopt RUNNING or bypass an
@@ -443,6 +486,8 @@ class ProfileExecutionService:
               profile_id: str, revision: int) -> ExecutionSnapshot:
         """Authorize and prepare an exact saved revision; call off the event loop."""
         actor = self._preauthorize(session, csrf)
+        if not self._operational_watchdog_alive():
+            raise ChamberSafetyError("Operational independent watchdog unavailable")
         if not self._simulation and self._supervised is None and self._lab is None:
             raise ChamberSafetyError("Profile execution is disabled outside simulation")
         blocker = self._blocked_reason()
@@ -478,7 +523,8 @@ class ProfileExecutionService:
                     self._chamber_id, profile_id, revision=revision,
                     parameters=self._parameters,
                 ))
-                if supervised is not None and self._lab is None:
+                if supervised is not None and (
+                        self._lab is None or self._lab.independent_watchdog):
                     try:
                         self._arm_supervision(runner, snapshot)
                     except Exception:
@@ -531,7 +577,8 @@ class ProfileExecutionService:
         with self._lock:
             runner, started_at = self._runner, self._started_at
         may_run = actor.role in (Role.ADMIN, Role.OPERATOR)
-        admin_override = self._lab is not None and actor.role is Role.ADMIN
+        admin_override = (self._lab is not None and
+                          not self._lab.independent_watchdog and actor.role is Role.ADMIN)
         manual_available = True
         if self._manual_guard is not None and not admin_override:
             manual_owner, mine = self._manual_guard.ownership_view(
@@ -568,7 +615,8 @@ class ProfileExecutionService:
             blocker if blocker and not active else (runner.reason if runner is not None else ""),
             health.stop_latched, health.state, self._simulation,
             may_run and (admin_override or manual_available) and (
-                self._simulation or self._lab is not None or (
+                self._simulation or (
+                    self._lab is not None and self._operational_watchdog_alive()) or (
                     stop_confirmed and
                     self._supervised is not None and
                     self._supervised.supervision is not None and

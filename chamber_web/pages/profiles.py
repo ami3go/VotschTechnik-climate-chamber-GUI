@@ -78,7 +78,8 @@ def get_profile_execution_service() -> ProfileExecutionService:
                                       get_profile_manual_guard,
                                       profile_execution_is_simulation,
                                       profile_execution_lab,
-                                      profile_execution_supervision)
+                                      profile_execution_supervision,
+                                      get_supervision_host)
         editor = get_profile_editor_service()
         runtime = get_profile_runtime()
         security = get_security()
@@ -96,6 +97,7 @@ def get_profile_execution_service() -> ProfileExecutionService:
             supervised=profile_execution_supervision(),
             manual_guard=manual_guard,
             lab=profile_execution_lab(),
+            operational_supervisor=get_supervision_host,
         )
     return _execution_service
 
@@ -566,6 +568,10 @@ def profiles_page() -> None:
         refresh_library()
 
     def render_run(view: RunView) -> None:
+        from chamber_web.main import profile_execution_lab
+        mode = profile_execution_lab()
+        mode_name = ("supervised operational" if mode is not None and
+                     mode.independent_watchdog else "isolated lab")
         stop_confirm_button.set_visibility(view.supervised)
         stop_confirm_label.set_visibility(view.supervised)
         stop_confirm_label.set_text(
@@ -574,11 +580,11 @@ def profiles_page() -> None:
                  "STOP and emergency stop. Web STOP is not an emergency stop.")
         if view.admin_override:
             run_mode_label.set_text(
-                "ADMIN TAKEOVER · isolated lab · manual lease may be reassigned "
+                f"ADMIN TAKEOVER · {mode_name} · manual lease may be reassigned "
                 f"only after verified STOPPED · controller {view.controller_state}")
         elif view.lab:
             run_mode_label.set_text(
-                f"Physical chamber · isolated lab mode · controller {view.controller_state}" +
+                f"Physical chamber · {mode_name} mode · controller {view.controller_state}" +
                 (" · Run Loaded Revision re-verifies STOPPED and clears the "
                  "restart lock"
                  if view.stop_latched and view.controller_state == "UNKNOWN" else ""))
@@ -657,7 +663,8 @@ def profiles_page() -> None:
         success_message = (
             f"Started revision {revision} in simulation"
             if profile_execution_is_simulation() else
-            f"Started revision {revision} on the physical chamber (lab mode)"
+            f"Started revision {revision} on the physical chamber "
+            f"({'supervised operational' if profile_execution_lab().independent_watchdog else 'isolated lab'} mode)"
             if profile_execution_lab() is not None else
             f"Started revision {revision} under supervised H02 permit"
         )
@@ -691,6 +698,9 @@ def profiles_page() -> None:
         from chamber_web.main import profile_execution_is_simulation, profile_execution_lab
         ui.label("SIMULATION · Saved revisions run only against the simulated chamber"
                  if profile_execution_is_simulation() else
+                 "PHYSICAL CHAMBER · supervised operational mode · "
+                 "independent watchdog required for all profile runs"
+                 if profile_execution_lab() is not None and profile_execution_lab().independent_watchdog else
                  "PHYSICAL CHAMBER · isolated lab mode · saved revisions drive the real chamber"
                  if profile_execution_lab() is not None else
                  "PHYSICAL CHAMBER · profile runs disabled — enable isolated lab mode "
