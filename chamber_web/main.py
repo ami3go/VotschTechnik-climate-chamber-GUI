@@ -24,6 +24,8 @@ from .bootstrap import create_demo_control_services
 from .adapters.votsch import discover_votsch_chambers
 from .domain.chamber import ChamberSafetyError
 from .hil.chamber_settings import effective_hil_environment
+from .hil.emulator import (EmulatorAuthorization, check_emulator_deployment,
+                           emulator_authorization_from_env)
 from .hil.lab_mode import LabMode, lab_mode_from_env, operational_watchdog_limits
 from .hil.physical import check_hil_deployment, hil_authorization_from_env
 from .hil.pin import require_hil_pin
@@ -57,6 +59,15 @@ _LAB = lab_mode_from_env(_HIL_ENV, hil_present=_HIL is not None)
 if _LAB is not None and _LAB.independent_watchdog and deployment_policy.is_lab:
     raise ChamberSafetyError(
         "Operational Mode requires localhost or HTTPS LAN; plain HTTP lab mode is refused")
+# Signed bench-emulator enrollment. Deliberately mutually exclusive with the
+# physical HIL, isolated-lab and H02 permit policies. It never turns a real
+# chamber into a simulator: the driver must report the emulator model and the
+# signed serial must start with SIM.
+_EMULATOR: EmulatorAuthorization | None = emulator_authorization_from_env(os.environ)
+if _EMULATOR is not None and (_HIL is not None or _LAB is not None):
+    raise ChamberSafetyError(
+        "Emulator enrollment cannot be combined with physical HIL/lab mode")
+check_emulator_deployment(_EMULATOR, deployment_policy, os.environ)
 _security = get_security()
 # A factory credential is reported as a security warning, not a hardware
 # admission rule. Physical access still requires explicit HIL authorization,
@@ -72,10 +83,11 @@ if _HIL is not None:
             else "password" if _factory_password else "PIN",
         )
 _dashboard_service, _manual_service = create_demo_control_services(
-    _security, _HIL, simulated_slew_c_per_s=0.25,
-    gradient_writes=_LAB is not None and _LAB.gradients,
+    _security, _HIL, emulator=_EMULATOR, simulated_slew_c_per_s=0.25,
+    gradient_writes=(_LAB is not None and _LAB.gradients) or _EMULATOR is not None,
 )
-_MODE = ("Simulation" if _HIL is None else
+_MODE = ("Simulation" if _HIL is None and _EMULATOR is None else
+         "Bench emulator" if _EMULATOR is not None else
          "Physical operational" if _LAB is not None and _LAB.independent_watchdog else
          "Physical lab" if _LAB is not None else "Physical HIL")
 # Server-side supervised physical admission. A site-signed H02 permit enables
@@ -95,7 +107,12 @@ def _supervisor_alive() -> bool:
 
 def profile_execution_is_simulation() -> bool:
     """Trusted composition flag; browser input cannot enable profile execution."""
-    return _HIL is None
+    return _HIL is None and _EMULATOR is None
+
+
+def profile_execution_emulator() -> bool:
+    """True only for a signed bench-emulator launch; never browser-selectable."""
+    return _EMULATOR is not None
 
 
 def profile_execution_supervision() -> SupervisedProfileRuntime | None:
@@ -193,6 +210,7 @@ def _server_navigation_context() -> NavigationContext:
         role=actor.role.value if actor else None,
         permitted_routes=frozenset(routes) if actor else frozenset(),
         physical_hil=_HIL is not None,
+        emulator=_EMULATOR is not None,
     )
 
 
@@ -347,10 +365,14 @@ def dashboard() -> None:
                 with ui.row().classes("items-center no-wrap gap-3"):
                     with ui.column().classes("items-end gap-0"):
                         backend_label = ui.label(
-                            "● SIMULATION · UNKNOWN" if _HIL is None else "● PHYSICAL HIL · UNKNOWN"
+                            "● SIMULATION · UNKNOWN"
+                            if _HIL is None and _EMULATOR is None else
+                            "● BENCH EMULATOR · UNKNOWN"
+                            if _EMULATOR is not None else
+                            "● PHYSICAL HIL · UNKNOWN"
                         ).classes("demo-status")
                         backend_id_label = ui.label(
-                            f"Backend: {'fake' if _HIL is None else 'votsch'} · {service.chamber_id}"
+                            f"Backend: {'fake' if _HIL is None and _EMULATOR is None else 'votsch_emulator' if _EMULATOR is not None else 'votsch'} · {service.chamber_id}"
                         ).classes("text-xs text-grey-4")
                         clock_label = ui.label("").classes("text-xs text-grey-4")
                     ui.button("Sign out", icon="logout", on_click=logout).props("flat dense")
@@ -358,7 +380,12 @@ def dashboard() -> None:
             with ui.column().classes("dashboard gap-0").props('id="dashboard-content"'):
                 ui.label(
                     "SIMULATION ONLY — G04/G08-min authorized manual control. Physical hardware I/O is disabled."
-                    if _HIL is None else
+                    if _HIL is None and _EMULATOR is None else
+                    f"BENCH EMULATOR — signed enrollment for SN {_EMULATOR.expected_serial} at "
+                    f"{_EMULATOR.address}, software envelope "
+                    f"{_EMULATOR.temperature_min_c:g}–{_EMULATOR.temperature_max_c:g} °C. "
+                    "This is NOT a climate chamber and grants no physical or release approval."
+                    if _EMULATOR is not None else
                     f"SUPERVISED PHYSICAL HIL — Vötsch SN {_HIL.expected_serial} at {_HIL.address}, "
                     f"software envelope {_HIL.temperature_min_c:g}–{_HIL.temperature_max_c:g} °C. "
                     "A person must be at the chamber; its own controls and emergency stop remain primary."
@@ -384,24 +411,34 @@ def dashboard() -> None:
                             with ui.column().classes("chamber-identity-field gap-1"):
                                 ui.label("Chamber").classes("chamber-identity-caption")
                                 chamber_name_label = ui.label(
-                                    f"Simulator · {service.chamber_id}" if _HIL is None
-                                    else f"Vötsch chamber · {service.chamber_id}"
+                                    f"Simulator · {service.chamber_id}"
+                                    if _HIL is None and _EMULATOR is None else
+                                    f"Bench emulator · {service.chamber_id}"
+                                    if _EMULATOR is not None else
+                                    f"Vötsch chamber · {service.chamber_id}"
                                 ).classes("chamber-identity-value")
                             with ui.column().classes("chamber-identity-field gap-1"):
                                 ui.label("IP address").classes("chamber-identity-caption")
                                 chamber_ip_label = ui.label(
-                                    "Not applicable (simulation)" if _HIL is None
+                                    "Not applicable (simulation)"
+                                    if _HIL is None and _EMULATOR is None else
+                                    _EMULATOR.address if _EMULATOR is not None
                                     else _HIL.address
                                 ).classes("chamber-identity-value")
                             with ui.column().classes("chamber-identity-field gap-1"):
                                 ui.label("Serial number").classes("chamber-identity-caption")
                                 chamber_serial_label = ui.label(
-                                    "Not applicable (simulation)" if _HIL is None
+                                    "Not applicable (simulation)"
+                                    if _HIL is None and _EMULATOR is None else
+                                    _EMULATOR.expected_serial if _EMULATOR is not None
                                     else _HIL.expected_serial
                                 ).classes("chamber-identity-value")
                         chamber_identity_status_label = ui.label(
-                            "Simulation — no physical chamber connected" if _HIL is None
-                            else "Configured identity — not yet verified"
+                            "Simulation — no physical chamber connected"
+                            if _HIL is None and _EMULATOR is None else
+                            "Bench emulator — configured identity, not yet verified"
+                            if _EMULATOR is not None else
+                            "Configured identity — not yet verified"
                         ).classes("chamber-identity-status")
                         with ui.element("div").classes("metric-row"):
                             with ui.column().classes("metric gap-1"):
@@ -548,8 +585,12 @@ def dashboard() -> None:
         capability = project_capabilities(view)
         identity = view.identity
         chamber_details = project_chamber_identity(
-            view, configured_address=_HIL.address if _HIL is not None else None,
-            expected_serial=_HIL.expected_serial if _HIL is not None else None,
+            view,
+            configured_address=(_HIL.address if _HIL is not None else
+                                _EMULATOR.address if _EMULATOR is not None else None),
+            expected_serial=(_HIL.expected_serial if _HIL is not None else
+                             _EMULATOR.expected_serial if _EMULATOR is not None else None),
+            emulator=_EMULATOR is not None,
         )
         chamber_name_label.set_text(chamber_details.chamber)
         chamber_ip_label.set_text(chamber_details.ip_address)
@@ -570,6 +611,9 @@ def dashboard() -> None:
             "SIMULATED manual control — requires operator lease and fresh readback; "
             "physical device writes disabled"
             if identity and identity.is_simulation and view.capabilities
+            else "BENCH EMULATOR manual control — requires operator lease and fresh "
+            "device readback; NOT a climate chamber"
+            if identity and identity.is_emulator and view.capabilities
             else "PHYSICAL HIL manual control — requires operator lease and fresh device readback"
             if identity and _HIL is not None and view.capabilities
             else capability.controls_locked_reason)
@@ -588,7 +632,8 @@ def dashboard() -> None:
             "id": str(index), "time": s.time_utc.astimezone().strftime("%H:%M:%S"),
             "measured": f"{s.measured_c:.1f}",
             "target": f"{s.target_c:.1f}" if s.target_c is not None else "—",
-            "status": "SIMULATED" if identity is None or identity.is_simulation else "PHYSICAL",
+            "status": ("SIMULATED" if identity is None or identity.is_simulation
+                       else "EMULATOR" if identity.is_emulator else "PHYSICAL"),
         } for index, s in enumerate(recent)])
 
     ui.timer(1.0, refresh, immediate=False)
@@ -1032,9 +1077,13 @@ def run() -> None:
     if deployment_policy.is_lan:
         options = {"ssl_certfile": str(deployment_policy.certfile),
                    "ssl_keyfile": str(deployment_policy.keyfile)}
-    ui.run(title="Climate Chamber — server simulation" if _HIL is None
-           else "Climate Chamber — PHYSICAL (operational mode)" if _LAB is not None and _LAB.independent_watchdog
-            else "Climate Chamber — PHYSICAL (isolated lab mode)" if _LAB is not None
+    ui.run(title="Climate Chamber — server simulation"
+           if _HIL is None and _EMULATOR is None
+           else "Climate Chamber — BENCH EMULATOR"
+           if _EMULATOR is not None
+           else "Climate Chamber — PHYSICAL (operational mode)"
+           if _LAB is not None and _LAB.independent_watchdog
+           else "Climate Chamber — PHYSICAL (isolated lab mode)" if _LAB is not None
            else "Climate Chamber — SUPERVISED PHYSICAL HIL",
            host=deployment_policy.bind_host, port=deployment_policy.port,
            reload=False, show=False, storage_secret=cookie_secret(),

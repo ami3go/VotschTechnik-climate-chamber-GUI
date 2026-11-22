@@ -34,24 +34,39 @@ def _optional_float(value) -> float | None:
 class VotschBackend:
     def __init__(self, chamber_id: str, ip: str, *, mock_driver_factory: Callable | None = None,
                  hil=None, hil_driver_factory: Callable | None = None,
+                 emulator=None, emulator_driver_factory: Callable | None = None,
                  gradient_writes: bool = False):
-        if mock_driver_factory is not None and hil is not None:
-            raise ChamberSafetyError("A backend is either simulated or physical HIL, never both")
+        if mock_driver_factory is not None and (hil is not None or emulator is not None):
+            raise ChamberSafetyError(
+                "A backend is either simulated or a network device, never both")
+        if hil is not None and emulator is not None:
+            raise ChamberSafetyError(
+                "A backend is either physical HIL or a bench emulator, never both")
         if hil is not None and (hil.chamber_id != chamber_id or hil.address != ip):
             raise ChamberSafetyError("HIL authorization does not match this chamber/endpoint")
+        if emulator is not None and (
+                emulator.chamber_id != chamber_id or emulator.address != ip):
+            raise ChamberSafetyError(
+                "Emulator enrollment does not match this chamber/endpoint")
         if hil is None and hil_driver_factory is not None:
             raise ChamberSafetyError("HIL driver factory requires a HIL authorization")
-        if gradient_writes and hil is None:
-            raise ChamberSafetyError("Gradient writes require a HIL authorization")
+        if emulator is None and emulator_driver_factory is not None:
+            raise ChamberSafetyError(
+                "Emulator driver factory requires an emulator enrollment")
+        if gradient_writes and hil is None and emulator is None:
+            raise ChamberSafetyError(
+                "Gradient writes require a HIL or emulator authorization")
         self._chamber_id = chamber_id
         self._ip = ip
         self._factory = mock_driver_factory
         self._hil = hil
         self._hil_factory = hil_driver_factory
+        self._emulator = emulator
+        self._emulator_factory = emulator_driver_factory
         self._driver = None
         self._identity: ChamberIdentity | None = None
         self._ramp: tuple[float, float] | None = None
-        # Isolated-lab mode only: profile gradients write 11068/11072.
+        # Isolated-lab or bench-emulator mode: profile gradients write 11068/11072.
         self._gradient_writes = bool(gradient_writes)
         self._digital_outputs: tuple[tuple[int, str], ...] = ()
 
@@ -65,23 +80,46 @@ class VotschBackend:
         # Only an explicit launch-time HIL authorization enables physical I/O.
         return self._hil is not None
 
+    @property
+    def emulator_authorized(self) -> bool:
+        # A signed bench enrollment selects a real driver/TCP path, but the
+        # identity remains non-physical and is labelled as an emulator.
+        return self._emulator is not None
+
     def connect(self) -> None:
         if self._factory is not None:
             self._driver = self._factory()
             return
-        if self._hil is None:
-            # Hardware requires an explicit supervised HIL authorization.
-            raise ChamberSafetyError("Physical Vötsch I/O DISABLED without HIL authorization")
-        factory = self._hil_factory or self._default_hil_driver
+        if self._hil is not None:
+            factory = self._hil_factory or self._default_hil_driver
+            expected_serial = self._hil.expected_serial
+            expected_model = None
+            backend_id = "votsch"
+            is_emulator = False
+        elif self._emulator is not None:
+            factory = self._emulator_factory or self._default_emulator_driver
+            expected_serial = self._emulator.expected_serial
+            expected_model = self._emulator.expected_model
+            backend_id = "votsch_emulator"
+            is_emulator = True
+        else:
+            # Hardware requires an explicit supervised HIL or bench-emulator
+            # authorization. No default path can open a chamber socket.
+            raise ChamberSafetyError(
+                "Physical Vötsch I/O DISABLED without HIL or emulator authorization")
         driver = factory()
         try:
             serial = str(driver.serial_number).strip()
-            if serial != self._hil.expected_serial:
+            if serial != expected_serial:
                 raise ChamberIdentityMismatch(
-                    "Connected chamber serial does not match CHAMBER_HIL_EXPECTED_SERIAL")
+                    "Connected device serial does not match the enrollment")
+            model = str(driver.test_system_type).strip()
+            if expected_model is not None and model != expected_model:
+                raise ChamberIdentityMismatch(
+                    "Connected device model is not the enrolled bench emulator")
             self._identity = ChamberIdentity(
-                self._chamber_id, "votsch", "Vötsch", str(driver.test_system_type).strip(),
-                serial, is_simulation=False)
+                self._chamber_id, backend_id, "Vötsch", model,
+                serial, is_simulation=False, is_emulator=is_emulator)
             # Read-only: the 11002 setpoint readback follows these device ramps.
             ramp = (float(driver.gradient_up), float(driver.gradient_down))
             if not all(math.isfinite(rate) and 0 < rate <= 60 for rate in ramp):
@@ -119,6 +157,13 @@ class VotschBackend:
         return ClimateChamber(self._ip, self._hil.temperature_min_c,
                               self._hil.temperature_max_c, timeout=2)
 
+    def _default_emulator_driver(self):
+        from VotschTechnikClimateChamber import ClimateChamber
+        # The bench emulator is a real TCP device; the driver remains the only
+        # protocol owner. Limits are the signed enrollment envelope.
+        return ClimateChamber(self._ip, self._emulator.temperature_min_c,
+                              self._emulator.temperature_max_c, timeout=2)
+
     def disconnect(self) -> None:
         if self._driver is not None:
             try:
@@ -135,7 +180,7 @@ class VotschBackend:
 
     def identify(self) -> ChamberIdentity:
         driver = self._require()
-        if self._hil is not None:
+        if self._hil is not None or self._emulator is not None:
             return self._identity
         return ChamberIdentity(self._chamber_id, "votsch", "Vötsch",
                                str(driver.test_system_type), str(driver.serial_number),
@@ -143,11 +188,12 @@ class VotschBackend:
 
     def capabilities(self) -> ChamberCapabilities:
         # Mock limits are for contract tests ONLY, not a physical certification.
-        if self._hil is not None:
-            # Software envelope from the HIL authorization; NOT a chamber certification.
+        authorization = self._hil if self._hil is not None else self._emulator
+        if authorization is not None:
+            # Software envelope from the signed authorization; NOT a model certification.
             writes = self._gradient_writes
-            return ChamberCapabilities(self._hil.temperature_min_c,
-                                       self._hil.temperature_max_c, True, True, True,
+            return ChamberCapabilities(authorization.temperature_min_c,
+                                       authorization.temperature_max_c, True, True, True,
                                        supports_ramp_up=writes, supports_ramp_down=writes,
                                        ramp_up_range_c_per_min=(
                                            GRADIENT_UP_RANGE_C_PER_MIN if writes else None),
@@ -161,9 +207,11 @@ class VotschBackend:
 
     def read_status(self) -> ChamberSnapshot:
         driver = self._require()
-        if self._hil is not None and str(driver.serial_number).strip() != self._identity.serial_number:
+        if (self._hil is not None or self._emulator is not None) and (
+                str(driver.serial_number).strip() != self._identity.serial_number):
             # Re-verified on every read: an endpoint swap must never be controlled.
-            raise ChamberIdentityMismatch("Chamber serial changed during the HIL session")
+            raise ChamberIdentityMismatch(
+                "Device serial changed during the authorized session")
         return ChamberSnapshot(
             self.identify(), float(driver.temperature_measured),
             float(driver.temperature_set_point),
@@ -205,11 +253,11 @@ class VotschBackend:
         driver.set_digital_output(number, state)
 
     def _require_verified_output(self, number: int) -> None:
-        if self._hil is None:
+        if self._hil is None and self._emulator is None:
             return
         if number not in {item[0] for item in self._digital_outputs}:
             raise UnsupportedCapability(
-                "Digital output is not verified on this physical chamber")
+                "Digital output is not verified on this device")
 
     def _set_gradient(self, direction: str, rate_c_per_min: float) -> None:
         if not self._gradient_writes:

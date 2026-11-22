@@ -77,6 +77,7 @@ def get_profile_execution_service() -> ProfileExecutionService:
         from chamber_web.main import (get_dashboard_service,
                                       get_profile_manual_guard,
                                       profile_execution_is_simulation,
+                                      profile_execution_emulator,
                                       profile_execution_lab,
                                       profile_execution_supervision,
                                       get_supervision_host)
@@ -98,6 +99,7 @@ def get_profile_execution_service() -> ProfileExecutionService:
             manual_guard=manual_guard,
             lab=profile_execution_lab(),
             operational_supervisor=get_supervision_host,
+            emulator=profile_execution_emulator(),
         )
     return _execution_service
 
@@ -659,10 +661,14 @@ def profiles_page() -> None:
                       color="warning")
             return
         profile_id, revision = draft.profile_id, draft.viewed_revision
-        from chamber_web.main import profile_execution_is_simulation, profile_execution_lab
+        from chamber_web.main import (profile_execution_emulator,
+                                      profile_execution_is_simulation,
+                                      profile_execution_lab)
         success_message = (
             f"Started revision {revision} in simulation"
             if profile_execution_is_simulation() else
+            f"Started revision {revision} on the bench emulator (not a chamber)"
+            if profile_execution_emulator() else
             f"Started revision {revision} on the physical chamber "
             f"({'supervised operational' if profile_execution_lab().independent_watchdog else 'isolated lab'} mode)"
             if profile_execution_lab() is not None else
@@ -695,9 +701,13 @@ def profiles_page() -> None:
     from chamber_web.ui_pages import page_frame
     with page_frame("/profiles", get_dashboard_service(), title="Profiles"):
         ui.label("Persistent Profiles / Revisions").classes("panel-heading")
-        from chamber_web.main import profile_execution_is_simulation, profile_execution_lab
+        from chamber_web.main import (profile_execution_emulator,
+                                      profile_execution_is_simulation,
+                                      profile_execution_lab)
         ui.label("SIMULATION · Saved revisions run only against the simulated chamber"
                  if profile_execution_is_simulation() else
+                 "BENCH EMULATOR · signed enrollment · NOT a climate chamber"
+                 if profile_execution_emulator() else
                  "PHYSICAL CHAMBER · supervised operational mode · "
                  "independent watchdog required for all profile runs"
                  if profile_execution_lab() is not None and profile_execution_lab().independent_watchdog else

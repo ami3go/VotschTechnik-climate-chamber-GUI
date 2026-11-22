@@ -243,10 +243,16 @@ class ProfileRunner:
         sink: EventSink | None = None,
         clock: Clock | None = None,
         supervised: SupervisedRun | None = None,
+        emulator: bool = False,
     ):
         ids = manager.configured_ids()
         if len(ids) != 1:
             raise ChamberSafetyError("Only a single chamber runner is supported")
+        if type(emulator) is not bool:
+            raise ValueError("Emulator mode must be boolean")
+        if emulator and supervised is not None:
+            raise ChamberSafetyError(
+                "An emulator run cannot carry a physical supervised context")
         if supervised is not None and (
                 not isinstance(supervised, SupervisedRun) or
                 not isinstance(supervised.permit_sha256, str) or
@@ -266,6 +272,7 @@ class ProfileRunner:
         self._sink = sink
         self._clock = clock or RealClock()
         self._supervised = supervised
+        self._emulator = emulator
         self._mutex = threading.RLock()
         self._advance_lock = threading.Lock()
         self._stop_guard = threading.Lock()
@@ -470,7 +477,8 @@ class ProfileRunner:
             health = self._manager.health(self._id)
             status = self._manager.status(self._id)
             if self._supervised is None:
-                identity_allowed = status.identity.is_simulation
+                identity_allowed = status.identity.is_simulation or (
+                    self._emulator and status.identity.is_emulator)
             else:
                 # Supervised runs are physical only, on the exact authorized
                 # Vötsch backend with a reported serial.

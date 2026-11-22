@@ -191,14 +191,22 @@ class ChamberController:
         return (getattr(self._backend, "simulation_only", False) is not True and
                 getattr(self._backend, "physical_authorized", False) is True)
 
+    def _device_authorized(self) -> bool:
+        """A signed physical HIL authorization or a signed bench emulator."""
+        return self._physical_authorized() or (
+            getattr(self._backend, "simulation_only", False) is not True and
+            getattr(self._backend, "emulator_authorized", False) is True)
+
     def connect(self, chamber_id: str) -> None:
         self._check_id(chamber_id)
         with self._state_lock:
             # Pre-connect marker is adapter-supplied, fail-closed, vendor-neutral:
-            # a mock, or a backend carrying an explicit supervised HIL authorization.
+            # a mock, or a backend carrying an explicit supervised HIL or
+            # signed bench-emulator authorization.
             if not (getattr(self._backend, "simulation_only", False) is True or
-                    self._physical_authorized()):
-                raise ChamberSafetyError("Physical hardware I/O DISABLED without HIL authorization")
+                    self._device_authorized()):
+                raise ChamberSafetyError(
+                    "Physical hardware I/O DISABLED without HIL or emulator authorization")
             if self._connected:
                 return
             if self._closed or self._thread is not None:
@@ -214,10 +222,16 @@ class ChamberController:
         def initialize():
             self._backend.connect()
             identity = self._backend.identify()
+            emulator_authorized = (
+                getattr(self._backend, "emulator_authorized", False) is True)
             if identity.chamber_id != self.chamber_id or not (
                     identity.is_simulation or
-                    (self._physical_authorized() and identity.serial_number)):
+                    (self._device_authorized() and identity.serial_number)):
                 raise ChamberSafetyError("Device identity mismatch / live hardware DISABLED")
+            if self._physical_authorized() and identity.is_emulator:
+                raise ChamberSafetyError("Physical authorization cannot admit an emulator")
+            if emulator_authorized and not identity.is_emulator:
+                raise ChamberSafetyError("Emulator authorization requires an emulator identity")
             caps = self._backend.capabilities()
             try:
                 snapshot = self._backend.read_status()

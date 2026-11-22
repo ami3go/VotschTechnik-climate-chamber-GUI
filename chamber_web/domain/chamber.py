@@ -75,9 +75,18 @@ class ChamberIdentity:
     model: str
     serial_number: str | None
     is_simulation: bool = False
+    # Bench network emulator: a real driver/TCP path, but never a physical
+    # chamber. Mutually exclusive with is_simulation; both are false for a
+    # supervised physical device.
+    is_emulator: bool = False
 
     def __post_init__(self) -> None:
         validate_chamber_id(self.chamber_id)
+        if type(self.is_simulation) is not bool or type(self.is_emulator) is not bool:
+            raise ChamberSafetyError("Device class flags must be boolean")
+        if self.is_simulation and self.is_emulator:
+            raise ChamberSafetyError(
+                "A device cannot be both an in-process simulation and a network emulator")
 
 
 @dataclass(frozen=True)

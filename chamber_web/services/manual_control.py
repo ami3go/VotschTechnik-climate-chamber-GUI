@@ -112,12 +112,18 @@ class ManualControlService:
     def __init__(self, manager: ChamberManager, dashboard: DashboardService,
                  authorized: AuthorizedChamber, security: SecurityStore,
                  chamber_id: str, *, max_sample_age_s: float = 5.0,
-                 physical_hil=None):
+                 physical_hil=None, emulator=None):
         self.chamber_id = validate_chamber_id(chamber_id)
         if physical_hil is not None and physical_hil.chamber_id != self.chamber_id:
             raise ChamberSafetyError("HIL authorization is for a different chamber")
-        # Explicit launch-time supervised HIL authorization; None = simulation only.
+        if emulator is not None and emulator.chamber_id != self.chamber_id:
+            raise ChamberSafetyError("Emulator enrollment is for a different chamber")
+        if physical_hil is not None and emulator is not None:
+            raise ChamberSafetyError(
+                "A manual service is either physical HIL or a bench emulator")
+        # Explicit launch-time supervised HIL/emulator authorization; None = simulation.
         self._hil = physical_hil
+        self._emulator = emulator
         if manager.configured_ids() != (self.chamber_id,) or dashboard.chamber_id != self.chamber_id:
             raise ChamberSafetyError("Manual service wrong device identity")
         if not 0 < max_sample_age_s <= 60 or not math.isfinite(max_sample_age_s):
@@ -138,11 +144,15 @@ class ManualControlService:
             raise ChamberSafetyError("Wrong chamber")
 
     def _controllable(self, identity) -> bool:
-        """A simulator, or exactly the HIL-authorized physical chamber."""
+        """A simulator, exactly the HIL-authorized chamber, or the enrolled emulator."""
         if identity is None or identity.chamber_id != self.chamber_id:
             return False
         if identity.is_simulation:
-            return self._hil is None
+            return self._hil is None and self._emulator is None
+        if identity.is_emulator:
+            return (self._emulator is not None and
+                    identity.backend_id == "votsch_emulator" and
+                    identity.serial_number == self._emulator.expected_serial)
         return (self._hil is not None and identity.backend_id == "votsch" and
                 identity.serial_number == self._hil.expected_serial)
 
@@ -159,9 +169,9 @@ class ManualControlService:
         dashboard = self._dashboard.view()
         health = self._manager.health(chamber_id)
         owner, mine = self._authorized.ownership_view(session, chamber_id)
-        simulator = self._controllable(dashboard.identity)
-        good = simulator and dashboard.quality is ReadingQuality.GOOD and health.connected
-        if not simulator:
+        controllable = self._controllable(dashboard.identity)
+        good = controllable and dashboard.quality is ReadingQuality.GOOD and health.connected
+        if not controllable:
             # Do not display a live identity as controllable or confirmed.
             good = False
         caps = dashboard.capabilities
@@ -178,7 +188,7 @@ class ManualControlService:
         allowed = actor.role in (Role.ADMIN, Role.OPERATOR)
         presets = (tuple(t for t in (0.0, 23.0, 40.0)
                          if caps.temperature_min_c <= t <= caps.temperature_max_c)
-                   if bounded and simulator else ())
+                   if bounded and controllable else ())
         with self._lock:
             last = self._last
         # Normal STOP already has a fresh, authoritative VERIFIED_STOPPED
@@ -495,6 +505,8 @@ class ManualControlService:
                                 stop_message if action == "stop" else
                                 ("Confirmed by authoritative physical device readback"
                                  if self._hil is not None else
+                                 "Confirmed by authoritative emulator device readback"
+                                 if self._emulator is not None else
                                  "Confirmed by simulated authoritative device readback")
                                 if action in ("start", "set_temperature", "stop", "reconcile")
                                 else "Server operator-lease transition confirmed")

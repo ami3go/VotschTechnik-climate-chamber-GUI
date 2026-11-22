@@ -31,7 +31,8 @@ def project_telemetry(view: DashboardView) -> TelemetryDisplay:
         good = False
     identity = view.identity
     mode = ("IDENTITY UNVERIFIED" if identity is None else
-            "SIMULATION" if identity.is_simulation else "PHYSICAL HIL")
+            "SIMULATION" if identity.is_simulation else
+            "BENCH EMULATOR" if identity.is_emulator else "PHYSICAL HIL")
     identity_text = (
         f"{identity.manufacturer} {identity.model} · {identity.backend_id} · {identity.chamber_id}"
         if identity else f"Identity unverified · {view.chamber_id}"
@@ -70,7 +71,7 @@ class ChamberIdentityDisplay:
 
 def project_chamber_identity(
     view: DashboardView, *, configured_address: str | None = None,
-    expected_serial: str | None = None,
+    expected_serial: str | None = None, emulator: bool = False,
 ) -> ChamberIdentityDisplay:
     """Display server-owned configuration without inventing verified hardware.
 
@@ -89,10 +90,12 @@ def project_chamber_identity(
         )
 
     identity = view.identity
+    expected_backend = "votsch_emulator" if emulator else "votsch"
     matching = (
         identity is not None
         and not identity.is_simulation
-        and identity.backend_id == "votsch"
+        and identity.is_emulator is emulator
+        and identity.backend_id == expected_backend
         and identity.chamber_id == view.chamber_id
         and bool(expected_serial)
         and identity.serial_number == expected_serial
@@ -106,11 +109,15 @@ def project_chamber_identity(
     if matching:
         chamber = f"{identity.manufacturer} {identity.model} · {view.chamber_id}"
     else:
-        chamber = f"Vötsch chamber · {view.chamber_id}"
+        chamber = (f"Bench emulator · {view.chamber_id}" if emulator
+                   else f"Vötsch chamber · {view.chamber_id}")
     status = (
-        "Live identity verified" if verified
+        "Live emulator identity verified (not a chamber)" if verified and emulator
+        else "Live identity verified" if verified
         else "Identity last seen — live status unverified"
-        if matching else "Configured identity — not yet verified"
+        if matching else
+        "Bench emulator — configured identity, not yet verified" if emulator
+        else "Configured identity — not yet verified"
     )
     return ChamberIdentityDisplay(
         chamber=chamber,

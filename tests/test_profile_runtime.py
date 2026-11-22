@@ -148,6 +148,7 @@ class ProfileRunRuntimeTests(unittest.TestCase):
         stub_main = ModuleType("chamber_web.main")
         stub_main.get_dashboard_service = lambda: SimpleNamespace(manager=self.manager)
         stub_main.profile_execution_is_simulation = lambda: True
+        stub_main.profile_execution_emulator = lambda: False
         stub_main.profile_execution_supervision = lambda: None
         stub_main.profile_execution_lab = lambda: None
         stub_main.get_supervision_host = lambda: None

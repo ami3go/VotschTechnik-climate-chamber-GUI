@@ -87,6 +87,7 @@ class RunView:
     stop_procedure_confirmed: bool = False
     lab: bool = False
     admin_override: bool = False
+    emulator: bool = False
 
 
 class ProfileExecutionService:
@@ -99,18 +100,22 @@ class ProfileExecutionService:
                  supervised: SupervisedProfileRuntime | None = None,
                  manual_guard: AuthorizedChamber | None = None,
                  lab: LabMode | None = None,
-                 operational_supervisor: Callable[[], SupervisionHost | None] | None = None):
+                 operational_supervisor: Callable[[], SupervisionHost | None] | None = None,
+                 emulator: bool = False):
         if chamber_id not in manager.configured_ids():
             raise ChamberSafetyError("Profile execution chamber is not configured")
-        if type(simulation) is not bool:
-            raise ValueError("Trusted simulation mode must be boolean")
-        if supervised is not None and simulation:
+        if type(simulation) is not bool or type(emulator) is not bool:
+            raise ValueError("Trusted simulation/emulator mode must be boolean")
+        if emulator and simulation:
+            raise ValueError("Emulator mode requires a network device, not simulation")
+        if supervised is not None and (simulation or emulator):
             raise ValueError("Supervised physical configuration requires physical mode")
-        if lab is not None and (simulation or supervised is not None):
+        if lab is not None and (simulation or emulator or supervised is not None):
             raise ValueError("Lab mode requires physical mode without an H02 permit")
         self._supervised = supervised
         self._lab = lab
         self._operational_supervisor = operational_supervisor
+        self._emulator = emulator
         self._manager = manager
         self._store = store
         self._security = security
@@ -488,7 +493,8 @@ class ProfileExecutionService:
         actor = self._preauthorize(session, csrf)
         if not self._operational_watchdog_alive():
             raise ChamberSafetyError("Operational independent watchdog unavailable")
-        if not self._simulation and self._supervised is None and self._lab is None:
+        if (not self._simulation and not self._emulator and
+                self._supervised is None and self._lab is None):
             raise ChamberSafetyError("Profile execution is disabled outside simulation")
         blocker = self._blocked_reason()
         if blocker:
@@ -510,13 +516,14 @@ class ProfileExecutionService:
             self._prepare_operator_profile_start(session, csrf, actor)
             # Physical admission still enforces signed, revision-bound H02
             # permit, live independent watchdog, witness and site envelopes.
-            supervised = (None if self._simulation else
+            supervised = (None if self._simulation or self._emulator else
                           self._admit_lab(actor) if self._lab is not None else
                           self._admit_supervised(actor, profile_id, revision))
             runner = ProfileRunner(
                 self._manager, self._store, authorize=self._authorize,
                 sink=self._sink_factory() if self._sink_factory else None,
                 clock=self._clock, supervised=supervised,
+                emulator=self._emulator,
             )
             try:
                 snapshot = self._as_caller(session, csrf, lambda: runner.start(
@@ -615,7 +622,7 @@ class ProfileExecutionService:
             blocker if blocker and not active else (runner.reason if runner is not None else ""),
             health.stop_latched, health.state, self._simulation,
             may_run and (admin_override or manual_available) and (
-                self._simulation or (
+                self._simulation or self._emulator or (
                     self._lab is not None and self._operational_watchdog_alive()) or (
                     stop_confirmed and
                     self._supervised is not None and
@@ -633,6 +640,7 @@ class ProfileExecutionService:
             stop_confirmed,
             self._lab is not None,
             admin_override,
+            self._emulator,
         )
 
     async def shutdown(self) -> None:

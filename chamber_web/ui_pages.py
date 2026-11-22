@@ -37,12 +37,17 @@ class NavigationContext:
     permitted_routes: frozenset[str] = frozenset(
         {"/", "/profiles", "/history", "/logs", "/settings"}
     )
-    # Set only by the server composition root from its launch-time HIL authorization.
+    # Set only by the server composition root from its launch-time authorization.
     physical_hil: bool = False
+    emulator: bool = False
 
     @property
     def mode_label(self) -> str:
-        return "supervised physical HIL" if self.physical_hil else "simulation only"
+        if self.physical_hil:
+            return "supervised physical HIL"
+        if self.emulator:
+            return "bench emulator (not a chamber)"
+        return "simulation only"
 
     @property
     def label(self) -> str:
@@ -91,9 +96,12 @@ def render_navigation(active: str, *, context: NavigationContext | None = None) 
         ).classes("nav-active" if destination == active else ""):
             ui.label(title).classes("nav-text")
     ui.label("Climate Chamber | G02-B\n" + (
-        "Supervised physical HIL" if context.physical_hil else "Server-side simulation only"
+        "Supervised physical HIL" if context.physical_hil
+        else "Bench emulator (not a chamber)" if context.emulator
+        else "Server-side simulation only"
     )).classes("side-note whitespace-pre-line").props(
         'aria-label="Physical chamber status"' if context.physical_hil
+        else 'aria-label="Bench emulator status"' if context.emulator
         else 'aria-label="Simulated chamber status"')
     ui.label(context.label).classes("side-note access-label")
 
