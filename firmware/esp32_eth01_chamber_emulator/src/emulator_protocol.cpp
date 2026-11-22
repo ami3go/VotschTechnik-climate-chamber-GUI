@@ -47,6 +47,33 @@ bool output_number(const std::string &text, size_t &number) {
 }
 } // namespace
 
+bool valid_static_network(const std::array<uint8_t, 4>& ip,
+                          const std::array<uint8_t, 4>& mask,
+                          const std::array<uint8_t, 4>& gateway,
+                          const std::array<uint8_t, 4>& dns) {
+    auto numeric = [](const std::array<uint8_t, 4>& octets) {
+        return (uint32_t(octets[0]) << 24) | (uint32_t(octets[1]) << 16) |
+               (uint32_t(octets[2]) << 8) | uint32_t(octets[3]);
+    };
+    auto unicast = [](uint32_t address) {
+        const uint32_t first = address >> 24;
+        return first > 0 && first < 224 && first != 127 &&
+               (address & 0xFFFF0000UL) != 0xA9FE0000UL;
+    };
+    const uint32_t i = numeric(ip), m = numeric(mask), g = numeric(gateway);
+    const uint32_t d = numeric(dns), inverse = ~m;
+    if (!m || m == 0xFFFFFFFFUL || (inverse & (inverse + 1UL)) ||
+        !unicast(i)) return false;
+    const uint32_t host = i & inverse;
+    if (!host || host == inverse) return false; // subnet/broadcast address
+    if (g) {
+        if (!unicast(g) || (g & m) != (i & m) || g == i) return false;
+        const uint32_t gw_host = g & inverse;
+        if (!gw_host || gw_host == inverse) return false;
+    }
+    return !d || unicast(d);
+}
+
 bool Chamber::set_temperature(double value) {
     if (!std::isfinite(value) || value < min_temp || value > max_temp) return false;
     target = value;

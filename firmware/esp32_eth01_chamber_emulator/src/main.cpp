@@ -78,9 +78,13 @@ bool valid_serial(const String &value) {
         if (!std::isalnum(static_cast<unsigned char>(value[i]))) return false;
     return true;
 }
-bool valid_ip(const String &value) {
-    IPAddress parsed;
-    return parsed.fromString(value);
+std::array<uint8_t, 4> octets(const IPAddress &ip) {
+    return {{ip[0], ip[1], ip[2], ip[3]}};
+}
+bool valid_static_configuration(const IPAddress &ip, const IPAddress &mask,
+                                const IPAddress &gateway, const IPAddress &dns) {
+    return emu::valid_static_network(octets(ip), octets(mask),
+                                     octets(gateway), octets(dns));
 }
 
 void handle_uart(String command) {
@@ -151,8 +155,12 @@ void handle_uart(String command) {
         char ip[20]{}, mask[20]{}, gw[20]{}, dns[20]{}, extra[2]{};
         int count = std::sscanf(command.c_str(), "net static %19s %19s %19s %19s %1s",
                                 ip, mask, gw, dns, extra);
-        if (count != 4 || !valid_ip(ip) || !valid_ip(mask) || !valid_ip(gw) || !valid_ip(dns)) {
-            Serial.println("ERR usage: net static <ip> <mask> <gateway> <dns>");
+        IPAddress parsed_ip, parsed_mask, parsed_gw, parsed_dns;
+        if (count != 4 || !parsed_ip.fromString(ip) ||
+            !parsed_mask.fromString(mask) || !parsed_gw.fromString(gw) ||
+            !parsed_dns.fromString(dns) ||
+            !valid_static_configuration(parsed_ip, parsed_mask, parsed_gw, parsed_dns)) {
+            Serial.println("ERR static network: valid unicast host, contiguous mask, same-subnet gateway, DNS");
             return;
         }
         prefs.putString("ip", ip); prefs.putString("mask", mask);
@@ -187,6 +195,10 @@ void apply_network_config() {
         !gw.fromString(prefs.getString("gw")) ||
         !dns.fromString(prefs.getString("dns"))) {
         Serial.println("INVALID NVS static IP; using DHCP; reset with 'net dhcp'");
+        return;
+    }
+    if (!valid_static_configuration(ip, mask, gw, dns)) {
+        Serial.println("INVALID NVS network: mask/host/gateway; using DHCP; reset with 'net dhcp'");
         return;
     }
     if (!ETH.config(ip, gw, mask, dns)) Serial.println("ETH.config failed (check wiring)");

@@ -9,6 +9,22 @@ static std::string cmd(std::string code, std::string args = "") {
     return code + "\xB6" "1" + (args.empty() ? "" : std::string("\xB6") + args) + "\r";
 }
 int main() {
+    // No Ethernet hardware: validate static network policy on the exact
+    // portable C++ core used by the ESP32 firmware.
+    const std::array<uint8_t, 4> ip{{192, 168, 42, 42}};
+    const std::array<uint8_t, 4> mask{{255, 255, 255, 0}};
+    const std::array<uint8_t, 4> gateway{{192, 168, 42, 1}};
+    const std::array<uint8_t, 4> dns{{8, 8, 8, 8}};
+    const std::array<uint8_t, 4> zero{{0, 0, 0, 0}};
+    assert(valid_static_network(ip, mask, gateway, dns));
+    assert(valid_static_network(ip, mask, zero, zero));
+    assert(!valid_static_network(ip, {{255, 0, 255, 0}}, gateway, dns));
+    assert(!valid_static_network(ip, mask, {{192, 168, 43, 1}}, dns));
+    assert(!valid_static_network({{192, 168, 42, 0}}, mask, gateway, dns));
+    assert(!valid_static_network({{192, 168, 42, 255}}, mask, gateway, dns));
+    assert(!valid_static_network(ip, mask, ip, dns));
+    assert(!valid_static_network(ip, mask, gateway, {{224, 0, 0, 1}}));
+    assert(!valid_static_network({{169, 254, 1, 1}}, mask, zero, zero));
     Chamber m;
     Faults faults;
     auto call = [&](const std::string &s) { return handle_frame(s, m, faults); };
