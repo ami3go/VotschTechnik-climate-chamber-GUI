@@ -16,6 +16,13 @@ inline bool dhcp_maintenance_due(bool has_dhcp, bool client_active,
            elapsed_ms >= interval_ms;
 }
 
+// An active operator's TCP connection is never silently displaced by a
+// second socket. A disconnected or timed-out session may be reclaimed.
+inline bool tcp_session_reclaimable(bool connected, bool buffered,
+                                    uint32_t idle_ms, uint32_t timeout_ms) {
+    return (!connected && !buffered) || idle_ms >= timeout_ms;
+}
+
 struct Faults {
     bool sticky_stop = false;
     bool invalid_sensor = false;
