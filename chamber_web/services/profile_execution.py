@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from chamber_web.domain.chamber import ChamberSafetyError, OperationState, ReadingQuality
+from chamber_web.domain.profile import is_unapproved_automotive_template
 from chamber_web.execution.profile_runner import (
     TERMINAL, Clock, EventSink, ExecutionSnapshot, ProfileRunner, RunParameters, RunState,
     SupervisedRun, step_budget,
@@ -501,8 +502,11 @@ class ProfileExecutionService:
                 raise ChamberSafetyError("A profile run is already active")
             # A missing or invalid saved revision must not release a manual
             # owner or clear any safety fence as a side effect.
-            self._store.get_revision(
+            selected = self._store.get_revision(
                 self._chamber_id, profile_id, revision=revision)
+            if is_unapproved_automotive_template(selected.profile):
+                raise ChamberSafetyError(
+                    "Unapproved automotive research candidate: execution prohibited")
             self._prepare_operator_profile_start(session, csrf, actor)
             # Physical admission still enforces signed, revision-bound H02
             # permit, live independent watchdog, witness and site envelopes.
