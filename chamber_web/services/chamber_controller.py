@@ -506,10 +506,11 @@ class ChamberController:
             self._check_operator(operator_token)
             caps = self._capabilities
             identity = self._identity
-            if (identity is None or not identity.is_simulation or caps is None or
+            if (identity is None or not (identity.is_simulation or identity.is_emulator)
+                    or caps is None or
                     not caps.supports_start_stop or not caps.supports_running_readback):
                 raise ChamberSafetyError(
-                    "Per-step chamber run control is simulation-only"
+                    "Per-step chamber run control is simulation/emulator-only"
                 )
         expected = OperationState.RUNNING if running else OperationState.STOPPED
         operation = self._backend.start if running else self._backend.stop
@@ -534,8 +535,9 @@ class ChamberController:
             identity = self._identity
             caps = self._capabilities
             available = {item[0] for item in caps.digital_outputs} if caps else set()
-            if identity is None or not identity.is_simulation:
-                raise ChamberSafetyError("Profile digital outputs are simulation-only")
+            if identity is None or not (identity.is_simulation or identity.is_emulator):
+                raise ChamberSafetyError(
+                    "Profile digital outputs are simulation/emulator-only")
             if number == 1 or number not in available:
                 raise ChamberSafetyError("Digital output is not supported/verified")
 
