@@ -592,9 +592,9 @@ class LabAcceptanceScriptTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             evidence = Path(tmp) / "evidence"
             code = hil_lab_acceptance.main([
-                "--simulate", "--sim-envelope", "15,35", "--evidence", str(evidence),
-                "--gradient", "5", "--gradient-delta", "2", "--settle", "120",
-                "--dwell", "2", "--stabilize", "2", "--manual-delta", "8"])
+                "--simulate", "--sim-envelope", "22,24", "--evidence", str(evidence),
+                "--gradient", "3", "--gradient-delta", "1", "--settle", "60",
+                "--dwell", "1", "--stabilize", "1", "--manual-delta", "0.5"])
             summary = json.loads((evidence / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(code, 0, summary)
             self.assertEqual(
@@ -603,6 +603,23 @@ class LabAcceptanceScriptTests(unittest.TestCase):
                                "gradient"), "PASSED"))
             self.assertEqual(summary["original"]["running"], False)
             self.assertTrue((evidence / "summary.md").is_file())
+
+    def test_postcheck_restore_failure_is_not_a_pass(self):
+        with TemporaryDirectory() as tmp:
+            driver = SimulatedVT4011(gradient_up=5.0, gradient_down=3.0)
+            acceptance = hil_lab_acceptance.LabAcceptance(
+                _hil(22, 24), LabMode(), Path(tmp),
+                hil_lab_acceptance.Settings(
+                    targets=[23.0], dwell_s=1, stabilize_s=1,
+                    tolerance_c=0.5, settle_s=60, manual_delta_c=0.5,
+                    manual_hold_s=1, gradient_c_per_min=3,
+                    gradient_delta_c=0.5, cancel_after_s=1),
+                deadline_s=60, driver_factory=lambda: driver)
+            acceptance.precheck()
+            driver.gradient_up = 4.0
+            acceptance.original["gradient_up"] = 60.0
+            with self.assertRaisesRegex(RuntimeError, "Postcheck restore failed"):
+                acceptance.postcheck()
 
     def test_hardware_mode_refuses_without_lab_authorization(self):
         with TemporaryDirectory() as tmp:

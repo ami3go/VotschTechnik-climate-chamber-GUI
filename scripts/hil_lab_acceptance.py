@@ -193,6 +193,7 @@ class LabAcceptance:
         if not self.original:
             return
         chamber = self.direct()
+        errors: list[str] = []
         try:
             if chamber.is_running:
                 self.log("postcheck_running_direct_stop")
@@ -204,13 +205,27 @@ class LabAcceptance:
                         self.log("restored_" + name, value=self.original[name])
                     except Exception as exc:  # noqa: BLE001 - report, keep restoring
                         self.log("restore_failed_" + name, error=repr(exc))
+                        errors.append(name + ": " + type(exc).__name__)
             if abs(chamber.temperature_set_point - self.original["setpoint_c"]) > 0.05:
-                chamber.temperature_set_point = self.original["setpoint_c"]
-                self.log("restored_setpoint", setpoint_c=self.original["setpoint_c"])
+                try:
+                    chamber.temperature_set_point = self.original["setpoint_c"]
+                    self.log("restored_setpoint", setpoint_c=self.original["setpoint_c"])
+                except Exception as exc:  # noqa: BLE001 - report, verify below
+                    self.log("restore_failed_setpoint", error=repr(exc))
+                    errors.append("setpoint: " + type(exc).__name__)
             self.log("postcheck", running=chamber.is_running,
                      measured_c=chamber.temperature_measured)
+            if chamber.is_running:
+                errors.append("running state remained active")
+            for name in ("gradient_up", "gradient_down"):
+                if abs(float(getattr(chamber, name)) - self.original[name]) > 0.005:
+                    errors.append(name + " readback mismatch")
+            if abs(chamber.temperature_set_point - self.original["setpoint_c"]) > 0.05:
+                errors.append("setpoint readback mismatch")
         finally:
             chamber.disconnect()
+        if errors:
+            raise RuntimeError("Postcheck restore failed: " + "; ".join(errors))
 
     # -- service stack (the server's own composition) ---------------------------
     def connect(self) -> None:
@@ -250,22 +265,30 @@ class LabAcceptance:
     def close(self) -> None:
         if not self.connected:
             return
+        errors: list[str] = []
         try:
             outcome = self.send(self.admin, "stop")
             self.log("final_stop", state=outcome.state.value)
+            if outcome.state.value != "CONFIRMED":
+                errors.append("final STOP was not confirmed")
         except Exception as exc:  # noqa: BLE001
             self.log("final_stop_failed", error=repr(exc))
+            errors.append("final STOP: " + type(exc).__name__)
         try:
             runner = self.execution.runner
             if runner is not None:
                 runner.close()
         except Exception as exc:  # noqa: BLE001
             self.log("runner_close_failed", error=repr(exc))
+            errors.append("runner close: " + type(exc).__name__)
         try:
             asyncio.run(self.dashboard.close())
         except Exception as exc:  # noqa: BLE001
             self.log("disconnect_failed", error=repr(exc))
+            errors.append("dashboard disconnect: " + type(exc).__name__)
         self.connected = False
+        if errors:
+            raise RuntimeError("; ".join(errors))
 
     def send(self, tokens, action: str, **kw):
         outcome = self.manual.command(tokens.session, tokens.csrf, self.chamber_id, action, **kw)
@@ -618,6 +641,7 @@ class LabAcceptance:
                 self.close()
             except Exception as exc:  # noqa: BLE001 - postcheck must still run
                 self.log("close_failed", error=repr(exc))
+                aborted = aborted or f"close failed: {type(exc).__name__}: {exc}"
             try:
                 self.postcheck()
             except Exception as exc:  # noqa: BLE001
@@ -804,7 +828,7 @@ def main(argv: list[str] | None = None) -> int:
         from scripts.vt4011_simulator import SimulatedVT4011
 
         low, high = (float(v) for v in args.sim_envelope.split(","))
-        chamber = SimulatedVT4011(gradient_up=60.0, gradient_down=60.0, tau_s=4.0)
+        chamber = SimulatedVT4011(gradient_up=5.0, gradient_down=3.0, tau_s=4.0)
         driver_factory = lambda: chamber  # noqa: E731 - one shared simulated chamber
         hil = HilAuthorization("hil-votsch", "192.168.0.11", chamber.serial_number, low, high)
         lab = LabMode()
