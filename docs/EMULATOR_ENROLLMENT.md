@@ -143,7 +143,32 @@ loopback server controlling a bench emulator on the isolated test LAN.
 * Multi-chamber scheduling is still out of scope (`ChamberManager` enforces one
   configured device).
 
-## 7. Verified bench evidence (2026-11-22)
+## 7. Bounded G06/G07 profile check
+
+After the read-only and narrow write check succeeds, exercise the normal
+profile runner and durable journal with the signed enrollment:
+
+```bash
+CHAMBER_EMULATOR_ENROLLMENT_FILE=/secure/enrollment.json \
+CHAMBER_EMULATOR_TRUSTED_KEY_FILE=/secure/bench.pub \
+CHAMBER_EMULATOR_ACK=ISOLATED-BENCH-EMULATOR \
+python scripts/h02_watchdog_command.py \
+  --timeout-s 180 --idle-timeout-s 60 \
+  --log-dir /tmp/emulator-profile-check -- \
+  python scripts/emulator_profile_check.py \
+    --serial SIMLEO0001 \
+    --evidence /tmp/emulator-profile-check/evidence.json
+```
+
+The script requires an uninterrupted read-only identity/STOP stability window
+before its first profile mutation. It then runs two steps through G06: verified
+gradients, digital output 2 ON/OFF and chamber run ON/OFF. A result is PASS only
+when the runner reaches `COMPLETED`, G07 durably finalizes the run and the final
+independent G04 state is `VERIFIED_STOPPED`. Any timeout, non-success terminal
+state, journal failure or unverified restore is a failure. This emulator path
+does not use a HIL PIN.
+
+## 8. Verified bench evidence (2026-11-22)
 
 Live device: `192.168.31.146:2049`, serial `SIMLEO0001`, model
 `VT4011-EMULATOR`, STOPPED, 23.0 °C, USB-CDC identity matched the Ethernet
