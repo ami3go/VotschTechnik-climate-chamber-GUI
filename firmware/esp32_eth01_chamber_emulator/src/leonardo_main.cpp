@@ -13,6 +13,7 @@ namespace {
 const uint8_t ETH_CS = 10;
 const uint8_t SD_CS = 4;
 const uint32_t CLIENT_IDLE_MS = 5000UL;
+const uint16_t CLIENT_CLOSE_TIMEOUT_MS = 25U;
 const uint32_t WRITE_DEADLINE_MS = 1000UL;
 const uint16_t DHCP_RETRY_MS = 60000U;
 const uint16_t DHCP_FIRST_TIMEOUT_MS = 10000;
@@ -290,19 +291,26 @@ void poll_network(uint32_t now) {
         Serial.println(F("ETH link restored"));
         prior_link = true;
     }
-    // Arduino Ethernet 2.0.2 accept() returns a new connection even before
-    // the first received byte; stale sessions may be replaced by a new driver.
-    EthernetClient candidate = server.accept();
-    if (candidate) {
-        close_client();
-        client = candidate;
-        last_client_ms = now;
+    // Preserve one active controller owner. EthernetServer::accept() returns
+    // a newly connected socket before it receives data; accepting it while a
+    // healthy client is active would evict that controller mid-command. A
+    // waiting recovery client is accepted as soon as the old socket closes or
+    // reaches the bounded idle timeout.
+    if (client) {
+        if (!client.connected() && !client.available()) close_client();
+        else if (static_cast<uint32_t>(now - last_client_ms) >= CLIENT_IDLE_MS)
+            close_client();
+    }
+    if (!client) {
+        EthernetClient candidate = server.accept();
+        if (candidate) {
+            // Bound both graceful disconnect and stale-session cleanup.
+            candidate.setConnectionTimeout(CLIENT_CLOSE_TIMEOUT_MS);
+            client = candidate;
+            last_client_ms = now;
+        }
     }
     if (!client) return;
-    if (!client.connected() && !client.available()) { close_client(); return; }
-    if (static_cast<uint32_t>(now - last_client_ms) >= CLIENT_IDLE_MS) {
-        close_client(); return;
-    }
     if (pending) {
         if (static_cast<int32_t>(now - reply_at_ms) < 0) return;
         if (response_offset < response_len) {

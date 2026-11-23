@@ -46,6 +46,25 @@ def run():
     from VotschTechnikClimateChamber.ClimateChamber import ClimateChamber
     from VotschTechnikClimateChamber.discovery import discover_chambers
 
+    def read_usb_status():
+        with serial.Serial(args.usb_port, 115200, timeout=0.25, write_timeout=0.5) as port:
+            # Some Leonardo CDC revisions reset on port open.
+            deadline = time.monotonic() + 18
+            while time.monotonic() < deadline:
+                port.write(b"status\n")
+                line = port.readline().decode("ascii", errors="replace").strip()
+                if line.startswith("LEO-EMU ") and "link=" in line and "SN=" in line:
+                    fields = dict(piece.split("=", 1) for piece in line.split() if "=" in piece)
+                    if fields.get("IP") != args.ip or fields.get("SN") != args.serial:
+                        raise RuntimeError(
+                            "Out-of-band USB status did not match target IP/serial")
+                    # A CDC open or recent board reset can expose an early
+                    # matching-identity status line before DHCP/link settles.
+                    # Wait for that same board to report link readiness.
+                    if fields.get("link") == "1":
+                        return line, fields
+        raise RuntimeError("No live LEO-EMU USB-CDC status response")
+
     evidence = Path(args.evidence)
     evidence.parent.mkdir(parents=True, exist_ok=True)
     report = {
@@ -57,26 +76,12 @@ def run():
         "checks": [],
     }
     chamber = None
-    started = False
+    control_write_attempted = False
     rc = 1
     try:
-        with serial.Serial(args.usb_port, 115200, timeout=0.25, write_timeout=0.5) as port:
-            # Some Leonardo CDC revisions reset on port open.
-            deadline = time.monotonic() + 18
-            found = None
-            while time.monotonic() < deadline:
-                port.write(b"status\n")
-                line = port.readline().decode("ascii", errors="replace").strip()
-                if line.startswith("LEO-EMU ") and "link=" in line and "SN=" in line:
-                    found = line
-                    break
-            if found is None:
-                raise RuntimeError("No live LEO-EMU USB-CDC status response")
-            fields = dict(piece.split("=", 1) for piece in found.split() if "=" in piece)
-            if fields.get("link") != "1" or fields.get("IP") != args.ip or fields.get("SN") != args.serial:
-                raise RuntimeError("Out-of-band USB status did not match target IP/serial/link")
-            report["usb_status"] = found
-            report["checks"].append("Live physical USB-CDC identity matches isolated Ethernet: PASS")
+        found, _ = read_usb_status()
+        report["usb_status"] = found
+        report["checks"].append("Live physical USB-CDC identity matches isolated Ethernet: PASS")
 
         listed = discover_chambers(args.ip)
         if len(listed) != 1 or listed[0].serial_number != args.serial:
@@ -93,13 +98,17 @@ def run():
         if args.allow_writes:
             if chamber.is_running:
                 raise RuntimeError("Refusing Start/Stop tests unless emulator is initially STOPPED")
-            for _ in range(3):
+            for cycle in range(1, 4):
+                report["control_stage"] = f"cycle {cycle} START write"
+                # A timed-out write may still have executed. Mark the board as
+                # requiring STOP before the write, not only after its ACK.
+                control_write_attempted = True
                 chamber.start()
-                started = True
+                report["control_stage"] = f"cycle {cycle} START readback"
                 if not chamber.is_running:
                     raise RuntimeError("Start not verified by output 1")
+                report["control_stage"] = f"cycle {cycle} STOP write/readback"
                 chamber.stop(verify_timeout=2)
-                started = False
                 if chamber.is_running:
                     raise RuntimeError("Stop not verified by output 1")
             report["checks"].append("3 repeated START/STOP readbacks: PASS")
@@ -110,18 +119,41 @@ def run():
         print("FAIL:", report["error"], file=sys.stderr)
     finally:
         if chamber:
-            if started:
-                try:
-                    chamber.stop(verify_timeout=2)
-                    started = False
-                except Exception as exc:
-                    report["status"] = "FAIL"
-                    rc = 1
-                    report["stop_status"] = f"UNKNOWN: {type(exc).__name__}: {exc}"
             try:
                 chamber.disconnect()
             except Exception:
                 pass
+        if control_write_attempted:
+            recovery = None
+            try:
+                # Always use a new TCP session. The maintained driver closes a
+                # session after an ambiguous exchange, so reusing it cannot
+                # establish STOP. STOP is idempotent for this simulator.
+                # Recovery may replace a half-closed W5500 session. Keep this
+                # bounded but longer than an ordinary exchange deadline.
+                recovery = ClimateChamber(args.ip, -40, 180, timeout=2.0)
+                recovery.stop(verify_timeout=2)
+                report["recovery_stop"] = "PASS: fresh driver session verified STOPPED"
+            except Exception as exc:
+                report["status"] = "FAIL"
+                rc = 1
+                report["recovery_stop"] = f"FAIL: {type(exc).__name__}: {exc}"
+            finally:
+                if recovery:
+                    try:
+                        recovery.disconnect()
+                    except Exception:
+                        pass
+            try:
+                final_status, final_fields = read_usb_status()
+                report["final_usb_status"] = final_status
+                if final_fields.get("RUN") != "0":
+                    raise RuntimeError("Final out-of-band USB state was not STOPPED")
+                report["checks"].append("Final independent USB RUN=0: PASS")
+            except Exception as exc:
+                report["status"] = "FAIL"
+                rc = 1
+                report["final_usb_status"] = f"FAIL: {type(exc).__name__}: {exc}"
         report["finished_utc"] = datetime.now(timezone.utc).isoformat()
         evidence.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(f"{report['status']}: wrote {evidence}")
