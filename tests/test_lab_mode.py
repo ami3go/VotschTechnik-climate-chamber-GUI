@@ -19,7 +19,11 @@ from chamber_web.bootstrap import create_demo_control_services
 from chamber_web.domain.chamber import ChamberSafetyError, UnsupportedCapability
 from chamber_web.domain.profile import ParsedProfile, ProfileStep
 from chamber_web.execution.profile_runner import TERMINAL, RunParameters, RunState
-from chamber_web.hil.lab_mode import LAB_ACKNOWLEDGEMENT, LabMode, lab_mode_from_env
+from chamber_web.hil.lab_mode import (
+    LAB_ACKNOWLEDGEMENT, OPERATIONAL_ACKNOWLEDGEMENT, OPERATIONAL_RUN_BINDING,
+    LabMode, lab_mode_from_env, operational_watchdog_limits,
+)
+from chamber_web.hil.supervision import SupervisionHost
 from chamber_web.hil.physical import HilAuthorization
 from chamber_web.persistence.profiles import ProfileStore
 from chamber_web.security.auth import Role, SecurityStore
@@ -67,6 +71,39 @@ class LabModeConfigurationTests(unittest.TestCase):
         for name, (env, hil_present) in bad.items():
             with self.subTest(name), self.assertRaises(ChamberSafetyError):
                 lab_mode_from_env(env, hil_present=hil_present)
+
+
+class OperationalModeConfigurationTests(unittest.TestCase):
+    def test_operational_mode_is_supervised_and_conservative(self):
+        mode = lab_mode_from_env(
+            {"CHAMBER_OPERATIONAL_MODE": OPERATIONAL_ACKNOWLEDGEMENT},
+            hil_present=True)
+        self.assertTrue(mode.independent_watchdog)
+        self.assertFalse(mode.gradients)
+        self.assertEqual(mode.measured_margin_c, 0.0)
+        self.assertEqual(len(OPERATIONAL_RUN_BINDING), 64)
+        limits = operational_watchdog_limits()
+        self.assertLessEqual(limits.max_telemetry_gap_s, 5)
+        self.assertLessEqual(limits.readback_deadline_s, 5)
+        self.assertGreater(limits.stop_verification_timeout_s, 0)
+
+    def test_operational_mode_conflicts_fail_closed(self):
+        operational = {"CHAMBER_OPERATIONAL_MODE": OPERATIONAL_ACKNOWLEDGEMENT}
+        cases = [
+            ({}, True),
+            ({**operational}, False),
+            ({**operational, "CHAMBER_LAB_MODE": LAB_ACKNOWLEDGEMENT}, True),
+            ({**operational, "CHAMBER_LAB_GRADIENTS": "on"}, True),
+            ({**operational, "CHAMBER_H02_PERMIT_FILE": "test.json"}, True),
+            ({"CHAMBER_OPERATIONAL_MODE": "YES"}, True),
+        ]
+        for env, authorized in cases[1:]:
+            with self.subTest(env=env), self.assertRaises(ChamberSafetyError):
+                lab_mode_from_env(env, hil_present=authorized)
+
+    def test_operational_watchdog_boolean_validation(self):
+        with self.assertRaises(ChamberSafetyError):
+            LabMode(independent_watchdog="yes")
 
 
 class LabNetworkModeTests(unittest.TestCase):
@@ -151,7 +188,7 @@ class LabStack:
     """The server's composition bound to one simulated VT 4011."""
 
     def __init__(self, root: Path, *, hil=None, lab: LabMode | None = LabMode(),
-                 driver=None, journal=True):
+                 driver=None, journal=True, operational_supervisor=None):
         self.driver = driver or SimulatedVT4011(gradient_up=60.0, gradient_down=60.0,
                                                 tau_s=1.0)
         self.hil = hil or _hil()
@@ -175,7 +212,8 @@ class LabStack:
             sink_factory=runtime.sink_factory if runtime else None,
             start_blocker=runtime.start_blocker if runtime else None,
             parameters=RunParameters(poll_s=0.2, max_gap_s=2, max_age_s=2, step_margin_s=5),
-            manual_guard=self.manual._authorized, lab=lab)
+            manual_guard=self.manual._authorized, lab=lab,
+            operational_supervisor=operational_supervisor)
 
     def profile(self, *steps: dict) -> str:
         built = tuple(ProfileStep(
@@ -418,6 +456,114 @@ class LabProfileExecutionTests(unittest.TestCase):
         stack.driver.offline = True
         state = stack.drain()
         self.assertIn(state, (RunState.UNKNOWN, RunState.FAULT))
+
+
+class OperationalProfileRunTests(unittest.TestCase):
+    def setUp(self):
+        tmp = TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+
+    def stack(self, **kwargs):
+        stack = LabStack(self.root, **kwargs)
+        self.addCleanup(stack.close)
+        return stack
+
+    def test_missing_independent_supervisor_blocks_before_any_write(self):
+        stack = self.stack(lab=LabMode(independent_watchdog=True))
+        profile_id = stack.profile({"target": 25})
+        self.assertFalse(stack.service.view(stack.operator.session).can_start)
+        with self.assertRaisesRegex(ChamberSafetyError, "watchdog unavailable"):
+            stack.start(profile_id)
+        self.assertEqual([c for c in stack.driver.calls if c[0] == "set"], [])
+
+    def test_healthy_supervisor_is_armed_before_step_dispatch(self):
+        class StubSupervisor:
+            def __init__(self):
+                self.armed = []
+                self.healthy = True
+
+            def alive(self):
+                return self.healthy
+
+            def arm_run(self, **kwargs):
+                self.armed.append(kwargs)
+
+        host = StubSupervisor()
+        stack = self.stack(lab=LabMode(independent_watchdog=True),
+                           operational_supervisor=lambda: host)
+        profile_id = stack.profile({"target": 25})
+        self.assertTrue(stack.service.view(stack.operator.session).can_start)
+        snapshot = stack.start(profile_id)
+        self.assertEqual(len(host.armed), 1)
+        self.assertEqual(host.armed[0]["run_id"], snapshot.run_id)
+        self.assertEqual(host.armed[0]["permit_sha256"], OPERATIONAL_RUN_BINDING)
+        fields = host.armed[0]["state_provider"]()
+        self.assertTrue(fields["temp_ok"])
+        self.assertTrue(fields["owner_ok"])
+        self.assertEqual(stack.drain(), RunState.COMPLETED)
+        self.assertFalse(stack.driver.is_running)
+
+    def test_real_independent_watchdog_process_supervises_mock_chamber(self):
+        """Real watchdog subprocess, simulated VT4011 only; no HIL PIN or I/O."""
+        host = SupervisionHost(
+            operational_watchdog_limits(), evidence_dir=self.root / "watchdog",
+            chamber_id="hil-votsch", serial_number=SERIAL,
+        )
+        self.addCleanup(host.close)
+        host.start()
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline and not host.alive():
+            time.sleep(0.05)
+        self.assertTrue(host.alive(), host.error)
+
+        stack = self.stack(lab=LabMode(independent_watchdog=True),
+                           operational_supervisor=lambda: host)
+        snapshot = stack.start(stack.profile({"target": 25, "dwell": 1}))
+        self.assertEqual(stack.drain(limit_s=30), RunState.COMPLETED,
+                         stack.service.runner.reason)
+        self.assertTrue(host.alive(), host.error)
+        events_deadline = time.monotonic() + 5.0
+        while time.monotonic() < events_deadline:
+            if '"RUN_DISARM"' in host.timeline_path.read_text(encoding="utf-8"):
+                break
+            time.sleep(0.05)
+        timeline = host.timeline_path.read_text(encoding="utf-8")
+        self.assertIn('"RUN_ARM"', timeline)
+        self.assertIn('"RUN_DISARM"', timeline)
+        self.assertIn(snapshot.run_id, timeline)
+        self.assertNotIn('"STOP_REQUEST"', timeline)
+        self.assertFalse(host.latched)
+
+    def test_operational_admin_cannot_take_over_other_operator_lease(self):
+        class Alive:
+            def alive(self):
+                return True
+
+        stack = self.stack(lab=LabMode(independent_watchdog=True),
+                           operational_supervisor=lambda: Alive())
+        claimed = stack.manual.command(
+            stack.operator.session, stack.operator.csrf, stack.chamber_id, "claim")
+        self.assertEqual(claimed.state, ManualState.CONFIRMED)
+        view = stack.service.view(stack.admin.session)
+        self.assertFalse(view.admin_override)
+        self.assertFalse(view.can_start)
+        profile_id = stack.profile({"target": 25})
+        with self.assertRaisesRegex(ChamberSafetyError, "held by another operator"):
+            stack.service.start(stack.admin.session, stack.admin.csrf, profile_id, 1)
+        self.assertFalse(stack.driver.is_running)
+
+    def test_lost_supervisor_liveness_prevents_new_starts(self):
+        class Latched:
+            def alive(self):
+                return False
+
+        stack = self.stack(lab=LabMode(independent_watchdog=True),
+                           operational_supervisor=lambda: Latched())
+        profile_id = stack.profile({"target": 25})
+        with self.assertRaisesRegex(ChamberSafetyError, "watchdog unavailable"):
+            stack.start(profile_id)
+        self.assertFalse(stack.driver.is_running)
 
 
 class ManualLongRampTests(unittest.TestCase):

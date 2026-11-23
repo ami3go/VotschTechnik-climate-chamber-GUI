@@ -37,6 +37,12 @@ int main() {
     assert(!dhcp_maintenance_due(false, false, false, 1000));
     assert(!dhcp_maintenance_due(true, false, false, 59999, 60000));
     assert(dhcp_maintenance_due(true, false, false, 60000, 60000));
+    // A new connection cannot steal a live operator session or an in-flight
+    // STOP acknowledgement; only disconnected/idle sessions are reclaimed.
+    assert(!tcp_session_reclaimable(true, false, 100, 5000));
+    assert(!tcp_session_reclaimable(false, true, 100, 5000));
+    assert(tcp_session_reclaimable(false, false, 100, 5000));
+    assert(tcp_session_reclaimable(true, true, 5000, 5000));
     assert(!dhcp_maintenance_due(true, true, false, 60000, 60000));
     assert(!dhcp_maintenance_due(true, false, true, 60000, 60000));
     Chamber c;

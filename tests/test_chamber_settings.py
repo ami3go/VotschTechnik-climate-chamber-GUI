@@ -15,7 +15,9 @@ from chamber_web.domain.chamber import ChamberSafetyError
 from chamber_web.hil.chamber_settings import (
     ChamberSettings, effective_hil_environment, load_settings, save_settings,
 )
-from chamber_web.hil.lab_mode import LAB_ACKNOWLEDGEMENT, lab_mode_from_env
+from chamber_web.hil.lab_mode import (
+    LAB_ACKNOWLEDGEMENT, OPERATIONAL_ACKNOWLEDGEMENT, lab_mode_from_env,
+)
 from chamber_web.hil.physical import ACKNOWLEDGEMENT, hil_authorization_from_env
 from chamber_web.security.auth import AuthorizationError, Role, SecurityStore
 
@@ -85,6 +87,32 @@ class ChamberSettingsTests(unittest.TestCase):
         self.assertIsNotNone(lab)
         self.assertTrue(lab.gradients)
         self.assertIsNotNone(hil_authorization_from_env(env))
+
+    def test_saved_operational_mode_requires_independent_supervisor(self):
+        settings = replace(PHYSICAL, person_present_acknowledged=False,
+                           operational_mode=True)
+        saved = self.save(settings)
+        self.assertTrue(load_settings(self.path).operational_mode)
+        self.assertTrue(saved.operational_mode)
+        self.assertTrue(any("mode=operational" in row[4] for row in self.store.audit_records()))
+        env, source = effective_hil_environment({}, self.path)
+        self.assertEqual(source, "chamber settings")
+        self.assertEqual(env["CHAMBER_OPERATIONAL_MODE"], OPERATIONAL_ACKNOWLEDGEMENT)
+        self.assertNotIn("CHAMBER_LAB_MODE", env)
+        self.assertEqual(env["CHAMBER_HIL_ACK"], ACKNOWLEDGEMENT)
+        self.assertIsNotNone(hil_authorization_from_env(env))
+        operational = lab_mode_from_env(env, hil_present=True)
+        self.assertTrue(operational.independent_watchdog)
+        self.assertFalse(operational.gradients)
+
+    def test_operational_mode_refuses_conflicts_and_simulator(self):
+        for invalid in (
+            replace(PHYSICAL, lab_mode=True, operational_mode=True),
+            ChamberSettings(operational_mode=True),
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ChamberSafetyError):
+                self.save(invalid)
+        self.assertFalse(self.path.exists())
 
     def test_lab_mode_ignores_legacy_h02_configuration(self):
         settings = replace(PHYSICAL, lab_mode=True, h02_permit_file="/old/permit.json",

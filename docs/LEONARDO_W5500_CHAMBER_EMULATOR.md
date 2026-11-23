@@ -31,7 +31,7 @@ This variant uses **02:56:4F:54:43:01**, configurable last byte via USB/UART
 The ATmega32U4's small RAM makes the ESP32 `std::string` /
 `std::vector` protocol engine inappropriate. Leonardo uses a separate
 strict fixed-buffer command implementation with matching driver wire behavior,
-a single TCP client, 80-byte maximum request and 64-byte maximum reply.
+a single TCP client, 80-byte maximum request and 64-byte maximum reply.\nA second TCP client is rejected while the first controller session is live;\nonly disconnected or 5 s-idle sessions can be reclaimed. This protects\npending STOP replies from a surprise second connection. Real W5500 network\npreemption/backpressure testing remains NOT RUN.
 Strings/JSON/heap allocation are not used in the command hot path.
 CLI/EEPROM configuration is separate from the chamber TCP protocol.
 

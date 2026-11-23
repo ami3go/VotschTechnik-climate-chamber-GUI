@@ -136,11 +136,10 @@ void console_command(char* text, Print& out) {
     if (!strcmp(text, "status")) {
         print_status(out);
     } else if (!strcmp(text, "help")) {
-        out.println(F("status|fault NAME|clear|delay N"));
-        out.println(F("speed|identity|net|eeprom (see docs)"));
+        out.println(F("status|fault|speed|identity|net|eeprom"));
     } else if (!strcmp(text, "fault clear")) {
         faults = leonardo::Faults{};
-        out.println(F("FAULT CLEAR"));
+        out.println(F("OK"));
     } else if (!strncmp(text, "fault ", 6)) {
         leonardo::Faults f; // one active scenario at a time
         const char* mode = text + 6;
@@ -158,27 +157,27 @@ void console_command(char* text, Print& out) {
             char* end = 0;
             unsigned long delay_ms = strtoul(mode + 6, &end, 10);
             if (end == mode + 6 || *end || delay_ms > 2000) {
-                out.println(F("ERR delay")); return;
+                out.println(F("ERR")); return;
             }
             f.delay_ms = static_cast<uint16_t>(delay_ms);
-        } else { out.println(F("ERR fault")); return; }
+        } else { out.println(F("ERR")); return; }
         faults = f;
-        out.println(F("FAULT ON"));
+        out.println(F("OK"));
     } else if (!strncmp(text, "speed ", 6)) {
         if (!strcmp(text + 6, "1")) chamber.thermal_speed = 1;
         else if (!strcmp(text + 6, "10")) chamber.thermal_speed = 10;
-        else { out.println(F("ERR speed 1|10")); return; }
+        else { out.println(F("ERR")); return; }
         chamber.reset_thermal_accumulator();
-        out.println(F("OK speed"));
+        out.println(F("OK"));
     } else if (!strncmp(text, "identity serial ", 16)) {
         const char* serial = text + 16;
-        if (!valid_serial(serial)) { out.println(F("ERR serial")); return; }
+        if (!valid_serial(serial)) { out.println(F("ERR")); return; }
         strcpy(cfg.serial, serial);
         strcpy(chamber.serial, serial);
         save_config();
-        out.println(F("OK serial saved; reconnect"));
+        out.println(F("OK"));
     } else if (!strcmp(text, "net dhcp")) {
-        cfg.static_network = 0; save_config(); out.println(F("OK DHCP reset")); reset_board();
+        cfg.static_network = 0; save_config(); out.println(F("OK")); reset_board();
     } else if (!strncmp(text, "net static ", 11)) {
         char* cursor = text + 11;
         char* save = 0;
@@ -190,21 +189,21 @@ void console_command(char* text, Print& out) {
             !parse_ip(parts[1], candidate.mask) ||
             !parse_ip(parts[2], candidate.gateway) ||
             !parse_ip(parts[3], candidate.dns) || !valid_network(candidate)) {
-            out.println(F("ERR static IP MASK GW DNS")); return;
+            out.println(F("ERR")); return;
         }
         cfg = candidate; cfg.static_network = 1; save_config();
-        out.println(F("OK static reboot")); reset_board();
+        out.println(F("OK")); reset_board();
     } else if (!strncmp(text, "net mac ", 8)) {
         char* end = 0;
         unsigned long tail = strtoul(text + 8, &end, 10);
         if (end == text + 8 || *end || tail < 1 || tail > 254) {
-            out.println(F("ERR MAC tail 1..254")); return;
+            out.println(F("ERR")); return;
         }
         cfg.mac_tail = static_cast<uint8_t>(tail); save_config();
-        out.println(F("OK MAC reboot")); reset_board();
+        out.println(F("OK")); reset_board();
     } else if (!strcmp(text, "eeprom reset")) {
-        default_config(); save_config(); out.println(F("OK EEPROM reset")); reset_board();
-    } else if (*text) out.println(F("ERR help"));
+        default_config(); save_config(); out.println(F("OK")); reset_board();
+    } else if (*text) out.println(F("ERR"));
 }
 void poll_console(Stream& input, Print& output, char* buffer, uint8_t& len) {
     for (uint8_t count = 0; count < 16 && input.available(); ++count) {
@@ -259,7 +258,7 @@ void schedule_response(uint8_t size, uint32_t now, bool is_stop) {
     reply_at_ms = now + faults.delay_ms;
     close_after_reply = false;
     if (faults.drop_stop_reply && is_stop) {
-        Serial.println(F("FAULT STOP reply lost"));
+        Serial.println(F("FAULT stop"));
         close_client(); return;
     }
     if (faults.suppress_reply) {
@@ -291,21 +290,22 @@ void poll_network(uint32_t now) {
         Serial.println(F("ETH link restored"));
         prior_link = true;
     }
-    // Preserve one active controller owner. EthernetServer::accept() returns
-    // a newly connected socket before it receives data; accepting it while a
-    // healthy client is active would evict that controller mid-command. A
-    // waiting recovery client is accepted as soon as the old socket closes or
-    // reaches the bounded idle timeout.
-    if (client) {
-        if (!client.connected() && !client.available()) close_client();
-        else if (static_cast<uint32_t>(now - last_client_ms) >= CLIENT_IDLE_MS)
-            close_client();
+    // Reclaim disconnected/stale sockets first. A second client must never
+    // preempt the active controller session (including a pending STOP reply).
+    // Stale sessions are bounded by CLIENT_IDLE_MS and can be reclaimed.
+    if (client && leonardo::tcp_session_reclaimable(
+            client.connected(), client.available() > 0,
+            static_cast<uint32_t>(now - last_client_ms), CLIENT_IDLE_MS)) {
+        close_client();
     }
-    if (!client) {
-        EthernetClient candidate = server.accept();
-        if (candidate) {
-            // Bound both graceful disconnect and stale-session cleanup.
-            candidate.setConnectionTimeout(CLIENT_CLOSE_TIMEOUT_MS);
+    EthernetClient candidate = server.accept();
+    if (candidate) {
+        // Bound both rejection and graceful stale-session cleanup. The
+        // Ethernet library otherwise waits up to a second in stop().
+        candidate.setConnectionTimeout(CLIENT_CLOSE_TIMEOUT_MS);
+        if (client) {
+            candidate.stop(); // explicit single-controller ownership
+        } else {
             client = candidate;
             last_client_ms = now;
         }
